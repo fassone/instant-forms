@@ -381,8 +381,17 @@ export function renderFormPage(form: InstantForm): string {
         const answers = {};
         let currentStep = 0;
         let isSubmitting = false;
+        let autoAdvanceTimer;
+
+        function clearAutoAdvance() {
+          if (autoAdvanceTimer) {
+            window.clearTimeout(autoAdvanceTimer);
+            autoAdvanceTimer = undefined;
+          }
+        }
 
         function showStep(nextStep) {
+          clearAutoAdvance();
           currentStep = Math.max(0, Math.min(nextStep, steps.length - 1));
 
           steps.forEach((step, index) => {
@@ -436,7 +445,30 @@ export function renderFormPage(form: InstantForm): string {
           return true;
         }
 
+        function advanceAfterChoiceSelection(answer) {
+          const question = getQuestion();
+          if (question.kind !== "choice" || isSubmitting) {
+            return;
+          }
+
+          clearAutoAdvance();
+          answers[question.key] = answer;
+          error.textContent = "";
+
+          autoAdvanceTimer = window.setTimeout(() => {
+            autoAdvanceTimer = undefined;
+
+            if (currentStep === steps.length - 1) {
+              void submitForm();
+              return;
+            }
+
+            showStep(currentStep + 1);
+          }, 180);
+        }
+
         async function submitForm() {
+          clearAutoAdvance();
           isSubmitting = true;
           showStep(currentStep);
 
@@ -465,6 +497,8 @@ export function renderFormPage(form: InstantForm): string {
         }
 
         nextButton.addEventListener("click", () => {
+          clearAutoAdvance();
+
           if (!validateCurrentStep()) {
             return;
           }
@@ -478,7 +512,17 @@ export function renderFormPage(form: InstantForm): string {
         });
 
         backButton.addEventListener("click", () => {
+          clearAutoAdvance();
           showStep(currentStep - 1);
+        });
+
+        form.addEventListener("change", (event) => {
+          const target = event.target;
+          if (!(target instanceof HTMLInputElement) || target.type !== "radio" || !target.checked) {
+            return;
+          }
+
+          advanceAfterChoiceSelection(target.value);
         });
 
         form.addEventListener("keydown", (event) => {
@@ -504,8 +548,7 @@ export function renderFormPage(form: InstantForm): string {
           );
           if (option) {
             option.checked = true;
-            answers[question.key] = option.value;
-            error.textContent = "";
+            advanceAfterChoiceSelection(option.value);
           }
         });
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { getFormByStateCode } from "../src/forms";
+import { renderFormPage } from "../src/render";
 import { createFetchHandler } from "../src/server";
 import { validateSubmission } from "../src/validation";
 
@@ -111,6 +112,18 @@ describe("server routing", () => {
       formId: "1011189481863371",
       pageName: "Seguros Aseguranza",
     });
+  });
+});
+
+describe("form rendering", () => {
+  it("wires choice answers to delayed auto-advance on click and number keys", () => {
+    const html = renderFormPage(getRequiredTennesseeForm());
+
+    expect(html).toContain("function advanceAfterChoiceSelection(answer)");
+    expect(html).toContain('form.addEventListener("change"');
+    expect(html).toContain("advanceAfterChoiceSelection(target.value)");
+    expect(html).toContain("advanceAfterChoiceSelection(option.value)");
+    expect(html).toContain("}, 180);");
   });
 });
 
