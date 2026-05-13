@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { encodeCheckpointAnswers, getCheckpointCookieName } from "../src/checkpoints";
 import { getFormByStateCode } from "../src/forms";
 import { renderFormPage } from "../src/render";
 import { createFetchHandler } from "../src/server";
@@ -109,6 +110,71 @@ describe("US phone normalization", () => {
 });
 
 describe("server routing", () => {
+  it("redirects the root route to Tennessee", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(new Request("http://localhost/"));
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe("/tn");
+  });
+
+  it("redirects Tennessee to the first unanswered step without a checkpoint", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(new Request("http://localhost/tn"));
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe("/tn/belongs-to-state");
+  });
+
+  it("redirects Tennessee to the next unanswered step from a checkpoint", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(
+      new Request("http://localhost/tn", {
+        headers: {
+          Cookie: createCheckpointCookie({
+            belongs_to_state: "yes",
+            has_license: "no",
+          }),
+        },
+      }),
+    );
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe("/tn/has-insurance");
+  });
+
+  it("sanitizes invalid checkpoint cookie answers before resuming", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(
+      new Request("http://localhost/tn", {
+        headers: {
+          Cookie: createCheckpointCookie({
+            belongs_to_state: "maybe",
+          }),
+        },
+      }),
+    );
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe("/tn/belongs-to-state");
+  });
+
+  it("guards valid but too-forward step URLs", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(new Request("http://localhost/tn/has-license"));
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe("/tn/belongs-to-state");
+  });
+
+  it("returns a 404 for invalid step slugs", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(new Request("http://localhost/tn/not-real"));
+
+    expect(response.status).toBe(404);
+    await expect(response.text()).resolves.toContain("no está disponible");
+  });
+
   it("serves the cached WebP logo asset", async () => {
     const handler = createFetchHandler();
     const response = await handler(new Request("http://localhost/assets/logo.webp"));
@@ -124,6 +190,87 @@ describe("server routing", () => {
 
     expect(response.status).toBe(404);
     await expect(response.text()).resolves.toContain("no está disponible");
+  });
+
+  it("sets a checkpoint cookie for valid partial answers", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(
+      new Request("http://localhost/api/forms/tn/checkpoints", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ questionKey: "belongs_to_state", answer: "yes" }),
+      }),
+    );
+    const body = await response.json();
+    const setCookie = response.headers.get("Set-Cookie") ?? "";
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({ ok: true, nextUrl: "/tn/has-license" });
+    expect(setCookie).toContain(`${getCheckpointCookieName("tn")}=`);
+    expect(setCookie).toContain("HttpOnly");
+    expect(setCookie).toContain("SameSite=Lax");
+    expect(setCookie).toContain("Path=/");
+    expect(setCookie).toContain("Max-Age=604800");
+  });
+
+  it("marks checkpoint cookies secure when served over HTTPS", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(
+      new Request("https://localhost/api/forms/tn/checkpoints", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ questionKey: "belongs_to_state", answer: "yes" }),
+      }),
+    );
+
+    expect(response.headers.get("Set-Cookie")).toContain("Secure");
+  });
+
+  it("rejects invalid checkpoint answers", async () => {
+    const handler = createFetchHandler();
+    const invalidChoice = await handler(
+      new Request("http://localhost/api/forms/tn/checkpoints", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ questionKey: "belongs_to_state", answer: "maybe" }),
+      }),
+    );
+    const invalidPhone = await handler(
+      new Request("http://localhost/api/forms/tn/checkpoints", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ questionKey: "phone_number", answer: "+52 55 1234 5678" }),
+      }),
+    );
+
+    expect(invalidChoice.status).toBe(400);
+    await expect(invalidChoice.text()).resolves.toContain("Answer is not a valid option.");
+    expect(invalidPhone.status).toBe(400);
+    await expect(invalidPhone.text()).resolves.toContain("Ingrese un número de teléfono válido de Estados Unidos.");
+  });
+
+  it("prefills rendered fields from sanitized checkpoint cookies", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(
+      new Request("http://localhost/tn/first-name", {
+        headers: {
+          Cookie: createCheckpointCookie({
+            belongs_to_state: "yes",
+            has_license: "yes",
+            has_insurance: "no",
+            is_clean_title: "yes",
+            number_of_registered_cars: "1",
+            first_name: "Ana",
+          }),
+        },
+      }),
+    );
+    const html = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(html).toContain('value="yes" checked');
+    expect(html).toContain('value="Ana"');
+    expect(html).toContain('data-step="5" aria-hidden="false"');
   });
 
   it("accepts valid local submissions and logs the payload", async () => {
@@ -144,6 +291,25 @@ describe("server routing", () => {
       formId: "1011189481863371",
       pageName: "Seguros Aseguranza",
     });
+  });
+
+  it("clears the checkpoint cookie after a successful final submission", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(
+      new Request("http://localhost/api/forms/tn/submissions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: createCheckpointCookie({ belongs_to_state: "yes" }),
+        },
+        body: JSON.stringify({ answers: validAnswers }),
+      }),
+    );
+    const setCookie = response.headers.get("Set-Cookie") ?? "";
+
+    expect(response.status).toBe(201);
+    expect(setCookie).toContain(`${getCheckpointCookieName("tn")}=`);
+    expect(setCookie).toContain("Max-Age=0");
   });
 });
 
@@ -197,6 +363,8 @@ describe("form rendering", () => {
     const html = renderFormPage(getRequiredTennesseeForm());
 
     expect(html).toContain("function advanceAfterChoiceSelection(answer)");
+    expect(html).toContain("async function saveCheckpoint(questionKey, answer)");
+    expect(html).toContain("/checkpoints");
     expect(html).toContain("function normalizeUsPhoneNumber(value)");
     expect(html).toContain('form.addEventListener("change"');
     expect(html).toContain("advanceAfterChoiceSelection(target.value)");
@@ -237,6 +405,31 @@ describe("form rendering", () => {
     expect(html).toContain("isActionPointerDown");
     expect(html).toContain('actions.addEventListener("pointerdown"');
   });
+
+  it("includes step URLs and browser history handling", () => {
+    const html = renderFormPage(getRequiredTennesseeForm());
+
+    expect(html).toContain('"activeStepIndex":0');
+    expect(html).toContain('"initialAnswers":{}');
+    expect(html).toContain('"slug":"belongs-to-state"');
+    expect(html).toContain('"url":"/tn/belongs-to-state"');
+    expect(html).toContain("window.history.pushState");
+    expect(html).toContain("window.history.replaceState");
+    expect(html).toContain('window.addEventListener("popstate"');
+    expect(html).toContain("getStepIndexForPath(window.location.pathname)");
+  });
+
+  it("renders the requested active step and saved answers", () => {
+    const html = renderFormPage(getRequiredTennesseeForm(), {
+      activeStepIndex: 1,
+      answers: { belongs_to_state: "yes" },
+    });
+
+    expect(html).toContain('data-step="0" aria-hidden="true"');
+    expect(html).toContain('data-step="1" aria-hidden="false"');
+    expect(html).toContain('value="yes" checked');
+    expect(html).toContain('"initialAnswers":{"belongs_to_state":"yes"}');
+  });
 });
 
 function getRequiredTennesseeForm() {
@@ -247,4 +440,8 @@ function getRequiredTennesseeForm() {
   }
 
   return form;
+}
+
+function createCheckpointCookie(answers: Record<string, string>): string {
+  return `${getCheckpointCookieName("tn")}=${encodeCheckpointAnswers(answers)}`;
 }

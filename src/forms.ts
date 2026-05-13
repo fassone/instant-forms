@@ -144,3 +144,19 @@ export function getFormByStateCode(stateCode: string): InstantForm | undefined {
 
   return (formsByState as Record<string, InstantForm>)[normalizedStateCode];
 }
+
+export function getQuestionSlug(question: FormQuestion): string {
+  return question.key.replaceAll("_", "-");
+}
+
+export function getStepUrl(form: InstantForm, question: FormQuestion): string {
+  return `/${form.stateCode}/${getQuestionSlug(question)}`;
+}
+
+export function getQuestionIndexBySlug(form: InstantForm, slug: string): number {
+  return form.questions.findIndex((question) => getQuestionSlug(question) === slug);
+}
+
+export function getQuestionByKey(form: InstantForm, key: string): FormQuestion | undefined {
+  return form.questions.find((question) => question.key === key);
+}

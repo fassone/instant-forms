@@ -1,19 +1,20 @@
 # instant-forms
 
-A small Bun + TypeScript app for ultra-fast progressive lead forms.
+A small Bun + Hono + TypeScript app for ultra-fast progressive lead forms.
 
 The first form is a Spanish Tennessee auto-insurance lead flow for Seguros Aseguranza. Forms are selected by lowercase state code, so future states can be added as new registry entries without changing the page shell.
 
 ## Current Status
 
 - Runtime/package manager: Bun
+- HTTP router: Hono
 - Language: TypeScript using ESM modules
 - Entrypoint: `index.ts`
 - First route: `/tn`
 - Type checking: strict TypeScript via `tsconfig.json`
 - Tests: Bun test runner
 - Required environment variables: none
-- Persistence: none; valid submissions are logged to the server console
+- Persistence: short-term checkpoint answers in an HttpOnly cookie; valid submissions are logged to the server console
 
 ## Quickstart
 
@@ -54,6 +55,7 @@ bun test
 ├── package.json
 ├── src
 │   ├── forms.ts
+│   ├── checkpoints.ts
 │   ├── render.ts
 │   ├── server.ts
 │   └── validation.ts
@@ -67,8 +69,10 @@ bun test
 | Route | Purpose |
 |---|---|
 | `GET /` | Redirects to `/tn`. |
-| `GET /tn` | Renders the Tennessee progressive form. |
-| `GET /:stateCode` | Renders a matching state form or a Spanish unavailable page. |
+| `GET /tn` | Redirects to the next unanswered Tennessee step. |
+| `GET /tn/:stepSlug` | Renders a specific guarded Tennessee step, for example `/tn/belongs-to-state`. |
+| `GET /:stateCode` | Redirects a matching state form or returns a Spanish unavailable page. |
+| `POST /api/forms/:stateCode/checkpoints` | Validates one answer, saves it to the checkpoint cookie, and returns the next allowed URL. |
 | `POST /api/forms/:stateCode/submissions` | Validates and logs completed submissions. |
 
 ## Form Flow
@@ -87,6 +91,25 @@ Question order:
 8. `phone_number`
 
 Contact labels are shown in Spanish: `Nombre`, `Apellido`, and `Número de teléfono`.
+
+Step URLs are generated from question keys by replacing underscores with hyphens:
+
+- `/tn/belongs-to-state`
+- `/tn/has-license`
+- `/tn/has-insurance`
+- `/tn/is-clean-title`
+- `/tn/number-of-registered-cars`
+- `/tn/first-name`
+- `/tn/last-name`
+- `/tn/phone-number`
+
+Visitors can use browser Back/Forward across steps. Direct URLs are guarded: a visitor cannot open a step beyond the first unanswered required question.
+
+## Checkpoints
+
+Each valid partial answer is saved in an HttpOnly cookie named `instant_forms_<stateCode>_answers`, using a 7-day max age, `SameSite=Lax`, `Path=/`, and `Secure` on HTTPS. The cookie stores a base64url JSON answer map and is validated/sanitized on every request before it is used.
+
+Phone checkpoint values preserve the visitor's visible input, such as `+1 (615) 555-1234`, so refresh and resume can prefill naturally. Final submissions still normalize phone answers to E.164.
 
 ## Submissions
 
@@ -119,9 +142,12 @@ Valid submissions are logged to the server console with:
 - `submittedAt`
 - `answers`
 
+After a successful submission, the checkpoint cookie is cleared.
+
 ## Development Notes
 
 - Use Bun as the runtime and package manager.
+- Use Hono routes for HTTP behavior.
 - Keep TypeScript strict and prefer explicit, typed boundaries.
 - Keep changes small and focused; avoid adding framework or build complexity before it is needed.
 - Add future state forms in `src/forms.ts` with lowercase state-code keys.

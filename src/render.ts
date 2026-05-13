@@ -1,30 +1,49 @@
+import { getQuestionSlug, getStepUrl } from "./forms";
 import type { ChoiceQuestion, FormQuestion, InstantForm, TextQuestion } from "./forms";
 
 type ClientQuestion =
   | {
       kind: "choice";
       key: string;
+      slug: string;
+      url: string;
       options: readonly string[];
     }
   | {
       kind: "text";
       key: string;
+      slug: string;
+      url: string;
       type: TextQuestion["type"];
     };
 
 type ClientFormConfig = {
   stateCode: string;
+  activeStepIndex: number;
+  initialAnswers: Record<string, string>;
   questions: readonly ClientQuestion[];
 };
 
-export function renderFormPage(form: InstantForm): string {
+export type RenderFormPageOptions = {
+  activeStepIndex?: number;
+  answers?: Record<string, string>;
+};
+
+export function renderFormPage(form: InstantForm, options: RenderFormPageOptions = {}): string {
+  const lastStepIndex = Math.max(0, form.questions.length - 1);
+  const activeStepIndex = Math.max(0, Math.min(options.activeStepIndex ?? 0, lastStepIndex));
+  const initialAnswers = options.answers ?? {};
   const clientConfig: ClientFormConfig = {
     stateCode: form.stateCode,
+    activeStepIndex,
+    initialAnswers,
     questions: form.questions.map((question) => {
       if (question.kind === "choice") {
         return {
           kind: "choice",
           key: question.key,
+          slug: getQuestionSlug(question),
+          url: getStepUrl(form, question),
           options: question.options.map((option) => option.key),
         };
       }
@@ -32,6 +51,8 @@ export function renderFormPage(form: InstantForm): string {
       return {
         kind: "text",
         key: question.key,
+        slug: getQuestionSlug(question),
+        url: getStepUrl(form, question),
         type: question.type,
       };
     }),
@@ -459,7 +480,9 @@ export function renderFormPage(form: InstantForm): string {
           <div class="progress-bar" id="progress-bar"></div>
         </div>
         <section id="steps">
-          ${form.questions.map((question, index) => renderQuestion(question, index, form.questions.length)).join("")}
+          ${form.questions
+            .map((question, index) => renderQuestion(question, index, form.questions.length, activeStepIndex, initialAnswers))
+            .join("")}
         </section>
         <footer>
           <p class="error" id="form-error" role="alert"></p>
@@ -488,8 +511,8 @@ export function renderFormPage(form: InstantForm): string {
         const nextButton = document.getElementById("next-button");
         const actions = document.querySelector(".actions");
         const error = document.getElementById("form-error");
-        const answers = {};
-        let currentStep = 0;
+        const answers = { ...config.initialAnswers };
+        let currentStep = config.activeStepIndex;
         let isSubmitting = false;
         let autoAdvanceTimer;
         let isActionPointerDown = false;
@@ -516,6 +539,32 @@ export function renderFormPage(form: InstantForm): string {
           nextButton.textContent = currentStep === steps.length - 1 ? "Enviar" : "Siguiente";
           nextButton.disabled = isSubmitting;
           error.textContent = "";
+        }
+
+        function getStepIndexForPath(pathname) {
+          return config.questions.findIndex((question) => question.url === pathname);
+        }
+
+        function navigateToStep(nextStep) {
+          const safeStep = Math.max(0, Math.min(nextStep, steps.length - 1));
+          const nextQuestion = config.questions[safeStep];
+
+          showStep(safeStep);
+
+          if (nextQuestion && window.location.pathname !== nextQuestion.url) {
+            window.history.pushState({ step: safeStep }, "", nextQuestion.url);
+          }
+        }
+
+        function navigateToUrl(url) {
+          const stepIndex = config.questions.findIndex((question) => question.url === url);
+
+          if (stepIndex === -1) {
+            window.location.href = url;
+            return;
+          }
+
+          navigateToStep(stepIndex);
         }
 
         function getQuestion() {
@@ -559,6 +608,33 @@ export function renderFormPage(form: InstantForm): string {
           answers[question.key] = answer;
           error.textContent = "";
           return true;
+        }
+
+        async function saveCheckpoint(questionKey, answer) {
+          const response = await fetch("/api/forms/" + encodeURIComponent(config.stateCode) + "/checkpoints", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ questionKey, answer }),
+          });
+          const body = await response.json().catch(() => ({}));
+
+          if (!response.ok) {
+            const firstError = Array.isArray(body.errors) ? body.errors[0] : undefined;
+            throw new Error(firstError && firstError.message ? firstError.message : "No pudimos guardar esta respuesta.");
+          }
+
+          if (body.answers && typeof body.answers === "object") {
+            Object.assign(answers, body.answers);
+          }
+
+          return typeof body.nextUrl === "string" ? body.nextUrl : undefined;
+        }
+
+        async function checkpointCurrentStep() {
+          const question = getQuestion();
+          const answer = getCurrentAnswer();
+
+          return saveCheckpoint(question.key, answer);
         }
 
         function normalizeUsPhoneNumber(value) {
@@ -720,16 +796,30 @@ export function renderFormPage(form: InstantForm): string {
           clearAutoAdvance();
           answers[question.key] = answer;
           error.textContent = "";
+          const selectedStep = currentStep;
 
           autoAdvanceTimer = window.setTimeout(() => {
             autoAdvanceTimer = undefined;
 
-            if (currentStep === steps.length - 1) {
-              void submitForm();
+            if (currentStep !== selectedStep) {
               return;
             }
 
-            showStep(currentStep + 1);
+            void (async () => {
+              try {
+                const nextUrl = await saveCheckpoint(question.key, answer);
+
+                if (currentStep === steps.length - 1) {
+                  await submitForm();
+                  return;
+                }
+
+                navigateToUrl(nextUrl ?? config.questions[currentStep + 1].url);
+              } catch (checkpointError) {
+                error.textContent =
+                  checkpointError instanceof Error ? checkpointError.message : "No pudimos guardar esta respuesta.";
+              }
+            })();
           }, 180);
         }
 
@@ -762,24 +852,35 @@ export function renderFormPage(form: InstantForm): string {
           }
         }
 
-        nextButton.addEventListener("click", () => {
+        async function handleNext() {
           clearAutoAdvance();
 
           if (!validateCurrentStep()) {
             return;
           }
 
-          if (currentStep === steps.length - 1) {
-            void submitForm();
-            return;
-          }
+          try {
+            const nextUrl = await checkpointCurrentStep();
 
-          showStep(currentStep + 1);
+            if (currentStep === steps.length - 1) {
+              await submitForm();
+              return;
+            }
+
+            navigateToUrl(nextUrl ?? config.questions[currentStep + 1].url);
+          } catch (checkpointError) {
+            error.textContent =
+              checkpointError instanceof Error ? checkpointError.message : "No pudimos guardar esta respuesta.";
+          }
+        }
+
+        nextButton.addEventListener("click", () => {
+          void handleNext();
         });
 
         backButton.addEventListener("click", () => {
           clearAutoAdvance();
-          showStep(currentStep - 1);
+          navigateToStep(currentStep - 1);
         });
 
         if (actions) {
@@ -874,7 +975,19 @@ export function renderFormPage(form: InstantForm): string {
           }
         });
 
-        showStep(0);
+        window.addEventListener("popstate", () => {
+          const stepIndex = getStepIndexForPath(window.location.pathname);
+
+          if (stepIndex !== -1) {
+            showStep(stepIndex);
+          }
+        });
+
+        showStep(config.activeStepIndex);
+        const currentQuestion = config.questions[currentStep];
+        if (currentQuestion) {
+          window.history.replaceState({ step: currentStep }, "", currentQuestion.url);
+        }
       })();
     </script>
   </body>
@@ -951,22 +1064,32 @@ export function renderUnavailablePage(stateCode: string): string {
 </html>`;
 }
 
-function renderQuestion(question: FormQuestion, index: number, totalQuestions: number): string {
-  const isCurrent = index === 0;
+function renderQuestion(
+  question: FormQuestion,
+  index: number,
+  totalQuestions: number,
+  activeStepIndex: number,
+  answers: Record<string, string>,
+): string {
+  const isCurrent = index === activeStepIndex;
 
   return `<article class="step" data-step="${index}" aria-hidden="${String(!isCurrent)}">
     <p class="step-count">Paso ${index + 1} de ${totalQuestions}</p>
     <h1 class="question-title">${escapeHtml(question.label)}</h1>
-    ${question.kind === "choice" ? renderOptions(question) : renderTextInput(question)}
+    ${question.kind === "choice" ? renderOptions(question, answers) : renderTextInput(question, answers)}
   </article>`;
 }
 
-function renderOptions(question: ChoiceQuestion): string {
+function renderOptions(question: ChoiceQuestion, answers: Record<string, string>): string {
+  const currentAnswer = answers[question.key];
+
   return `<div class="options">
     ${question.options
       .map(
         (option, index) => `<label class="option">
-          <input type="radio" name="${escapeHtml(question.key)}" value="${escapeHtml(option.key)}">
+          <input type="radio" name="${escapeHtml(question.key)}" value="${escapeHtml(option.key)}"${
+            currentAnswer === option.key ? " checked" : ""
+          }>
           <span class="option-index">${index + 1}</span>
           <span class="option-text">${escapeHtml(option.value)}</span>
         </label>`,
@@ -975,8 +1098,9 @@ function renderOptions(question: ChoiceQuestion): string {
   </div>`;
 }
 
-function renderTextInput(question: TextQuestion): string {
+function renderTextInput(question: TextQuestion, answers: Record<string, string>): string {
   const inputType = question.type === "PHONE" ? "tel" : "text";
+  const value = answers[question.key] ?? "";
 
   return `<input
     class="text-input"
@@ -984,6 +1108,7 @@ function renderTextInput(question: TextQuestion): string {
     name="${escapeHtml(question.key)}"
     autocomplete="${escapeHtml(question.autocomplete)}"
     inputmode="${escapeHtml(question.inputMode)}"
+    value="${escapeHtml(value)}"
   >`;
 }
 
