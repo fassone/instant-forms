@@ -373,6 +373,7 @@ export function renderFormPage(form: InstantForm): string {
           border: 0;
           border-radius: 0;
           box-shadow: none;
+          padding: calc(40px + env(safe-area-inset-top)) 24px calc(32px + env(safe-area-inset-bottom));
         }
 
         .brand {
@@ -389,10 +390,22 @@ export function renderFormPage(form: InstantForm): string {
 
         .actions {
           align-items: stretch;
+          flex-direction: column;
         }
 
         .button {
           flex: 1;
+          min-height: 58px;
+          padding: 0 24px;
+          font-size: 1.12rem;
+        }
+
+        .button-primary {
+          order: 1;
+        }
+
+        .button-secondary {
+          order: 2;
         }
       }
     </style>

@@ -166,6 +166,12 @@ describe("form rendering", () => {
     expect(html).toContain("min-width: 190px;");
     expect(html).toContain("font-size: 1.4rem;");
     expect(html).toContain("@media (max-width: 560px)");
+    expect(html).toContain("calc(40px + env(safe-area-inset-top)) 24px calc(32px + env(safe-area-inset-bottom))");
+    expect(html).toContain("flex-direction: column;");
+    expect(html).toContain("min-height: 58px;");
+    expect(html).toContain("font-size: 1.12rem;");
+    expect(html).toContain("order: 1;");
+    expect(html).toContain("order: 2;");
   });
 
   it("wires choice answers to delayed auto-advance on click and number keys", () => {
