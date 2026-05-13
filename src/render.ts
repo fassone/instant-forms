@@ -397,6 +397,22 @@ export function renderFormPage(form: InstantForm): string {
           padding: calc(40px + env(safe-area-inset-top)) 24px calc(32px + env(safe-area-inset-bottom));
         }
 
+        .form-panel:has(.text-input:focus) {
+          height: auto;
+          max-height: 100dvh;
+          grid-template-rows: auto auto auto auto;
+          align-content: start;
+          gap: 16px;
+        }
+
+        .shell:has(.text-input:focus) {
+          align-items: start;
+        }
+
+        .form-panel:has(.text-input:focus) .error:empty {
+          min-height: 0;
+        }
+
         .brand {
           align-items: flex-start;
         }
@@ -476,11 +492,14 @@ export function renderFormPage(form: InstantForm): string {
         const progressBar = document.getElementById("progress-bar");
         const backButton = document.getElementById("back-button");
         const nextButton = document.getElementById("next-button");
+        const actions = document.querySelector(".actions");
         const error = document.getElementById("form-error");
         const answers = {};
         let currentStep = 0;
         let isSubmitting = false;
         let autoAdvanceTimer;
+        let isActionPointerDown = false;
+        let focusedTextInput;
 
         function clearAutoAdvance() {
           if (autoAdvanceTimer) {
@@ -491,6 +510,7 @@ export function renderFormPage(form: InstantForm): string {
 
         function showStep(nextStep) {
           clearAutoAdvance();
+          focusedTextInput = undefined;
           currentStep = Math.max(0, Math.min(nextStep, steps.length - 1));
 
           steps.forEach((step, index) => {
@@ -502,11 +522,6 @@ export function renderFormPage(form: InstantForm): string {
           nextButton.textContent = currentStep === steps.length - 1 ? "Enviar" : "Siguiente";
           nextButton.disabled = isSubmitting;
           error.textContent = "";
-
-          const field = steps[currentStep].querySelector("input");
-          if (field) {
-            window.setTimeout(() => field.focus(), 0);
-          }
         }
 
         function getQuestion() {
@@ -632,6 +647,14 @@ export function renderFormPage(form: InstantForm): string {
           return value instanceof HTMLInputElement && value.type === "tel";
         }
 
+        function isTextInputElement(value) {
+          return value instanceof HTMLInputElement && value.classList.contains("text-input");
+        }
+
+        function isMobileViewport() {
+          return window.matchMedia("(max-width: 560px)").matches;
+        }
+
         function handlePhoneInput(input) {
           const formattedValue = formatUsPhoneForDisplay(input.value);
           if (formattedValue === input.value) {
@@ -665,6 +688,33 @@ export function renderFormPage(form: InstantForm): string {
 
           const inputData = event.data ?? "";
           return event.inputType === "insertFromPaste" || /[\\d()+.\\-\\s]/.test(inputData);
+        }
+
+        function shouldSubmitTextInputOnMobileBlur(event) {
+          const target = event.target;
+          if (!isMobileViewport() || !isTextInputElement(target) || isActionPointerDown || isSubmitting) {
+            return false;
+          }
+
+          if (!steps[currentStep].contains(target)) {
+            return false;
+          }
+
+          return true;
+        }
+
+        function shouldSubmitTextInputOnMobileOutsidePointer(event) {
+          const activeElement = isTextInputElement(document.activeElement) ? document.activeElement : focusedTextInput;
+          const target = event.target;
+          if (!isMobileViewport() || !isTextInputElement(activeElement) || isActionPointerDown || isSubmitting) {
+            return false;
+          }
+
+          if (!steps[currentStep].contains(activeElement) || !(target instanceof HTMLElement)) {
+            return false;
+          }
+
+          return target !== activeElement && !target.closest(".text-input") && !target.closest(".actions");
         }
 
         function advanceAfterChoiceSelection(answer) {
@@ -738,6 +788,26 @@ export function renderFormPage(form: InstantForm): string {
           showStep(currentStep - 1);
         });
 
+        if (actions) {
+          actions.addEventListener("pointerdown", () => {
+            isActionPointerDown = true;
+          });
+
+          ["pointerup", "pointercancel"].forEach((eventName) => {
+            window.addEventListener(eventName, () => {
+              window.setTimeout(() => {
+                isActionPointerDown = false;
+              }, 0);
+            });
+          });
+        }
+
+        document.addEventListener("pointerdown", (event) => {
+          if (shouldSubmitTextInputOnMobileOutsidePointer(event)) {
+            nextButton.click();
+          }
+        });
+
         form.addEventListener("beforeinput", (event) => {
           if (shouldBlockExtraPhoneInput(event)) {
             event.preventDefault();
@@ -746,11 +816,32 @@ export function renderFormPage(form: InstantForm): string {
 
         form.addEventListener("input", (event) => {
           const target = event.target;
+          if (isTextInputElement(target)) {
+            focusedTextInput = target;
+          }
+
           if (!isPhoneInputElement(target)) {
             return;
           }
 
           handlePhoneInput(target);
+        });
+
+        form.addEventListener("focusin", (event) => {
+          const target = event.target;
+          if (isTextInputElement(target)) {
+            focusedTextInput = target;
+          }
+        });
+
+        form.addEventListener("focusout", (event) => {
+          if (shouldSubmitTextInputOnMobileBlur(event)) {
+            nextButton.click();
+          }
+
+          if (event.target === focusedTextInput) {
+            focusedTextInput = undefined;
+          }
         });
 
         form.addEventListener("change", (event) => {
