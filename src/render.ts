@@ -837,7 +837,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
                 normalizeStateText(state.name).includes(" " + normalizedValue)
               );
             })
-            .slice(0, 4);
+            .slice(0, 3);
         }
 
         function updateStateSuggestions(input) {

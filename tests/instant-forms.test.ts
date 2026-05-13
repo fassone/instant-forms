@@ -640,6 +640,7 @@ describe("form rendering", () => {
     expect(html).toContain("data-state-suggestions");
     expect(html).toContain("function normalizeUsState(value)");
     expect(html).toContain("function getStateSuggestions(value)");
+    expect(html).toContain(".slice(0, 3);");
     expect(html).toContain("function updateStateSuggestions(input)");
     expect(html).toContain("isStateSuggestionPointerDown");
     expect(html).toContain("Ingrese un estado válido de Estados Unidos.");
