@@ -1,4 +1,6 @@
+import { isQuestionVisible } from "./forms";
 import type { ChoiceQuestion, FormQuestion, InstantForm } from "./forms";
+import { US_STATE_VALIDATION_MESSAGE, normalizeUsState } from "./us-states";
 
 export type AnswerMap = Record<string, string>;
 
@@ -68,6 +70,10 @@ export function validateSubmission(
   const answers: AnswerMap = {};
 
   for (const question of form.questions) {
+    if (!isQuestionVisible(question, answers)) {
+      continue;
+    }
+
     const rawAnswer = input.answers[question.key];
     const answer = typeof rawAnswer === "string" ? rawAnswer.trim() : "";
 
@@ -78,6 +84,21 @@ export function validateSubmission(
 
     if (question.kind === "choice") {
       validateChoiceQuestion(question, answer, answers, errors);
+      continue;
+    }
+
+    if (question.kind === "state") {
+      const normalizedState = normalizeUsState(answer);
+
+      if (!normalizedState) {
+        errors.push({
+          field: question.key,
+          message: US_STATE_VALIDATION_MESSAGE,
+        });
+        continue;
+      }
+
+      answers[question.key] = normalizedState;
       continue;
     }
 

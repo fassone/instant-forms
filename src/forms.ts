@@ -1,6 +1,11 @@
 export type FormStatus = "ACTIVE" | "INACTIVE";
 
-export type SourceQuestionType = "CUSTOM" | "FIRST_NAME" | "LAST_NAME" | "PHONE";
+export type SourceQuestionType = "CUSTOM" | "FIRST_NAME" | "LAST_NAME" | "PHONE" | "STATE";
+
+export type QuestionCondition = {
+  questionKey: string;
+  answer: string;
+};
 
 export type FormOption = {
   key: string;
@@ -12,6 +17,7 @@ type BaseQuestion = {
   slug: string;
   label: string;
   id: string;
+  showWhen?: QuestionCondition;
 };
 
 export type ChoiceQuestion = BaseQuestion & {
@@ -22,12 +28,19 @@ export type ChoiceQuestion = BaseQuestion & {
 
 export type TextQuestion = BaseQuestion & {
   kind: "text";
-  type: Exclude<SourceQuestionType, "CUSTOM">;
+  type: Exclude<SourceQuestionType, "CUSTOM" | "STATE">;
   autocomplete: string;
   inputMode: "text" | "tel";
 };
 
-export type FormQuestion = ChoiceQuestion | TextQuestion;
+export type StateQuestion = BaseQuestion & {
+  kind: "state";
+  type: "STATE";
+  autocomplete: string;
+  inputMode: "text";
+};
+
+export type FormQuestion = ChoiceQuestion | TextQuestion | StateQuestion;
 
 export type InstantForm = {
   id: string;
@@ -63,6 +76,20 @@ export const formsByState = {
         ],
         type: "CUSTOM",
         id: "1653615922583282",
+      },
+      {
+        kind: "state",
+        key: "residence_state",
+        slug: "estado-donde-vive",
+        label: "¿En qué estado vive?",
+        type: "STATE",
+        id: "residence_state",
+        autocomplete: "address-level1",
+        inputMode: "text",
+        showWhen: {
+          questionKey: "belongs_to_state",
+          answer: "no",
+        },
       },
       {
         kind: "choice",
@@ -164,6 +191,18 @@ export function getLegacyQuestionSlug(question: FormQuestion): string {
 
 export function getStepUrl(form: InstantForm, question: FormQuestion): string {
   return `/${form.stateCode}/${getQuestionSlug(question)}`;
+}
+
+export function isQuestionVisible(question: FormQuestion, answers: Record<string, string>): boolean {
+  if (!question.showWhen) {
+    return true;
+  }
+
+  return answers[question.showWhen.questionKey] === question.showWhen.answer;
+}
+
+export function getVisibleQuestions(form: InstantForm, answers: Record<string, string>): readonly FormQuestion[] {
+  return form.questions.filter((question) => isQuestionVisible(question, answers));
 }
 
 export function getQuestionIndexBySlug(form: InstantForm, slug: string): number {

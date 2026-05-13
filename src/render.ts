@@ -1,5 +1,11 @@
 import { getQuestionSlug, getStepUrl } from "./forms";
-import type { ChoiceQuestion, FormQuestion, InstantForm, TextQuestion } from "./forms";
+import type { ChoiceQuestion, FormQuestion, InstantForm, StateQuestion, TextQuestion } from "./forms";
+import { US_STATES } from "./us-states";
+
+type ClientQuestionCondition = {
+  questionKey: string;
+  answer: string;
+};
 
 type ClientQuestion =
   | {
@@ -7,6 +13,7 @@ type ClientQuestion =
       key: string;
       slug: string;
       url: string;
+      showWhen?: ClientQuestionCondition;
       options: readonly string[];
     }
   | {
@@ -14,7 +21,16 @@ type ClientQuestion =
       key: string;
       slug: string;
       url: string;
+      showWhen?: ClientQuestionCondition;
       type: TextQuestion["type"];
+    }
+  | {
+      kind: "state";
+      key: string;
+      slug: string;
+      url: string;
+      showWhen?: ClientQuestionCondition;
+      type: StateQuestion["type"];
     };
 
 type ClientFormConfig = {
@@ -22,6 +38,7 @@ type ClientFormConfig = {
   activeStepIndex: number;
   initialAnswers: Record<string, string>;
   questions: readonly ClientQuestion[];
+  usStates: typeof US_STATES;
 };
 
 export type RenderFormPageOptions = {
@@ -37,6 +54,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
     stateCode: form.stateCode,
     activeStepIndex,
     initialAnswers,
+    usStates: US_STATES,
     questions: form.questions.map((question) => {
       if (question.kind === "choice") {
         return {
@@ -44,7 +62,19 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           key: question.key,
           slug: getQuestionSlug(question),
           url: getStepUrl(form, question),
+          showWhen: question.showWhen,
           options: question.options.map((option) => option.key),
+        };
+      }
+
+      if (question.kind === "state") {
+        return {
+          kind: "state",
+          key: question.key,
+          slug: getQuestionSlug(question),
+          url: getStepUrl(form, question),
+          showWhen: question.showWhen,
+          type: question.type,
         };
       }
 
@@ -53,6 +83,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         key: question.key,
         slug: getQuestionSlug(question),
         url: getStepUrl(form, question),
+        showWhen: question.showWhen,
         type: question.type,
       };
     }),
@@ -267,6 +298,44 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
 
       .text-input:focus {
         border-color: var(--primary);
+      }
+
+      .state-field {
+        position: relative;
+      }
+
+      .state-suggestions {
+        display: grid;
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .state-suggestions[hidden] {
+        display: none;
+      }
+
+      .state-suggestion {
+        min-height: 48px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: #ffffff;
+        color: var(--text);
+        cursor: pointer;
+        font-weight: 800;
+        padding: 0 14px;
+        text-align: left;
+      }
+
+      .state-suggestion:focus-visible,
+      .state-suggestion:hover {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 4px rgba(6, 77, 246, 0.13);
+      }
+
+      .state-suggestion-code {
+        color: var(--brand-navy);
+        font-size: 0.85em;
+        margin-left: 6px;
       }
 
       .error {
@@ -516,6 +585,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         let isSubmitting = false;
         let autoAdvanceTimer;
         let isActionPointerDown = false;
+        let isStateSuggestionPointerDown = false;
         let focusedTextInput;
 
         function clearAutoAdvance() {
@@ -528,17 +598,79 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         function showStep(nextStep) {
           clearAutoAdvance();
           focusedTextInput = undefined;
-          currentStep = Math.max(0, Math.min(nextStep, steps.length - 1));
+          const visibleStepIndexes = getVisibleStepIndexes();
+          const fallbackStep = getResumeVisibleStepIndex();
+          const requestedStep = Math.max(0, Math.min(nextStep, steps.length - 1));
+          currentStep = visibleStepIndexes.includes(requestedStep) ? requestedStep : fallbackStep;
+          const currentVisiblePosition = getCurrentVisiblePosition();
+          const visibleStepCount = Math.max(visibleStepIndexes.length, 1);
 
           steps.forEach((step, index) => {
             step.setAttribute("aria-hidden", String(index !== currentStep));
           });
 
-          progressBar.style.width = ((currentStep + 1) / steps.length) * 100 + "%";
-          backButton.disabled = currentStep === 0 || isSubmitting;
-          nextButton.textContent = currentStep === steps.length - 1 ? "Enviar" : "Siguiente";
+          const stepCount = steps[currentStep].querySelector("[data-step-count]");
+          if (stepCount) {
+            stepCount.textContent = "Paso " + (currentVisiblePosition + 1) + " de " + visibleStepCount;
+          }
+
+          progressBar.style.width = ((currentVisiblePosition + 1) / visibleStepCount) * 100 + "%";
+          backButton.disabled = currentVisiblePosition === 0 || isSubmitting;
+          nextButton.textContent = isCurrentStepFinal() ? "Enviar" : "Siguiente";
           nextButton.disabled = isSubmitting;
           error.textContent = "";
+        }
+
+        function isQuestionVisible(question) {
+          if (!question.showWhen) {
+            return true;
+          }
+
+          return answers[question.showWhen.questionKey] === question.showWhen.answer;
+        }
+
+        function getVisibleStepIndexes() {
+          return config.questions
+            .map((question, index) => (isQuestionVisible(question) ? index : -1))
+            .filter((index) => index !== -1);
+        }
+
+        function getCurrentVisiblePosition() {
+          const visibleStepIndexes = getVisibleStepIndexes();
+          const visiblePosition = visibleStepIndexes.indexOf(currentStep);
+
+          return visiblePosition === -1 ? 0 : visiblePosition;
+        }
+
+        function getResumeVisibleStepIndex() {
+          const visibleStepIndexes = getVisibleStepIndexes();
+          const firstUnansweredStep = visibleStepIndexes.find((stepIndex) => {
+            const question = config.questions[stepIndex];
+
+            return question && !answers[question.key];
+          });
+
+          return firstUnansweredStep ?? visibleStepIndexes[visibleStepIndexes.length - 1] ?? 0;
+        }
+
+        function isCurrentStepFinal() {
+          const visibleStepIndexes = getVisibleStepIndexes();
+
+          return getCurrentVisiblePosition() === visibleStepIndexes.length - 1;
+        }
+
+        function getPreviousVisibleStepIndex() {
+          const visibleStepIndexes = getVisibleStepIndexes();
+          const previousStep = visibleStepIndexes[getCurrentVisiblePosition() - 1];
+
+          return previousStep ?? currentStep;
+        }
+
+        function getNextVisibleStepIndex() {
+          const visibleStepIndexes = getVisibleStepIndexes();
+          const nextStep = visibleStepIndexes[getCurrentVisiblePosition() + 1];
+
+          return nextStep ?? currentStep;
         }
 
         function getStepIndexForPath(pathname) {
@@ -592,6 +724,19 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
             return false;
           }
 
+          if (question.type === "STATE") {
+            const normalizedState = normalizeUsState(answer);
+
+            if (!normalizedState) {
+              error.textContent = "Ingrese un estado válido de Estados Unidos.";
+              return false;
+            }
+
+            answers[question.key] = normalizedState;
+            error.textContent = "";
+            return true;
+          }
+
           if (question.type === "PHONE") {
             const normalizedPhone = normalizeUsPhoneNumber(answer);
 
@@ -624,6 +769,9 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           }
 
           if (body.answers && typeof body.answers === "object") {
+            Object.keys(answers).forEach((key) => {
+              delete answers[key];
+            });
             Object.assign(answers, body.answers);
           }
 
@@ -635,6 +783,90 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           const answer = getCurrentAnswer();
 
           return saveCheckpoint(question.key, answer);
+        }
+
+        function normalizeUsState(value) {
+          const trimmedValue = value.trim();
+          if (!trimmedValue) {
+            return undefined;
+          }
+
+          const upperValue = trimmedValue.toUpperCase().replace(/\\./g, "");
+          const stateByCode = config.usStates.find((state) => state.code === upperValue);
+          if (stateByCode) {
+            return stateByCode.code;
+          }
+
+          const normalizedValue = normalizeStateText(trimmedValue);
+          const stateByName = config.usStates.find((state) => normalizeStateText(state.name) === normalizedValue);
+          if (stateByName) {
+            return stateByName.code;
+          }
+
+          if (["washington dc", "washington d c", "dc", "d c"].includes(normalizedValue)) {
+            return "DC";
+          }
+
+          return undefined;
+        }
+
+        function normalizeStateText(value) {
+          return value
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z\\s]/g, " ")
+            .replace(/\\s+/g, " ")
+            .trim();
+        }
+
+        function getStateSuggestions(value) {
+          const trimmedValue = value.trim();
+
+          if (!trimmedValue) {
+            return [];
+          }
+
+          const normalizedValue = normalizeStateText(trimmedValue);
+          const upperValue = trimmedValue.toUpperCase().replace(/\\./g, "");
+
+          return config.usStates
+            .filter((state) => {
+              return (
+                state.code.startsWith(upperValue) ||
+                normalizeStateText(state.name).startsWith(normalizedValue) ||
+                normalizeStateText(state.name).includes(" " + normalizedValue)
+              );
+            })
+            .slice(0, 4);
+        }
+
+        function updateStateSuggestions(input) {
+          const step = input.closest("[data-step]");
+          const suggestions = step ? step.querySelector("[data-state-suggestions]") : undefined;
+
+          if (!suggestions) {
+            return;
+          }
+
+          const suggestedStates = getStateSuggestions(input.value);
+          suggestions.replaceChildren(
+            ...suggestedStates.map((state) => {
+              const button = document.createElement("button");
+              button.className = "state-suggestion";
+              button.type = "button";
+              button.dataset.stateSuggestion = state.code;
+              button.dataset.stateName = state.name;
+              button.innerHTML =
+                "<span>" +
+                state.name +
+                "</span><span class=\\"state-suggestion-code\\">" +
+                state.code +
+                "</span>";
+
+              return button;
+            }),
+          );
+          suggestions.hidden = suggestedStates.length === 0;
         }
 
         function normalizeUsPhoneNumber(value) {
@@ -717,6 +949,10 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           return value instanceof HTMLInputElement && value.type === "tel";
         }
 
+        function isStateInputElement(value) {
+          return value instanceof HTMLInputElement && value.dataset.stateInput === "true";
+        }
+
         function isTextInputElement(value) {
           return value instanceof HTMLInputElement && value.classList.contains("text-input");
         }
@@ -762,7 +998,13 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
 
         function shouldSubmitTextInputOnMobileBlur(event) {
           const target = event.target;
-          if (!isMobileViewport() || !isTextInputElement(target) || isActionPointerDown || isSubmitting) {
+          if (
+            !isMobileViewport() ||
+            !isTextInputElement(target) ||
+            isActionPointerDown ||
+            isStateSuggestionPointerDown ||
+            isSubmitting
+          ) {
             return false;
           }
 
@@ -776,7 +1018,13 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         function shouldSubmitTextInputOnMobileOutsidePointer(event) {
           const activeElement = isTextInputElement(document.activeElement) ? document.activeElement : focusedTextInput;
           const target = event.target;
-          if (!isMobileViewport() || !isTextInputElement(activeElement) || isActionPointerDown || isSubmitting) {
+          if (
+            !isMobileViewport() ||
+            !isTextInputElement(activeElement) ||
+            isActionPointerDown ||
+            isStateSuggestionPointerDown ||
+            isSubmitting
+          ) {
             return false;
           }
 
@@ -784,7 +1032,12 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
             return false;
           }
 
-          return target !== activeElement && !target.closest(".text-input") && !target.closest(".actions");
+          return (
+            target !== activeElement &&
+            !target.closest(".text-input") &&
+            !target.closest(".actions") &&
+            !target.closest("[data-state-suggestions]")
+          );
         }
 
         function advanceAfterChoiceSelection(answer) {
@@ -809,12 +1062,12 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
               try {
                 const nextUrl = await saveCheckpoint(question.key, answer);
 
-                if (currentStep === steps.length - 1) {
+                if (isCurrentStepFinal()) {
                   await submitForm();
                   return;
                 }
 
-                navigateToUrl(nextUrl ?? config.questions[currentStep + 1].url);
+                navigateToUrl(nextUrl ?? config.questions[getNextVisibleStepIndex()].url);
               } catch (checkpointError) {
                 error.textContent =
                   checkpointError instanceof Error ? checkpointError.message : "No pudimos guardar esta respuesta.";
@@ -862,12 +1115,12 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           try {
             const nextUrl = await checkpointCurrentStep();
 
-            if (currentStep === steps.length - 1) {
+            if (isCurrentStepFinal()) {
               await submitForm();
               return;
             }
 
-            navigateToUrl(nextUrl ?? config.questions[currentStep + 1].url);
+            navigateToUrl(nextUrl ?? config.questions[getNextVisibleStepIndex()].url);
           } catch (checkpointError) {
             error.textContent =
               checkpointError instanceof Error ? checkpointError.message : "No pudimos guardar esta respuesta.";
@@ -880,7 +1133,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
 
         backButton.addEventListener("click", () => {
           clearAutoAdvance();
-          navigateToStep(currentStep - 1);
+          navigateToStep(getPreviousVisibleStepIndex());
         });
 
         if (actions) {
@@ -897,10 +1150,51 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           });
         }
 
+        form.addEventListener("pointerdown", (event) => {
+          const target = event.target;
+          if (target instanceof HTMLElement && target.closest("[data-state-suggestion]")) {
+            isStateSuggestionPointerDown = true;
+          }
+        });
+
+        ["pointerup", "pointercancel"].forEach((eventName) => {
+          window.addEventListener(eventName, () => {
+            window.setTimeout(() => {
+              isStateSuggestionPointerDown = false;
+            }, 0);
+          });
+        });
+
         document.addEventListener("pointerdown", (event) => {
           if (shouldSubmitTextInputOnMobileOutsidePointer(event)) {
             nextButton.click();
           }
+        });
+
+        form.addEventListener("click", (event) => {
+          const target = event.target;
+          if (!(target instanceof HTMLElement)) {
+            return;
+          }
+
+          const suggestion = target.closest("[data-state-suggestion]");
+          if (!(suggestion instanceof HTMLElement)) {
+            return;
+          }
+
+          const step = suggestion.closest("[data-step]");
+          const input = step ? step.querySelector("[data-state-input]") : undefined;
+          if (!(input instanceof HTMLInputElement)) {
+            return;
+          }
+
+          input.value = suggestion.dataset.stateName ?? suggestion.dataset.stateSuggestion ?? "";
+          const suggestions = step?.querySelector("[data-state-suggestions]");
+          if (suggestions instanceof HTMLElement) {
+            suggestions.hidden = true;
+          }
+
+          nextButton.click();
         });
 
         form.addEventListener("beforeinput", (event) => {
@@ -916,6 +1210,9 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           }
 
           if (!isPhoneInputElement(target)) {
+            if (isStateInputElement(target)) {
+              updateStateSuggestions(target);
+            }
             return;
           }
 
@@ -926,6 +1223,10 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           const target = event.target;
           if (isTextInputElement(target)) {
             focusedTextInput = target;
+          }
+
+          if (isStateInputElement(target)) {
+            updateStateSuggestions(target);
           }
         });
 
@@ -1074,9 +1375,15 @@ function renderQuestion(
   const isCurrent = index === activeStepIndex;
 
   return `<article class="step" data-step="${index}" aria-hidden="${String(!isCurrent)}">
-    <p class="step-count">Paso ${index + 1} de ${totalQuestions}</p>
+    <p class="step-count" data-step-count>Paso ${index + 1} de ${totalQuestions}</p>
     <h1 class="question-title">${escapeHtml(question.label)}</h1>
-    ${question.kind === "choice" ? renderOptions(question, answers) : renderTextInput(question, answers)}
+    ${
+      question.kind === "choice"
+        ? renderOptions(question, answers)
+        : question.kind === "state"
+          ? renderStateInput(question, answers)
+          : renderTextInput(question, answers)
+    }
   </article>`;
 }
 
@@ -1110,6 +1417,23 @@ function renderTextInput(question: TextQuestion, answers: Record<string, string>
     inputmode="${escapeHtml(question.inputMode)}"
     value="${escapeHtml(value)}"
   >`;
+}
+
+function renderStateInput(question: StateQuestion, answers: Record<string, string>): string {
+  const value = answers[question.key] ?? "";
+
+  return `<div class="state-field">
+    <input
+      class="text-input"
+      type="text"
+      name="${escapeHtml(question.key)}"
+      autocomplete="${escapeHtml(question.autocomplete)}"
+      inputmode="${escapeHtml(question.inputMode)}"
+      value="${escapeHtml(value)}"
+      data-state-input="true"
+    >
+    <div class="state-suggestions" data-state-suggestions hidden></div>
+  </div>`;
 }
 
 function serializeForScript(value: unknown): string {

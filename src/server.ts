@@ -7,6 +7,7 @@ import {
   decodeCheckpointAnswers,
   encodeCheckpointAnswers,
   getCheckpointCookieName,
+  getNextStepIndex,
   getResumeStepIndex,
   canAccessStep,
   sanitizeCheckpointAnswers,
@@ -19,6 +20,7 @@ import {
   getQuestionIndexByLegacySlug,
   getQuestionIndexBySlug,
   getStepUrl,
+  isQuestionVisible,
   type FormQuestion,
   type InstantForm,
 } from "./forms";
@@ -72,19 +74,24 @@ export function createApp(options: AppOptions = {}) {
       return jsonResponse(c, { ok: false, errors: [{ field: "questionKey", message: "Question is not available." }] }, 404);
     }
 
+    const answers = readCheckpointAnswers(c, form);
+
+    if (!isQuestionVisible(question, answers)) {
+      return jsonResponse(c, { ok: false, errors: [{ field: question.key, message: "Question is not available yet." }] }, 400);
+    }
+
     const validation = validateCheckpointAnswer(question, body.value.answer);
 
     if (!validation.ok) {
       return jsonResponse(c, { ok: false, errors: [{ field: question.key, message: validation.message }] }, 400);
     }
 
-    const answers = readCheckpointAnswers(c, form);
     answers[question.key] = validation.answer;
     const sanitizedAnswers = sanitizeCheckpointAnswers(form, answers);
     setCheckpointAnswers(c, form, sanitizedAnswers);
 
     const questionIndex = form.questions.findIndex((candidate) => candidate.key === question.key);
-    const nextIndex = questionIndex === -1 ? getResumeStepIndex(form, sanitizedAnswers) : Math.min(questionIndex + 1, form.questions.length - 1);
+    const nextIndex = questionIndex === -1 ? getResumeStepIndex(form, sanitizedAnswers) : getNextStepIndex(form, questionIndex, sanitizedAnswers);
     const nextQuestion = getQuestionAt(form, nextIndex);
 
     return jsonResponse(

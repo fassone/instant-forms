@@ -58,6 +58,7 @@ bun test
 │   ├── checkpoints.ts
 │   ├── render.ts
 │   ├── server.ts
+│   ├── us-states.ts
 │   └── validation.ts
 ├── tests
 │   └── instant-forms.test.ts
@@ -78,24 +79,26 @@ bun test
 
 ## Form Flow
 
-The Tennessee form asks one question per step. It does not gate or disqualify visitors; every visitor sees every question.
+The Tennessee form asks one question per step. It does not disqualify visitors; every visitor continues through the flow. If a visitor answers that they do not live in Tennessee, the form inserts one extra step asking which state they live in.
 
 Question order:
 
 1. `belongs_to_state`
-2. `has_license`
-3. `has_insurance`
-4. `is_clean_title`
-5. `number_of_registered_cars`
-6. `first_name`
-7. `last_name`
-8. `phone_number`
+2. `residence_state` when `belongs_to_state` is `no`
+3. `has_license`
+4. `has_insurance`
+5. `is_clean_title`
+6. `number_of_registered_cars`
+7. `first_name`
+8. `last_name`
+9. `phone_number`
 
 Contact labels are shown in Spanish: `Nombre`, `Apellido`, and `Número de teléfono`.
 
 Step URLs use explicit Spanish slugs while submissions and cookies keep the stable internal question keys:
 
 - `/tn/vive-en-tennessee`
+- `/tn/estado-donde-vive` when `belongs_to_state` is `no`
 - `/tn/tiene-licencia`
 - `/tn/tiene-seguro`
 - `/tn/titulo-limpio`
@@ -111,6 +114,8 @@ Visitors can use browser Back/Forward across steps. Direct URLs are guarded: a v
 Each valid partial answer is saved in an HttpOnly cookie named `instant_forms_<stateCode>_answers`, using a 7-day max age, `SameSite=Lax`, `Path=/`, and `Secure` on HTTPS. The cookie stores a base64url JSON answer map and is validated/sanitized on every request before it is used.
 
 Phone checkpoint values preserve the visitor's visible input, such as `+1 (615) 555-1234`, so refresh and resume can prefill naturally. Final submissions still normalize phone answers to E.164.
+
+Residence-state checkpoint values accept state names or codes, such as `Texas` or `TX`, and store the normalized two-letter code.
 
 ## Submissions
 
@@ -132,6 +137,8 @@ The client posts JSON to `POST /api/forms/tn/submissions`:
 ```
 
 Server validation requires all answers, checks choice answers against configured option keys, and accepts common US phone formats that can normalize to E.164, for example `+16155551234`.
+
+When `belongs_to_state` is `no`, submissions must include `residence_state`, normalized to a two-letter US state code. When `belongs_to_state` is `yes`, `residence_state` is ignored if present.
 
 Valid submissions are logged to the server console with:
 

@@ -1,4 +1,6 @@
+import { getVisibleQuestions, isQuestionVisible } from "./forms";
 import type { FormQuestion, InstantForm } from "./forms";
+import { US_STATE_VALIDATION_MESSAGE, normalizeUsState } from "./us-states";
 import { US_PHONE_VALIDATION_MESSAGE, normalizeUsPhoneNumber } from "./validation";
 
 export type CheckpointAnswers = Record<string, string>;
@@ -53,6 +55,10 @@ export function sanitizeCheckpointAnswers(form: InstantForm, input: unknown): Ch
   const answers: CheckpointAnswers = {};
 
   for (const question of form.questions) {
+    if (!isQuestionVisible(question, answers)) {
+      continue;
+    }
+
     const rawAnswer = input[question.key];
     const validation = validateCheckpointAnswer(question, rawAnswer);
 
@@ -81,6 +87,16 @@ export function validateCheckpointAnswer(question: FormQuestion, input: unknown)
     return { ok: true, answer };
   }
 
+  if (question.kind === "state") {
+    const normalizedState = normalizeUsState(answer);
+
+    if (!normalizedState) {
+      return { ok: false, message: US_STATE_VALIDATION_MESSAGE };
+    }
+
+    return { ok: true, answer: normalizedState };
+  }
+
   if (question.type === "PHONE") {
     const normalizedPhone = normalizeUsPhoneNumber(answer);
 
@@ -95,7 +111,13 @@ export function validateCheckpointAnswer(question: FormQuestion, input: unknown)
 }
 
 export function getFirstUnansweredStepIndex(form: InstantForm, answers: CheckpointAnswers): number | undefined {
-  const firstUnansweredIndex = form.questions.findIndex((question) => !answers[question.key]);
+  const firstUnansweredQuestion = getVisibleQuestions(form, answers).find((question) => !answers[question.key]);
+
+  if (!firstUnansweredQuestion) {
+    return undefined;
+  }
+
+  const firstUnansweredIndex = form.questions.findIndex((question) => question.key === firstUnansweredQuestion.key);
 
   return firstUnansweredIndex === -1 ? undefined : firstUnansweredIndex;
 }
@@ -107,17 +129,62 @@ export function getResumeStepIndex(form: InstantForm, answers: CheckpointAnswers
     return firstUnansweredIndex;
   }
 
-  return Math.max(0, form.questions.length - 1);
+  const visibleQuestions = getVisibleQuestions(form, answers);
+  const lastVisibleQuestion = visibleQuestions[visibleQuestions.length - 1];
+
+  if (!lastVisibleQuestion) {
+    return 0;
+  }
+
+  const lastVisibleIndex = form.questions.findIndex((question) => question.key === lastVisibleQuestion.key);
+
+  return lastVisibleIndex === -1 ? 0 : lastVisibleIndex;
 }
 
 export function canAccessStep(form: InstantForm, stepIndex: number, answers: CheckpointAnswers): boolean {
+  const stepQuestion = form.questions[stepIndex];
+
+  if (!stepQuestion || !isQuestionVisible(stepQuestion, answers)) {
+    return false;
+  }
+
+  const visibleQuestions = getVisibleQuestions(form, answers);
+  const requestedVisibleIndex = visibleQuestions.findIndex((question) => question.key === stepQuestion.key);
   const firstUnansweredIndex = getFirstUnansweredStepIndex(form, answers);
+
+  if (requestedVisibleIndex === -1) {
+    return false;
+  }
 
   if (firstUnansweredIndex === undefined) {
     return true;
   }
 
-  return stepIndex <= firstUnansweredIndex;
+  const firstUnansweredQuestion = form.questions[firstUnansweredIndex];
+  const firstUnansweredVisibleIndex = firstUnansweredQuestion
+    ? visibleQuestions.findIndex((question) => question.key === firstUnansweredQuestion.key)
+    : -1;
+
+  return firstUnansweredVisibleIndex !== -1 && requestedVisibleIndex <= firstUnansweredVisibleIndex;
+}
+
+export function getNextStepIndex(form: InstantForm, currentStepIndex: number, answers: CheckpointAnswers): number {
+  const currentQuestion = form.questions[currentStepIndex];
+  const visibleQuestions = getVisibleQuestions(form, answers);
+  const visibleQuestionIndex = currentQuestion
+    ? visibleQuestions.findIndex((question) => question.key === currentQuestion.key)
+    : -1;
+  const nextVisibleQuestion = visibleQuestions[visibleQuestionIndex + 1];
+
+  if (!nextVisibleQuestion) {
+    const resumeStepIndex = getResumeStepIndex(form, answers);
+
+    return resumeStepIndex;
+  }
+
+  const nextStepIndex = form.questions.findIndex((question) => question.key === nextVisibleQuestion.key);
+
+  return nextStepIndex === -1 ? getResumeStepIndex(form, answers) : nextStepIndex;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

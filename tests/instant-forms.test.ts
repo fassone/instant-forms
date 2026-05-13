@@ -3,6 +3,7 @@ import { encodeCheckpointAnswers, getCheckpointCookieName } from "../src/checkpo
 import { getFormByStateCode, getQuestionSlug } from "../src/forms";
 import { renderFormPage } from "../src/render";
 import { createFetchHandler } from "../src/server";
+import { normalizeUsState } from "../src/us-states";
 import { normalizeUsPhoneNumber, validateSubmission } from "../src/validation";
 
 const validAnswers = {
@@ -39,6 +40,7 @@ describe("form registry", () => {
 
     expect(form.questions.map((question) => getQuestionSlug(question))).toEqual([
       "vive-en-tennessee",
+      "estado-donde-vive",
       "tiene-licencia",
       "tiene-seguro",
       "titulo-limpio",
@@ -99,6 +101,65 @@ describe("submission validation", () => {
       expect(result.payload.formId).toBe("1011189481863371");
     }
   });
+
+  it("requires residence state only when the visitor does not live in Tennessee", () => {
+    const missingState = validateSubmission(form, { answers: { ...validAnswers, belongs_to_state: "no" } });
+    const invalidState = validateSubmission(form, {
+      answers: { ...validAnswers, belongs_to_state: "no", residence_state: "Not a state" },
+    });
+    const validNoPath = validateSubmission(
+      form,
+      { answers: { ...validAnswers, belongs_to_state: "no", residence_state: "Texas" } },
+      "2026-05-13T00:00:00.000Z",
+    );
+    const staleYesPath = validateSubmission(
+      form,
+      { answers: { ...validAnswers, belongs_to_state: "yes", residence_state: "Not a state" } },
+      "2026-05-13T00:00:00.000Z",
+    );
+
+    expect(missingState.ok).toBe(false);
+    if (!missingState.ok) {
+      expect(missingState.errors).toContainEqual({
+        field: "residence_state",
+        message: "This answer is required.",
+      });
+    }
+
+    expect(invalidState.ok).toBe(false);
+    if (!invalidState.ok) {
+      expect(invalidState.errors).toContainEqual({
+        field: "residence_state",
+        message: "Ingrese un estado válido de Estados Unidos.",
+      });
+    }
+
+    expect(validNoPath.ok).toBe(true);
+    if (validNoPath.ok) {
+      expect(validNoPath.payload.answers.residence_state).toBe("TX");
+    }
+
+    expect(staleYesPath.ok).toBe(true);
+    if (staleYesPath.ok) {
+      expect(staleYesPath.payload.answers.residence_state).toBeUndefined();
+    }
+  });
+});
+
+describe("US state normalization", () => {
+  it.each([
+    ["Texas", "TX"],
+    ["tx", "TX"],
+    ["New Mexico", "NM"],
+    ["District of Columbia", "DC"],
+    ["Washington D.C.", "DC"],
+  ])("normalizes %s to %s", (input, expected) => {
+    expect(normalizeUsState(input)).toBe(expected);
+  });
+
+  it.each(["", "Not a state", "Ontario"])("rejects %s", (input) => {
+    expect(normalizeUsState(input)).toBeUndefined();
+  });
 });
 
 describe("US phone normalization", () => {
@@ -158,6 +219,22 @@ describe("server routing", () => {
     expect(response.headers.get("Location")).toBe("/tn/tiene-seguro");
   });
 
+  it("redirects Tennessee to the residence-state step after a no answer", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(
+      new Request("http://localhost/tn", {
+        headers: {
+          Cookie: createCheckpointCookie({
+            belongs_to_state: "no",
+          }),
+        },
+      }),
+    );
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe("/tn/estado-donde-vive");
+  });
+
   it("sanitizes invalid checkpoint cookie answers before resuming", async () => {
     const handler = createFetchHandler();
     const response = await handler(
@@ -180,6 +257,32 @@ describe("server routing", () => {
 
     expect(response.status).toBe(302);
     expect(response.headers.get("Location")).toBe("/tn/vive-en-tennessee");
+  });
+
+  it("guards the residence-state step until Tennessee has been answered no", async () => {
+    const handler = createFetchHandler();
+    const noCookie = await handler(new Request("http://localhost/tn/estado-donde-vive"));
+    const yesCookie = await handler(
+      new Request("http://localhost/tn/estado-donde-vive", {
+        headers: {
+          Cookie: createCheckpointCookie({ belongs_to_state: "yes" }),
+        },
+      }),
+    );
+    const noWithoutResidence = await handler(
+      new Request("http://localhost/tn/tiene-licencia", {
+        headers: {
+          Cookie: createCheckpointCookie({ belongs_to_state: "no" }),
+        },
+      }),
+    );
+
+    expect(noCookie.status).toBe(302);
+    expect(noCookie.headers.get("Location")).toBe("/tn/vive-en-tennessee");
+    expect(yesCookie.status).toBe(302);
+    expect(yesCookie.headers.get("Location")).toBe("/tn/tiene-licencia");
+    expect(noWithoutResidence.status).toBe(302);
+    expect(noWithoutResidence.headers.get("Location")).toBe("/tn/estado-donde-vive");
   });
 
   it("redirects legacy English step slugs to Spanish step URLs", async () => {
@@ -252,6 +355,42 @@ describe("server routing", () => {
     expect(setCookie).toContain("Max-Age=604800");
   });
 
+  it("routes no Tennessee answers through the residence-state checkpoint", async () => {
+    const handler = createFetchHandler();
+    const noResponse = await handler(
+      new Request("http://localhost/api/forms/tn/checkpoints", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ questionKey: "belongs_to_state", answer: "no" }),
+      }),
+    );
+    const noBody = await noResponse.json();
+    const cookie = noResponse.headers.get("Set-Cookie")?.split(";")[0] ?? "";
+    const stateResponse = await handler(
+      new Request("http://localhost/api/forms/tn/checkpoints", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: cookie,
+        },
+        body: JSON.stringify({ questionKey: "residence_state", answer: "Texas" }),
+      }),
+    );
+    const stateBody = await stateResponse.json();
+
+    expect(noResponse.status).toBe(200);
+    expect(noBody).toMatchObject({ ok: true, nextUrl: "/tn/estado-donde-vive" });
+    expect(stateResponse.status).toBe(200);
+    expect(stateBody).toMatchObject({
+      ok: true,
+      nextUrl: "/tn/tiene-licencia",
+      answers: {
+        belongs_to_state: "no",
+        residence_state: "TX",
+      },
+    });
+  });
+
   it("marks checkpoint cookies secure when served over HTTPS", async () => {
     const handler = createFetchHandler();
     const response = await handler(
@@ -281,11 +420,32 @@ describe("server routing", () => {
         body: JSON.stringify({ questionKey: "phone_number", answer: "+52 55 1234 5678" }),
       }),
     );
+    const invalidState = await handler(
+      new Request("http://localhost/api/forms/tn/checkpoints", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: createCheckpointCookie({ belongs_to_state: "no" }),
+        },
+        body: JSON.stringify({ questionKey: "residence_state", answer: "Not a state" }),
+      }),
+    );
+    const hiddenState = await handler(
+      new Request("http://localhost/api/forms/tn/checkpoints", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ questionKey: "residence_state", answer: "Texas" }),
+      }),
+    );
 
     expect(invalidChoice.status).toBe(400);
     await expect(invalidChoice.text()).resolves.toContain("Answer is not a valid option.");
     expect(invalidPhone.status).toBe(400);
     await expect(invalidPhone.text()).resolves.toContain("Ingrese un número de teléfono válido de Estados Unidos.");
+    expect(invalidState.status).toBe(400);
+    await expect(invalidState.text()).resolves.toContain("Ingrese un estado válido de Estados Unidos.");
+    expect(hiddenState.status).toBe(400);
+    await expect(hiddenState.text()).resolves.toContain("Question is not available yet.");
   });
 
   it("prefills rendered fields from sanitized checkpoint cookies", async () => {
@@ -309,7 +469,7 @@ describe("server routing", () => {
     expect(response.status).toBe(200);
     expect(html).toContain('value="yes" checked');
     expect(html).toContain('value="Ana"');
-    expect(html).toContain('data-step="5" aria-hidden="false"');
+    expect(html).toContain('data-step="6" aria-hidden="false"');
   });
 
   it("accepts valid local submissions and logs the payload", async () => {
@@ -451,7 +611,10 @@ describe("form rendering", () => {
     expect(html).toContain('"activeStepIndex":0');
     expect(html).toContain('"initialAnswers":{}');
     expect(html).toContain('"slug":"vive-en-tennessee"');
+    expect(html).toContain('"slug":"estado-donde-vive"');
     expect(html).toContain('"url":"/tn/vive-en-tennessee"');
+    expect(html).toContain('"url":"/tn/estado-donde-vive"');
+    expect(html).toContain('"showWhen":{"questionKey":"belongs_to_state","answer":"no"}');
     expect(html).toContain("window.history.pushState");
     expect(html).toContain("window.history.replaceState");
     expect(html).toContain('window.addEventListener("popstate"');
@@ -468,6 +631,18 @@ describe("form rendering", () => {
     expect(html).toContain('data-step="1" aria-hidden="false"');
     expect(html).toContain('value="yes" checked');
     expect(html).toContain('"initialAnswers":{"belongs_to_state":"yes"}');
+  });
+
+  it("renders the mobile-friendly state autocomplete wiring", () => {
+    const html = renderFormPage(getRequiredTennesseeForm());
+
+    expect(html).toContain('data-state-input="true"');
+    expect(html).toContain("data-state-suggestions");
+    expect(html).toContain("function normalizeUsState(value)");
+    expect(html).toContain("function getStateSuggestions(value)");
+    expect(html).toContain("function updateStateSuggestions(input)");
+    expect(html).toContain("isStateSuggestionPointerDown");
+    expect(html).toContain("Ingrese un estado válido de Estados Unidos.");
   });
 });
 
