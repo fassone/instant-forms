@@ -553,60 +553,63 @@ export function renderFormPage(form: InstantForm): string {
         }
 
         function normalizeUsPhoneNumber(value) {
-          const digitsOnly = value.replace(/\\D/g, "");
-          const nationalNumber = digitsOnly.length === 11 && digitsOnly.startsWith("1")
-            ? digitsOnly.slice(1)
-            : digitsOnly;
-
-          if (nationalNumber.length !== 10) {
+          const parsedPhone = parseUsPhoneInput(value);
+          if (parsedPhone.kind !== "us" || parsedPhone.nationalDigits.length !== 10) {
             return undefined;
           }
 
-          return "+1" + nationalNumber;
+          return "+1" + parsedPhone.nationalDigits;
+        }
+
+        function parseUsPhoneInput(value) {
+          const trimmedValue = value.trim();
+          const digitsOnly = value.replace(/\\D/g, "");
+          const startsWithPlus = trimmedValue.startsWith("+");
+          const hasPlusUsPrefix = startsWithPlus && digitsOnly.startsWith("1");
+          const hasPlainUsPrefix = !startsWithPlus && trimmedValue.startsWith("1") && digitsOnly.startsWith("1");
+
+          if (startsWithPlus && digitsOnly.length > 0 && !hasPlusUsPrefix) {
+            return {
+              kind: "unsupported",
+              prefix: "",
+              nationalDigits: "",
+              digitsOnly,
+            };
+          }
+
+          const prefix = hasPlusUsPrefix ? "+1" : hasPlainUsPrefix ? "1" : "";
+          const nationalDigits = prefix ? digitsOnly.slice(1, 11) : digitsOnly.slice(0, 10);
+
+          return {
+            kind: "us",
+            prefix,
+            nationalDigits,
+            digitsOnly,
+          };
         }
 
         function isUnsupportedInternationalPhone(value) {
-          const trimmedValue = value.trim();
-          if (!trimmedValue.startsWith("+")) {
-            return false;
-          }
-
-          const digitsOnly = trimmedValue.replace(/\\D/g, "");
-          return digitsOnly.length > 0 && !digitsOnly.startsWith("1");
+          return parseUsPhoneInput(value).kind === "unsupported";
         }
 
         function formatUsPhoneForDisplay(value) {
-          if (isUnsupportedInternationalPhone(value)) {
+          const parsedPhone = parseUsPhoneInput(value);
+          if (parsedPhone.kind === "unsupported") {
             return value;
           }
 
           const trimmedValue = value.trim();
-          const digitsOnly = value.replace(/\\D/g, "");
-          if (trimmedValue.startsWith("+1") && digitsOnly.length <= 1) {
+          if (trimmedValue.startsWith("+") && parsedPhone.digitsOnly.length === 0) {
             return value;
           }
 
-          const normalizedPhone = normalizeUsPhoneNumber(value);
-          const nationalDigits = normalizedPhone
-            ? normalizedPhone.slice(2)
-            : getPartialUsPhoneDigits(value);
+          const formattedNationalPhone = formatNationalPhoneDigits(parsedPhone.nationalDigits);
 
-          return formatNationalPhoneDigits(nationalDigits);
-        }
-
-        function getPartialUsPhoneDigits(value) {
-          const trimmedValue = value.trim();
-          const digitsOnly = value.replace(/\\D/g, "");
-
-          if (trimmedValue.startsWith("+1") && digitsOnly.startsWith("1")) {
-            return digitsOnly.slice(1, 11);
+          if (!parsedPhone.prefix) {
+            return formattedNationalPhone;
           }
 
-          if (digitsOnly.length > 10 && digitsOnly.startsWith("1")) {
-            return digitsOnly.slice(1, 11);
-          }
-
-          return digitsOnly.slice(0, 10);
+          return formattedNationalPhone ? parsedPhone.prefix + " " + formattedNationalPhone : parsedPhone.prefix;
         }
 
         function formatNationalPhoneDigits(digits) {
@@ -641,7 +644,12 @@ export function renderFormPage(form: InstantForm): string {
 
         function shouldBlockExtraPhoneInput(event) {
           const target = event.target;
-          if (!isPhoneInputElement(target) || !normalizeUsPhoneNumber(target.value)) {
+          if (!isPhoneInputElement(target)) {
+            return false;
+          }
+
+          const parsedPhone = parseUsPhoneInput(target.value);
+          if (parsedPhone.kind !== "us" || parsedPhone.nationalDigits.length < 10) {
             return false;
           }
 
@@ -656,7 +664,7 @@ export function renderFormPage(form: InstantForm): string {
           }
 
           const inputData = event.data ?? "";
-          return /[\\d()+.\\-\\s]/.test(inputData);
+          return event.inputType === "insertFromPaste" || /[\\d()+.\\-\\s]/.test(inputData);
         }
 
         function advanceAfterChoiceSelection(answer) {

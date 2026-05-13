@@ -92,13 +92,15 @@ describe("US phone normalization", () => {
     ["615-555-1234", "+16155551234"],
     ["615.555.1234", "+16155551234"],
     ["+1 (615) 555-1234", "+16155551234"],
+    ["+16155551234", "+16155551234"],
     ["1 615 555 1234", "+16155551234"],
+    ["16155551234", "+16155551234"],
     ["1-615-555-1234", "+16155551234"],
   ])("normalizes %s to %s", (input, expected) => {
     expect(normalizeUsPhoneNumber(input)).toBe(expected);
   });
 
-  it.each(["615-555", "+1 615 555 12345", "+52 55 1234 5678", "", "not a phone"])(
+  it.each(["615-555", "1 615 555 123", "1615555123", "+1 615 555 12345", "+52 55 1234 5678", "", "not a phone"])(
     "rejects %s",
     (input) => {
       expect(normalizeUsPhoneNumber(input)).toBeUndefined();
@@ -146,11 +148,11 @@ describe("server routing", () => {
 });
 
 describe("form rendering", () => {
-  it("renders the logo, trust line, and brand theme tokens", () => {
+  it("renders the logo and brand theme tokens", () => {
     const html = renderFormPage(getRequiredTennesseeForm());
 
     expect(html).toContain('src="/assets/logo.webp"');
-    expect(html).toContain("Seguro para Latinos en Tennessee");
+    expect(html).not.toContain("Seguro para Latinos en Tennessee");
     expect(html).toContain("--brand-navy: #073b8e");
     expect(html).toContain("--brand-blue: #064df6");
     expect(html).toContain("--brand-pink: #f80057");
@@ -198,9 +200,13 @@ describe("form rendering", () => {
 
     expect(html).toContain('form.addEventListener("input"');
     expect(html).toContain('form.addEventListener("beforeinput"');
+    expect(html).toContain("function parseUsPhoneInput(value)");
     expect(html).toContain("function formatUsPhoneForDisplay(value)");
     expect(html).toContain("function isUnsupportedInternationalPhone(value)");
     expect(html).toContain("function shouldBlockExtraPhoneInput(event)");
+    expect(html).toContain('const prefix = hasPlusUsPrefix ? "+1" : hasPlainUsPrefix ? "1" : "";');
+    expect(html).toContain('parsedPhone.prefix + " " + formattedNationalPhone');
+    expect(html).toContain("parsedPhone.nationalDigits.length < 10");
     expect(html).toContain('type="tel"');
     expect(html).toContain('autocomplete="tel"');
     expect(html).not.toContain("maxlength=");
