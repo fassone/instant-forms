@@ -531,6 +531,7 @@ describe("form rendering", () => {
     expect(html).toContain("font-size: clamp(2rem, 4vw, 2.75rem);");
     expect(html).toContain("text-wrap: balance;");
     expect(html).toContain("@media (min-width: 561px)");
+    expect(html).toContain("height: 724px;");
     expect(html).toContain("min-height: 78px;");
     expect(html).toContain("min-height: 70px;");
     expect(html).toContain("min-width: 190px;");

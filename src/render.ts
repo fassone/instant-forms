@@ -413,6 +413,10 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
       }
 
       @media (min-width: 561px) {
+        .form-panel {
+          height: 724px;
+        }
+
         .options {
           gap: 16px;
         }
