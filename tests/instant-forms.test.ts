@@ -863,7 +863,34 @@ describe("form rendering", () => {
     expect(html).toContain("setMatchingBenefitText(elements, benefitTexts[0] ?? \"\", \"\", { initial: true })");
     expect(html).toContain("onTextShown: () =>");
     expect(html).toContain("triggerMatchingConfetti(elements.step)");
-    expect(html).toContain("confetti-pop");
+    expect(html).toContain("runCanvasConfetti(step.querySelector(\"[data-confetti-canvas]\"))");
+    expect(html).toContain("let confettiAnimationFrame;");
+    expect(html).toContain("let activeConfettiRunId = 0;");
+    expect(html).toContain("function clearCanvasConfetti()");
+    expect(html).toContain("window.cancelAnimationFrame(confettiAnimationFrame)");
+    expect(html).toContain("function runCanvasConfetti(canvas)");
+    expect(html).toContain('canvas.getContext("2d")');
+    expect(html).toContain("window.requestAnimationFrame(draw)");
+    expect(html).toContain("drawCanvasConfettiFrame(context, confettiPieces, centerX, centerY, bounds.width, bounds.height, 1, 0, 1)");
+    expect(html).toContain("function drawCanvasConfettiFrame(");
+    expect(html).toContain("function createCanvasConfettiPieces(width, height)");
+    expect(html).toContain("function drawCanvasConfettiPiece(context, piece, x, y, rotation, opacity)");
+    expect(html).toContain("function drawRoundedCanvasRect(context, x, y, width, height, radius)");
+    expect(html).toContain("context.fillRect");
+    expect(html).toContain("context.arc");
+    expect(html).toContain("const opacity = Math.min(burstProgress * 4, 1)");
+    expect(html).toContain("[-170, -110]");
+    expect(html).toContain("[158, 88]");
+    expect(html).toContain("keepWiggling ? 0.35 : 0");
+    expect(html).toContain("driftX: (Math.random() - 0.5) * 6");
+    expect(html).toContain("driftY: (Math.random() - 0.5) * 6");
+    expect(html).toContain("wiggleDuration: 1900 + Math.random() * 1200");
+    expect(html).toContain("drawRoundedCanvasRect(context");
+    expect(html).toContain("Math.sin((wiggleProgress / piece.wiggleDuration + piece.phase) * Math.PI * 2)");
+    expect(html).not.toContain("confetti-pop");
+    expect(html).not.toContain("confetti-float");
+    expect(html).not.toContain("confetti-piece-burst");
+    expect(html).not.toContain("confetti-chip-wiggle");
     expect(html).toContain('elements.status.textContent = ""');
     expect(html).toContain('question.kind === "interstitial" && answers[question.key] === question.seenAnswer');
     expect(html).toContain("function isStepAnswered(question)");
@@ -875,28 +902,14 @@ describe("form rendering", () => {
     expect(html).toContain('saveCheckpoint(question.key, question.completionAnswer)');
     expect(html).toContain('saveCheckpoint(question.key, question.seenAnswer)');
     expect(html).toContain("replaceToUrl(nextUrl ?? config.questions[getNextVisibleStepIndex()].url)");
-    expect(html).toContain("@media (prefers-reduced-motion: reduce)");
+    expect(html).not.toContain(".confetti-canvas {\n          display: none;");
     expect(html).toContain('nextButton.textContent = "Siguiente"');
     expect(html).not.toContain("matching-loader");
     expect(html).not.toContain("data-matching-retry");
     expect(html).not.toContain('.form-panel[data-active-kind="interstitial"] footer');
-    expect(html).toContain(".step.is-matching-success .confetti-piece");
-    expect(html).toContain(
-      "confetti-float var(--confetti-duration, 1900ms) ease-in-out var(--confetti-float-delay, 520ms) infinite alternate",
-    );
-    expect(html).toContain("--confetti-x: -170px");
-    expect(html).toContain("--confetti-y: -110px");
-    expect(html).toContain("--confetti-drift-x:");
-    expect(html).toContain("--confetti-drift-y:");
-    expect(html).toContain("--confetti-mid-x:");
-    expect(html).toContain("--confetti-mid-y:");
-    expect(html).toContain('data-shape="slash"');
-    expect(html).toContain('data-shape="dot"');
-    expect(html).toContain('data-shape="diamond"');
-    expect(html).toContain("--confetti-w:");
-    expect(html).toContain("--confetti-duration:");
-    expect(html).toContain("--confetti-delay:");
-    expect(html).toContain("--confetti-float-delay:");
+    expect(html).toContain("overflow: visible");
+    expect(html).toContain(".confetti-canvas");
+    expect(html).toContain('<canvas class="confetti-canvas" data-confetti-canvas></canvas>');
   });
 
   it("wires a forgiving US phone mask without blocking browser autofill", () => {

@@ -314,39 +314,17 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         position: absolute;
         inset: 0;
         z-index: 3;
+        overflow: visible;
         pointer-events: none;
       }
 
-      .confetti-piece {
+      .confetti-canvas {
         position: absolute;
-        top: 50%;
-        left: 50%;
-        width: var(--confetti-w, 12px);
-        height: var(--confetti-h, 6px);
-        border-radius: var(--confetti-radius, 999px);
-        opacity: 0;
-        box-shadow: 0 6px 14px rgba(7, 59, 142, 0.12);
-        transform: translate3d(-50%, -50%, 0) rotate(0deg);
-      }
-
-      .confetti-piece[data-shape="dot"] {
-        border-radius: 999px;
-      }
-
-      .confetti-piece[data-shape="slash"] {
-        border-radius: 999px;
-      }
-
-      .confetti-piece[data-shape="diamond"] {
-        border-radius: 3px;
-      }
-
-      .step.is-matching-success .confetti-piece {
-        opacity: 1;
-        transform: translate3d(var(--confetti-x, 0), var(--confetti-y, 0), 0) rotate(var(--confetti-r, 0deg));
-        animation:
-          confetti-pop 520ms cubic-bezier(0.16, 1, 0.3, 1) var(--confetti-delay, 0ms) both,
-          confetti-float var(--confetti-duration, 1900ms) ease-in-out var(--confetti-float-delay, 520ms) infinite alternate;
+        display: block;
+        inset: 0;
+        z-index: 1;
+        width: 100%;
+        height: 100%;
       }
 
       .options {
@@ -532,32 +510,6 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         line-height: 1.6;
       }
 
-      @keyframes confetti-float {
-        0% {
-          transform: translate3d(var(--confetti-x, 0), var(--confetti-y, 0), 0) rotate(var(--confetti-r, 0deg));
-        }
-
-        55% {
-          transform: translate3d(calc(var(--confetti-x, 0) + var(--confetti-mid-x, 0px)), calc(var(--confetti-y, 0) + var(--confetti-mid-y, 0px)), 0) rotate(calc(var(--confetti-r, 0deg) + 9deg));
-        }
-
-        to {
-          transform: translate3d(calc(var(--confetti-x, 0) + var(--confetti-drift-x, 0px)), calc(var(--confetti-y, 0) + var(--confetti-drift-y, 0px)), 0) rotate(calc(var(--confetti-r, 0deg) + 22deg));
-        }
-      }
-
-      @keyframes confetti-pop {
-        from {
-          opacity: 0;
-          transform: translate3d(-50%, -50%, 0) scale(0.5) rotate(0deg);
-        }
-
-        to {
-          opacity: 1;
-          transform: translate3d(var(--confetti-x, 0), var(--confetti-y, 0), 0) scale(1) rotate(var(--confetti-r, 0deg));
-        }
-      }
-
       @keyframes matching-benefit-fade-in {
         from {
           opacity: 0;
@@ -575,12 +527,6 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
 
         to {
           opacity: 0;
-        }
-      }
-
-      @media (prefers-reduced-motion: reduce) {
-        .step.is-matching-success .confetti-piece {
-          animation: none;
         }
       }
 
@@ -768,6 +714,8 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         let matchingTimers = [];
         let activeMatchingRunId = 0;
         let matchingTextTransitionId = 0;
+        let confettiAnimationFrame;
+        let activeConfettiRunId = 0;
         const completedMatchingSteps = new Set();
         let isActionPointerDown = false;
         let isStateSuggestionPointerDown = false;
@@ -783,6 +731,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         function clearMatchingTimers() {
           activeMatchingRunId += 1;
           matchingTextTransitionId += 1;
+          clearCanvasConfetti();
           matchingTimers.forEach((timer) => {
             window.clearTimeout(timer);
           });
@@ -796,6 +745,22 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           }, delay);
 
           matchingTimers.push(timer);
+        }
+
+        function clearCanvasConfetti() {
+          activeConfettiRunId += 1;
+
+          if (confettiAnimationFrame) {
+            window.cancelAnimationFrame(confettiAnimationFrame);
+            confettiAnimationFrame = undefined;
+          }
+
+          document.querySelectorAll("[data-confetti-canvas]").forEach((canvas) => {
+            const context = canvas.getContext ? canvas.getContext("2d") : undefined;
+            if (context) {
+              context.clearRect(0, 0, canvas.width, canvas.height);
+            }
+          });
         }
 
         function showStep(nextStep) {
@@ -1106,6 +1071,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
             step,
             status: step.querySelector("[data-matching-status]"),
             benefit: step.querySelector("[data-matching-benefit]"),
+            confettiCanvas: step.querySelector("[data-confetti-canvas]"),
           };
         }
 
@@ -1113,6 +1079,166 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           step.classList.remove("is-matching-success");
           void step.offsetWidth;
           step.classList.add("is-matching-success");
+          runCanvasConfetti(step.querySelector("[data-confetti-canvas]"));
+        }
+
+        function runCanvasConfetti(canvas) {
+          if (!(canvas instanceof HTMLCanvasElement)) {
+            return;
+          }
+
+          const context = canvas.getContext("2d");
+          const bounds = canvas.getBoundingClientRect();
+
+          if (!context || bounds.width === 0 || bounds.height === 0) {
+            return;
+          }
+
+          const runId = (activeConfettiRunId += 1);
+          const devicePixelRatioValue = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
+          canvas.width = Math.round(bounds.width * devicePixelRatioValue);
+          canvas.height = Math.round(bounds.height * devicePixelRatioValue);
+          context.setTransform(devicePixelRatioValue, 0, 0, devicePixelRatioValue, 0, 0);
+
+          const centerX = bounds.width / 2;
+          const centerY = bounds.height / 2;
+          const confettiPieces = createCanvasConfettiPieces(bounds.width, bounds.height);
+          const duration = 820;
+          const keepWiggling = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+          const startTime = window.performance.now();
+
+          drawCanvasConfettiFrame(context, confettiPieces, centerX, centerY, bounds.width, bounds.height, 1, 0, 1);
+
+          function draw(timestamp) {
+            if (runId !== activeConfettiRunId) {
+              return;
+            }
+
+            const elapsed = timestamp - startTime;
+            const burstProgress = Math.min(elapsed / duration, 1);
+            const wiggleProgress = Math.max(0, elapsed - duration);
+            drawCanvasConfettiFrame(
+              context,
+              confettiPieces,
+              centerX,
+              centerY,
+              bounds.width,
+              bounds.height,
+              burstProgress,
+              wiggleProgress,
+              keepWiggling ? 0.35 : 0,
+            );
+
+            if (keepWiggling || burstProgress < 1) {
+              confettiAnimationFrame = window.requestAnimationFrame(draw);
+            }
+          }
+
+          confettiAnimationFrame = window.requestAnimationFrame(draw);
+        }
+
+        function drawCanvasConfettiFrame(
+          context,
+          confettiPieces,
+          centerX,
+          centerY,
+          width,
+          height,
+          burstProgress,
+          wiggleProgress,
+          wiggleScale,
+        ) {
+          const easedProgress = 1 - Math.pow(1 - burstProgress, 3);
+          context.clearRect(0, 0, width, height);
+
+          confettiPieces.forEach((piece) => {
+            const wiggle = Math.sin((wiggleProgress / piece.wiggleDuration + piece.phase) * Math.PI * 2) * wiggleScale;
+            const x = centerX + piece.x * easedProgress + piece.driftX * wiggle;
+            const y = centerY + piece.y * easedProgress + piece.driftY * wiggle;
+            const rotation = piece.rotation * easedProgress + wiggle * 0.12;
+            const opacity = Math.min(burstProgress * 4, 1);
+
+            drawCanvasConfettiPiece(context, piece, x, y, rotation, opacity);
+          });
+        }
+
+        function createCanvasConfettiPieces(width, height) {
+          const colors = ["#064df6", "#f80057", "#073b8e", "#fff7df"];
+          const shapes = ["slash", "dot", "diamond"];
+          const pieces = [
+            [-170, -110],
+            [-130, -56],
+            [-92, -132],
+            [-54, -78],
+            [-18, -122],
+            [18, -92],
+            [54, -142],
+            [92, -68],
+            [130, -118],
+            [170, -48],
+            [-154, 16],
+            [-108, 86],
+            [-62, 42],
+            [-22, 118],
+            [24, 48],
+            [68, 104],
+            [116, 32],
+            [158, 88],
+          ];
+
+          return pieces.map(([x, y], index) => {
+            const size = index % 5 === 0 ? 1.18 : 1;
+
+            return {
+              color: colors[index % colors.length],
+              shape: shapes[index % shapes.length],
+              width: (index % 3 === 0 ? 18 : index % 3 === 1 ? 9 : 10) * size,
+              height: (index % 3 === 0 ? 6 : index % 3 === 1 ? 9 : 10) * size,
+              x,
+              y,
+              driftX: (Math.random() - 0.5) * 6,
+              driftY: (Math.random() - 0.5) * 6,
+              rotation: ((index % 2 === 0 ? 1 : -1) * (160 + index * 24) * Math.PI) / 180,
+              phase: Math.random(),
+              wiggleDuration: 1900 + Math.random() * 1200,
+            };
+          });
+        }
+
+        function drawCanvasConfettiPiece(context, piece, x, y, rotation, opacity) {
+          context.save();
+          context.globalAlpha = opacity;
+          context.fillStyle = piece.color;
+          context.translate(x, y);
+          context.rotate(rotation);
+
+          if (piece.shape === "dot") {
+            context.beginPath();
+            context.arc(0, 0, Math.max(piece.width, piece.height) / 2, 0, Math.PI * 2);
+            context.fill();
+          } else if (piece.shape === "diamond") {
+            context.rotate(Math.PI / 4);
+            context.fillRect(-piece.width / 2, -piece.height / 2, piece.width, piece.height);
+          } else {
+            drawRoundedCanvasRect(context, -piece.width / 2, -piece.height / 2, piece.width, piece.height, piece.height / 2);
+          }
+
+          context.restore();
+        }
+
+        function drawRoundedCanvasRect(context, x, y, width, height, radius) {
+          const safeRadius = Math.min(radius, width / 2, height / 2);
+          context.beginPath();
+          context.moveTo(x + safeRadius, y);
+          context.lineTo(x + width - safeRadius, y);
+          context.quadraticCurveTo(x + width, y, x + width, y + safeRadius);
+          context.lineTo(x + width, y + height - safeRadius);
+          context.quadraticCurveTo(x + width, y + height, x + width - safeRadius, y + height);
+          context.lineTo(x + safeRadius, y + height);
+          context.quadraticCurveTo(x, y + height, x, y + height - safeRadius);
+          context.lineTo(x, y + safeRadius);
+          context.quadraticCurveTo(x, y, x + safeRadius, y);
+          context.fill();
         }
 
         function applyMatchingBenefitText(elements, text, className, onTextShown) {
@@ -1916,56 +2042,9 @@ function renderInterstitial(question: InterstitialQuestion): string {
     <p class="matching-status" data-matching-status></p>
     <p class="matching-benefit" data-matching-benefit>${escapeHtml(question.benefits[0] ?? "")}</p>
     <div class="confetti" aria-hidden="true">
-      ${renderConfettiPieces()}
+      <canvas class="confetti-canvas" data-confetti-canvas></canvas>
     </div>
   </div>`;
-}
-
-function renderConfettiPieces(): string {
-  const colors = ["var(--brand-blue)", "var(--brand-pink)", "var(--brand-navy)", "var(--brand-cream)"];
-  const shapes = [
-    { name: "slash", width: 18, height: 6, radius: "999px" },
-    { name: "dot", width: 9, height: 9, radius: "999px" },
-    { name: "diamond", width: 10, height: 10, radius: "3px" },
-  ];
-  const pieces = [
-    [-170, -110],
-    [-130, -56],
-    [-92, -132],
-    [-54, -78],
-    [-18, -122],
-    [18, -92],
-    [54, -142],
-    [92, -68],
-    [130, -118],
-    [170, -48],
-    [-154, 16],
-    [-108, 86],
-    [-62, 42],
-    [-22, 118],
-    [24, 48],
-    [68, 104],
-    [116, 32],
-    [158, 88],
-  ];
-
-  return pieces
-    .map(([x, y], index) => {
-      const rotation = (index % 2 === 0 ? 1 : -1) * (160 + index * 24);
-      const delay = index * 38;
-      const color = colors[index % colors.length];
-      const shape = shapes[index % shapes.length] ?? shapes[0]!;
-      const driftX = index % 2 === 0 ? 8 : -8;
-      const driftY = index % 3 === 0 ? -7 : 7;
-      const midDriftX = Math.round(driftX * 0.55);
-      const midDriftY = Math.round(driftY * 0.55);
-      const duration = 1700 + (index % 4) * 180;
-      const scale = index % 5 === 0 ? 1.18 : 1;
-      const floatDelay = delay + 520;
-
-      return `<span class="confetti-piece" data-shape="${shape.name}" style="background: ${color}; --confetti-x: ${x}px; --confetti-y: ${y}px; --confetti-r: ${rotation}deg; --confetti-drift-x: ${driftX}px; --confetti-drift-y: ${driftY}px; --confetti-mid-x: ${midDriftX}px; --confetti-mid-y: ${midDriftY}px; --confetti-duration: ${duration}ms; --confetti-delay: ${delay}ms; --confetti-float-delay: ${floatDelay}ms; --confetti-w: ${shape.width * scale}px; --confetti-h: ${shape.height * scale}px; --confetti-radius: ${shape.radius};"></span>`;
-    })
-    .join("");
 }
 
 function renderOptions(question: ChoiceQuestion, answers: Record<string, string>): string {
