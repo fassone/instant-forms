@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { getFormByStateCode } from "../src/forms";
 import { renderFormPage } from "../src/render";
 import { createFetchHandler } from "../src/server";
-import { validateSubmission } from "../src/validation";
+import { normalizeUsPhoneNumber, validateSubmission } from "../src/validation";
 
 const validAnswers = {
   belongs_to_state: "yes",
@@ -61,28 +61,49 @@ describe("submission validation", () => {
     }
   });
 
-  it("rejects phone numbers that do not normalize to exactly 10 digits", () => {
+  it("rejects phone numbers that cannot normalize to one US number", () => {
     const result = validateSubmission(form, { answers: { ...validAnswers, phone_number: "615-555" } });
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.errors).toContainEqual({
         field: "phone_number",
-        message: "Phone number must contain exactly 10 digits.",
+        message: "Ingrese un número de teléfono válido de Estados Unidos.",
       });
     }
   });
 
-  it("accepts formatted US phone numbers and normalizes them", () => {
+  it("accepts formatted US phone numbers and normalizes them to E.164", () => {
     const result = validateSubmission(form, { answers: validAnswers }, "2026-05-13T00:00:00.000Z");
 
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.payload.answers.phone_number).toBe("6155551234");
+      expect(result.payload.answers.phone_number).toBe("+16155551234");
       expect(result.payload.stateCode).toBe("tn");
       expect(result.payload.formId).toBe("1011189481863371");
     }
   });
+});
+
+describe("US phone normalization", () => {
+  it.each([
+    ["6155551234", "+16155551234"],
+    ["(615) 555-1234", "+16155551234"],
+    ["615-555-1234", "+16155551234"],
+    ["615.555.1234", "+16155551234"],
+    ["+1 (615) 555-1234", "+16155551234"],
+    ["1 615 555 1234", "+16155551234"],
+    ["1-615-555-1234", "+16155551234"],
+  ])("normalizes %s to %s", (input, expected) => {
+    expect(normalizeUsPhoneNumber(input)).toBe(expected);
+  });
+
+  it.each(["615-555", "+1 615 555 12345", "+52 55 1234 5678", "", "not a phone"])(
+    "rejects %s",
+    (input) => {
+      expect(normalizeUsPhoneNumber(input)).toBeUndefined();
+    },
+  );
 });
 
 describe("server routing", () => {
@@ -120,6 +141,7 @@ describe("form rendering", () => {
     const html = renderFormPage(getRequiredTennesseeForm());
 
     expect(html).toContain("function advanceAfterChoiceSelection(answer)");
+    expect(html).toContain("function normalizeUsPhoneNumber(value)");
     expect(html).toContain('form.addEventListener("change"');
     expect(html).toContain("advanceAfterChoiceSelection(target.value)");
     expect(html).toContain("advanceAfterChoiceSelection(option.value)");

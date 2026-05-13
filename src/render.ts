@@ -435,14 +435,35 @@ export function renderFormPage(form: InstantForm): string {
             return false;
           }
 
-          if (question.type === "PHONE" && answer.replace(/\\D/g, "").length !== 10) {
-            error.textContent = "Ingrese un número de teléfono de 10 dígitos.";
-            return false;
+          if (question.type === "PHONE") {
+            const normalizedPhone = normalizeUsPhoneNumber(answer);
+
+            if (!normalizedPhone) {
+              error.textContent = "Ingrese un número de teléfono válido de Estados Unidos.";
+              return false;
+            }
+
+            answers[question.key] = normalizedPhone;
+            error.textContent = "";
+            return true;
           }
 
-          answers[question.key] = question.type === "PHONE" ? answer.replace(/\\D/g, "") : answer;
+          answers[question.key] = answer;
           error.textContent = "";
           return true;
+        }
+
+        function normalizeUsPhoneNumber(value) {
+          const digitsOnly = value.replace(/\\D/g, "");
+          const nationalNumber = digitsOnly.length === 11 && digitsOnly.startsWith("1")
+            ? digitsOnly.slice(1)
+            : digitsOnly;
+
+          if (nationalNumber.length !== 10) {
+            return undefined;
+          }
+
+          return "+1" + nationalNumber;
         }
 
         function advanceAfterChoiceSelection(answer) {

@@ -27,14 +27,17 @@ export type SubmissionValidationResult =
       errors: SubmissionValidationError[];
     };
 
+export const US_PHONE_VALIDATION_MESSAGE = "Ingrese un número de teléfono válido de Estados Unidos.";
+
 export function normalizeUsPhoneNumber(value: string): string | undefined {
   const digitsOnly = value.replace(/\D/g, "");
+  const nationalNumber = digitsOnly.length === 11 && digitsOnly.startsWith("1") ? digitsOnly.slice(1) : digitsOnly;
 
-  if (digitsOnly.length !== 10) {
+  if (nationalNumber.length !== 10) {
     return undefined;
   }
 
-  return digitsOnly;
+  return `+1${nationalNumber}`;
 }
 
 export function validateSubmission(
@@ -72,7 +75,7 @@ export function validateSubmission(
       if (!normalizedPhone) {
         errors.push({
           field: question.key,
-          message: "Phone number must contain exactly 10 digits.",
+          message: US_PHONE_VALIDATION_MESSAGE,
         });
         continue;
       }

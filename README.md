@@ -102,12 +102,12 @@ The client posts JSON to `POST /api/forms/tn/submissions`:
     "number_of_registered_cars": "1",
     "first_name": "Ana",
     "last_name": "Lopez",
-    "phone_number": "6155551234"
+    "phone_number": "+16155551234"
   }
 }
 ```
 
-Server validation requires all answers, checks choice answers against configured option keys, and requires phone numbers to normalize to exactly 10 digits.
+Server validation requires all answers, checks choice answers against configured option keys, and accepts common US phone formats that can normalize to E.164, for example `+16155551234`.
 
 Valid submissions are logged to the server console with:
 
