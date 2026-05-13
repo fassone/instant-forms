@@ -321,7 +321,7 @@ export function renderFormPage(form: InstantForm): string {
         line-height: 1.6;
       }
 
-      @media (min-width: 760px) {
+      @media (min-width: 561px) {
         .options {
           gap: 16px;
         }

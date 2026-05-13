@@ -160,11 +160,11 @@ describe("form rendering", () => {
   it("uses larger desktop controls while preserving mobile sizing rules", () => {
     const html = renderFormPage(getRequiredTennesseeForm());
 
-    expect(html).toContain("@media (min-width: 760px)");
+    expect(html).toContain("@media (min-width: 561px)");
     expect(html).toContain("min-height: 78px;");
     expect(html).toContain("min-height: 70px;");
     expect(html).toContain("min-width: 190px;");
-    expect(html).toContain("font-size: 1.24rem;");
+    expect(html).toContain("font-size: 1.4rem;");
     expect(html).toContain("@media (max-width: 560px)");
   });
 
