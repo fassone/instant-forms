@@ -77,6 +77,14 @@ export function validateCheckpointAnswer(question: FormQuestion, input: unknown)
     return { ok: false, message: "Esta respuesta es requerida." };
   }
 
+  if (question.kind === "interstitial") {
+    if (answer !== question.completionAnswer && answer !== question.seenAnswer) {
+      return { ok: false, message: "No pudimos completar este paso." };
+    }
+
+    return { ok: true, answer };
+  }
+
   if (question.kind === "choice") {
     const allowedOption = question.options.some((option) => option.key === answer);
 
@@ -111,7 +119,7 @@ export function validateCheckpointAnswer(question: FormQuestion, input: unknown)
 }
 
 export function getFirstUnansweredStepIndex(form: InstantForm, answers: CheckpointAnswers): number | undefined {
-  const firstUnansweredQuestion = getVisibleQuestions(form, answers).find((question) => !answers[question.key]);
+  const firstUnansweredQuestion = getVisibleQuestions(form, answers).find((question) => !isQuestionAnswered(question, answers));
 
   if (!firstUnansweredQuestion) {
     return undefined;
@@ -185,6 +193,20 @@ export function getNextStepIndex(form: InstantForm, currentStepIndex: number, an
   const nextStepIndex = form.questions.findIndex((question) => question.key === nextVisibleQuestion.key);
 
   return nextStepIndex === -1 ? getResumeStepIndex(form, answers) : nextStepIndex;
+}
+
+function isQuestionAnswered(question: FormQuestion, answers: CheckpointAnswers): boolean {
+  const answer = answers[question.key];
+
+  if (!answer) {
+    return false;
+  }
+
+  if (question.kind === "interstitial") {
+    return answer === question.seenAnswer;
+  }
+
+  return true;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

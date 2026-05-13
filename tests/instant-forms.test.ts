@@ -6,12 +6,26 @@ import { createFetchHandler } from "../src/server";
 import { normalizeUsState } from "../src/us-states";
 import { normalizeUsPhoneNumber, validateSubmission } from "../src/validation";
 
-const validAnswers = {
+const preContactAnswers = {
   belongs_to_state: "yes",
   has_license: "yes",
   has_insurance: "no",
   is_clean_title: "yes",
   number_of_registered_cars: "1",
+};
+
+const seenMatchingAnswers = {
+  ...preContactAnswers,
+  matching_offer: "seen",
+};
+
+const completedMatchingAnswers = {
+  ...preContactAnswers,
+  matching_offer: "completed",
+};
+
+const validAnswers = {
+  ...preContactAnswers,
   first_name: "Ana",
   last_name: "Lopez",
   phone_number: "(615) 555-1234",
@@ -45,6 +59,7 @@ describe("form registry", () => {
       "tiene-seguro",
       "titulo-limpio",
       "autos-a-asegurar",
+      "buscando-oferta",
       "nombre",
       "apellido",
       "telefono",
@@ -235,6 +250,94 @@ describe("server routing", () => {
     expect(response.headers.get("Location")).toBe("/tn/estado-donde-vive");
   });
 
+  it("redirects pre-contact visitors to the matching step before contact information", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(
+      new Request("http://localhost/tn", {
+        headers: {
+          Cookie: createCheckpointCookie(preContactAnswers),
+        },
+      }),
+    );
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe("/tn/buscando-oferta");
+  });
+
+  it("guards contact steps until the matching step has been seen", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(
+      new Request("http://localhost/tn/nombre", {
+        headers: {
+          Cookie: createCheckpointCookie(preContactAnswers),
+        },
+      }),
+    );
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe("/tn/buscando-oferta");
+  });
+
+  it("keeps completed-but-not-seen matching visitors on the matching step", async () => {
+    const handler = createFetchHandler();
+    const resumeResponse = await handler(
+      new Request("http://localhost/tn", {
+        headers: {
+          Cookie: createCheckpointCookie(completedMatchingAnswers),
+        },
+      }),
+    );
+    const contactResponse = await handler(
+      new Request("http://localhost/tn/nombre", {
+        headers: {
+          Cookie: createCheckpointCookie(completedMatchingAnswers),
+        },
+      }),
+    );
+    const matchingResponse = await handler(
+      new Request("http://localhost/tn/buscando-oferta", {
+        headers: {
+          Cookie: createCheckpointCookie(completedMatchingAnswers),
+        },
+      }),
+    );
+
+    expect(resumeResponse.status).toBe(302);
+    expect(resumeResponse.headers.get("Location")).toBe("/tn/buscando-oferta");
+    expect(contactResponse.status).toBe(302);
+    expect(contactResponse.headers.get("Location")).toBe("/tn/buscando-oferta");
+    expect(matchingResponse.status).toBe(200);
+    await expect(matchingResponse.text()).resolves.toContain('"matching_offer":"completed"');
+  });
+
+  it("allows contact steps after the matching checkpoint has been seen", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(
+      new Request("http://localhost/tn/nombre", {
+        headers: {
+          Cookie: createCheckpointCookie(seenMatchingAnswers),
+        },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.text()).resolves.toContain('data-step="7" data-step-kind="text" aria-hidden="false"');
+  });
+
+  it("redirects an already-seen matching step to the next contact step", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(
+      new Request("http://localhost/tn/buscando-oferta", {
+        headers: {
+          Cookie: createCheckpointCookie(seenMatchingAnswers),
+        },
+      }),
+    );
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe("/tn/nombre");
+  });
+
   it("sanitizes invalid checkpoint cookie answers before resuming", async () => {
     const handler = createFetchHandler();
     const response = await handler(
@@ -254,6 +357,14 @@ describe("server routing", () => {
   it("guards valid but too-forward step URLs", async () => {
     const handler = createFetchHandler();
     const response = await handler(new Request("http://localhost/tn/tiene-licencia"));
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe("/tn/vive-en-tennessee");
+  });
+
+  it("guards the matching step until prior questions are answered", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(new Request("http://localhost/tn/buscando-oferta"));
 
     expect(response.status).toBe(302);
     expect(response.headers.get("Location")).toBe("/tn/vive-en-tennessee");
@@ -355,6 +466,65 @@ describe("server routing", () => {
     expect(setCookie).toContain("Max-Age=604800");
   });
 
+  it("routes completed pre-contact answers through the matching checkpoint", async () => {
+    const handler = createFetchHandler();
+    const carsResponse = await handler(
+      new Request("http://localhost/api/forms/tn/checkpoints", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: createCheckpointCookie({
+            belongs_to_state: "yes",
+            has_license: "yes",
+            has_insurance: "no",
+            is_clean_title: "yes",
+          }),
+        },
+        body: JSON.stringify({ questionKey: "number_of_registered_cars", answer: "1" }),
+      }),
+    );
+    const carsBody = await carsResponse.json();
+    const cookie = carsResponse.headers.get("Set-Cookie")?.split(";")[0] ?? "";
+    const completedResponse = await handler(
+      new Request("http://localhost/api/forms/tn/checkpoints", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: cookie,
+        },
+        body: JSON.stringify({ questionKey: "matching_offer", answer: "completed" }),
+      }),
+    );
+    const completedBody = await completedResponse.json();
+    const completedCookie = completedResponse.headers.get("Set-Cookie")?.split(";")[0] ?? "";
+    const matchingResponse = await handler(
+      new Request("http://localhost/api/forms/tn/checkpoints", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: completedCookie,
+        },
+        body: JSON.stringify({ questionKey: "matching_offer", answer: "seen" }),
+      }),
+    );
+    const matchingBody = await matchingResponse.json();
+
+    expect(carsResponse.status).toBe(200);
+    expect(carsBody).toMatchObject({ ok: true, nextUrl: "/tn/buscando-oferta" });
+    expect(completedResponse.status).toBe(200);
+    expect(completedBody).toMatchObject({
+      ok: true,
+      nextUrl: "/tn/buscando-oferta",
+      answers: completedMatchingAnswers,
+    });
+    expect(matchingResponse.status).toBe(200);
+    expect(matchingBody).toMatchObject({
+      ok: true,
+      nextUrl: "/tn/nombre",
+      answers: seenMatchingAnswers,
+    });
+  });
+
   it("routes no Tennessee answers through the residence-state checkpoint", async () => {
     const handler = createFetchHandler();
     const noResponse = await handler(
@@ -437,6 +607,33 @@ describe("server routing", () => {
         body: JSON.stringify({ questionKey: "residence_state", answer: "Texas" }),
       }),
     );
+    const invalidMatching = await handler(
+      new Request("http://localhost/api/forms/tn/checkpoints", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: createCheckpointCookie(preContactAnswers),
+        },
+        body: JSON.stringify({ questionKey: "matching_offer", answer: "nope" }),
+      }),
+    );
+    const prematureSeenMatching = await handler(
+      new Request("http://localhost/api/forms/tn/checkpoints", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: createCheckpointCookie(preContactAnswers),
+        },
+        body: JSON.stringify({ questionKey: "matching_offer", answer: "seen" }),
+      }),
+    );
+    const tooEarlyMatching = await handler(
+      new Request("http://localhost/api/forms/tn/checkpoints", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ questionKey: "matching_offer", answer: "seen" }),
+      }),
+    );
 
     expect(invalidChoice.status).toBe(400);
     await expect(invalidChoice.text()).resolves.toContain("Answer is not a valid option.");
@@ -446,6 +643,12 @@ describe("server routing", () => {
     await expect(invalidState.text()).resolves.toContain("Ingrese un estado válido de Estados Unidos.");
     expect(hiddenState.status).toBe(400);
     await expect(hiddenState.text()).resolves.toContain("Question is not available yet.");
+    expect(invalidMatching.status).toBe(400);
+    await expect(invalidMatching.text()).resolves.toContain("No pudimos completar este paso.");
+    expect(prematureSeenMatching.status).toBe(400);
+    await expect(prematureSeenMatching.text()).resolves.toContain("Question is not complete yet.");
+    expect(tooEarlyMatching.status).toBe(400);
+    await expect(tooEarlyMatching.text()).resolves.toContain("Question is not available yet.");
   });
 
   it("prefills rendered fields from sanitized checkpoint cookies", async () => {
@@ -454,11 +657,7 @@ describe("server routing", () => {
       new Request("http://localhost/tn/nombre", {
         headers: {
           Cookie: createCheckpointCookie({
-            belongs_to_state: "yes",
-            has_license: "yes",
-            has_insurance: "no",
-            is_clean_title: "yes",
-            number_of_registered_cars: "1",
+            ...seenMatchingAnswers,
             first_name: "Ana",
           }),
         },
@@ -469,7 +668,7 @@ describe("server routing", () => {
     expect(response.status).toBe(200);
     expect(html).toContain('value="yes" checked');
     expect(html).toContain('value="Ana"');
-    expect(html).toContain('data-step="6" aria-hidden="false"');
+    expect(html).toContain('data-step="7" data-step-kind="text" aria-hidden="false"');
   });
 
   it("accepts valid local submissions and logs the payload", async () => {
@@ -479,7 +678,7 @@ describe("server routing", () => {
       new Request("http://localhost/api/forms/tn/submissions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ answers: validAnswers }),
+        body: JSON.stringify({ answers: { ...validAnswers, matching_offer: "seen" } }),
       }),
     );
 
@@ -490,6 +689,7 @@ describe("server routing", () => {
       formId: "1011189481863371",
       pageName: "Seguros Aseguranza",
     });
+    expect((loggedPayloads[0] as { answers?: Record<string, string> }).answers?.matching_offer).toBeUndefined();
   });
 
   it("clears the checkpoint cookie after a successful final submission", async () => {
@@ -572,6 +772,37 @@ describe("form rendering", () => {
     expect(html).toContain("}, 180);");
   });
 
+  it("renders the branded matching step with one-time auto-continue wiring", () => {
+    const html = renderFormPage(getRequiredTennesseeForm());
+
+    expect(html).toContain('"kind":"interstitial"');
+    expect(html).toContain('"slug":"buscando-oferta"');
+    expect(html).toContain('"url":"/tn/buscando-oferta"');
+    expect(html).toContain("Buscando opciones para ti...");
+    expect(html).toContain("Precio barato");
+    expect(html).toContain("Fácil, rápido y confiable");
+    expect(html).toContain("Atención en español");
+    expect(html).toContain("Cobertura en {{stateName}}");
+    expect(html).toContain("Encontramos una oferta para ti.");
+    expect(html).toContain("function getCoverageStateName()");
+    expect(html).toContain('answers.residence_state || config.stateCode');
+    expect(html).toContain("function runMatchingStep()");
+    expect(html).toContain("function isStepAnswered(question)");
+    expect(html).toContain("const completedMatchingSteps = new Set();");
+    expect(html).toContain("function completeMatchingStep(question, runId)");
+    expect(html).toContain("function replaceToUrl(url)");
+    expect(html).toContain("completedMatchingSteps.add(question.key)");
+    expect(html).toContain("!completedMatchingSteps.has(question.key)");
+    expect(html).toContain('saveCheckpoint(question.key, question.completionAnswer)');
+    expect(html).toContain('saveCheckpoint(question.key, question.seenAnswer)');
+    expect(html).toContain("replaceToUrl(nextUrl ?? config.questions[getNextVisibleStepIndex()].url)");
+    expect(html).toContain('window.matchMedia("(prefers-reduced-motion: reduce)").matches');
+    expect(html).toContain('nextButton.textContent = "Siguiente"');
+    expect(html).not.toContain("data-matching-retry");
+    expect(html).not.toContain('.form-panel[data-active-kind="interstitial"] footer');
+    expect(html).toContain(".step.is-matching-success .confetti-piece");
+  });
+
   it("wires a forgiving US phone mask without blocking browser autofill", () => {
     const html = renderFormPage(getRequiredTennesseeForm());
 
@@ -613,8 +844,10 @@ describe("form rendering", () => {
     expect(html).toContain('"initialAnswers":{}');
     expect(html).toContain('"slug":"vive-en-tennessee"');
     expect(html).toContain('"slug":"estado-donde-vive"');
+    expect(html).toContain('"slug":"buscando-oferta"');
     expect(html).toContain('"url":"/tn/vive-en-tennessee"');
     expect(html).toContain('"url":"/tn/estado-donde-vive"');
+    expect(html).toContain('"url":"/tn/buscando-oferta"');
     expect(html).toContain('"showWhen":{"questionKey":"belongs_to_state","answer":"no"}');
     expect(html).toContain("window.history.pushState");
     expect(html).toContain("window.history.replaceState");
@@ -628,8 +861,8 @@ describe("form rendering", () => {
       answers: { belongs_to_state: "yes" },
     });
 
-    expect(html).toContain('data-step="0" aria-hidden="true"');
-    expect(html).toContain('data-step="1" aria-hidden="false"');
+    expect(html).toContain('data-step="0" data-step-kind="choice" aria-hidden="true"');
+    expect(html).toContain('data-step="1" data-step-kind="state" aria-hidden="false"');
     expect(html).toContain('value="yes" checked');
     expect(html).toContain('"initialAnswers":{"belongs_to_state":"yes"}');
   });

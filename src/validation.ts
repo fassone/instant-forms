@@ -77,6 +77,10 @@ export function validateSubmission(
     const rawAnswer = input.answers[question.key];
     const answer = typeof rawAnswer === "string" ? rawAnswer.trim() : "";
 
+    if (question.kind === "interstitial") {
+      continue;
+    }
+
     if (answer.length === 0) {
       errors.push({ field: question.key, message: "This answer is required." });
       continue;

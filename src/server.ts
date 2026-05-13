@@ -75,6 +75,22 @@ export function createApp(options: AppOptions = {}) {
     }
 
     const answers = readCheckpointAnswers(c, form);
+    const questionIndex = form.questions.findIndex((candidate) => candidate.key === question.key);
+
+    if (question.kind === "interstitial" && (questionIndex === -1 || !canAccessStep(form, questionIndex, answers))) {
+      return jsonResponse(c, { ok: false, errors: [{ field: question.key, message: "Question is not available yet." }] }, 400);
+    }
+
+    const requestedAnswer = typeof body.value.answer === "string" ? body.value.answer.trim() : "";
+
+    if (
+      question.kind === "interstitial" &&
+      requestedAnswer === question.seenAnswer &&
+      answers[question.key] !== question.completionAnswer &&
+      answers[question.key] !== question.seenAnswer
+    ) {
+      return jsonResponse(c, { ok: false, errors: [{ field: question.key, message: "Question is not complete yet." }] }, 400);
+    }
 
     if (!isQuestionVisible(question, answers)) {
       return jsonResponse(c, { ok: false, errors: [{ field: question.key, message: "Question is not available yet." }] }, 400);
@@ -90,8 +106,12 @@ export function createApp(options: AppOptions = {}) {
     const sanitizedAnswers = sanitizeCheckpointAnswers(form, answers);
     setCheckpointAnswers(c, form, sanitizedAnswers);
 
-    const questionIndex = form.questions.findIndex((candidate) => candidate.key === question.key);
-    const nextIndex = questionIndex === -1 ? getResumeStepIndex(form, sanitizedAnswers) : getNextStepIndex(form, questionIndex, sanitizedAnswers);
+    const nextIndex =
+      question.kind === "interstitial" && validation.answer === question.completionAnswer
+        ? questionIndex
+        : questionIndex === -1
+          ? getResumeStepIndex(form, sanitizedAnswers)
+          : getNextStepIndex(form, questionIndex, sanitizedAnswers);
     const nextQuestion = getQuestionAt(form, nextIndex);
 
     return jsonResponse(
@@ -186,6 +206,14 @@ export function createApp(options: AppOptions = {}) {
       const resumeStep = getQuestionAt(form, getResumeStepIndex(form, answers));
 
       return c.redirect(getStepUrl(form, resumeStep), 302);
+    }
+
+    const requestedStep = getQuestionAt(form, stepIndex);
+
+    if (requestedStep.kind === "interstitial" && answers[requestedStep.key] === requestedStep.seenAnswer) {
+      const nextStep = getQuestionAt(form, getNextStepIndex(form, stepIndex, answers));
+
+      return c.redirect(getStepUrl(form, nextStep), 302);
     }
 
     return htmlResponse(

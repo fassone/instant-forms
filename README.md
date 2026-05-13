@@ -89,11 +89,12 @@ Question order:
 4. `has_insurance`
 5. `is_clean_title`
 6. `number_of_registered_cars`
-7. `first_name`
-8. `last_name`
-9. `phone_number`
+7. `matching_offer`
+8. `first_name`
+9. `last_name`
+10. `phone_number`
 
-Contact labels are shown in Spanish: `Nombre`, `Apellido`, and `Número de teléfono`.
+The `matching_offer` step is a checkpoint-only branded loading moment before contact information. It rotates short benefit lines, uses the visitor's real state in the coverage message, then unlocks the `Siguiente` button after the success message. Contact labels are shown in Spanish: `Nombre`, `Apellido`, and `Número de teléfono`.
 
 Step URLs use explicit Spanish slugs while submissions and cookies keep the stable internal question keys:
 
@@ -103,6 +104,7 @@ Step URLs use explicit Spanish slugs while submissions and cookies keep the stab
 - `/tn/tiene-seguro`
 - `/tn/titulo-limpio`
 - `/tn/autos-a-asegurar`
+- `/tn/buscando-oferta`
 - `/tn/nombre`
 - `/tn/apellido`
 - `/tn/telefono`
@@ -116,6 +118,8 @@ Each valid partial answer is saved in an HttpOnly cookie named `instant_forms_<s
 Phone checkpoint values preserve the visitor's visible input, such as `+1 (615) 555-1234`, so refresh and resume can prefill naturally. Final submissions still normalize phone answers to E.164.
 
 Residence-state checkpoint values accept state names or codes, such as `Texas` or `TX`, and store the normalized two-letter code.
+
+The matching step first stores `matching_offer: "completed"` when the loading transition finishes, so refreshes return to the success state instead of replaying the animation. It stores `matching_offer: "seen"` only when the visitor presses `Siguiente`, so contact steps remain guarded until that explicit click. It is omitted from final submission payloads.
 
 ## Submissions
 

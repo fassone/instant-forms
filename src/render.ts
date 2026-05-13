@@ -1,5 +1,5 @@
 import { getQuestionSlug, getStepUrl } from "./forms";
-import type { ChoiceQuestion, FormQuestion, InstantForm, StateQuestion, TextQuestion } from "./forms";
+import type { ChoiceQuestion, FormQuestion, InstantForm, InterstitialQuestion, StateQuestion, TextQuestion } from "./forms";
 import { US_STATES } from "./us-states";
 
 type ClientQuestionCondition = {
@@ -31,6 +31,19 @@ type ClientQuestion =
       url: string;
       showWhen?: ClientQuestionCondition;
       type: StateQuestion["type"];
+    }
+  | {
+      kind: "interstitial";
+      key: string;
+      slug: string;
+      url: string;
+      showWhen?: ClientQuestionCondition;
+      type: InterstitialQuestion["type"];
+      loadingLabel: string;
+      successLabel: string;
+      completionAnswer: InterstitialQuestion["completionAnswer"];
+      seenAnswer: InterstitialQuestion["seenAnswer"];
+      benefits: readonly string[];
     };
 
 type ClientFormConfig = {
@@ -75,6 +88,22 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           url: getStepUrl(form, question),
           showWhen: question.showWhen,
           type: question.type,
+        };
+      }
+
+      if (question.kind === "interstitial") {
+        return {
+          kind: "interstitial",
+          key: question.key,
+          slug: getQuestionSlug(question),
+          url: getStepUrl(form, question),
+          showWhen: question.showWhen,
+          type: question.type,
+          loadingLabel: question.loadingLabel,
+          successLabel: question.successLabel,
+          completionAnswer: question.completionAnswer,
+          seenAnswer: question.seenAnswer,
+          benefits: question.benefits,
         };
       }
 
@@ -227,6 +256,61 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         line-height: 1.02;
         letter-spacing: 0;
         text-wrap: balance;
+      }
+
+      .matching-content {
+        position: relative;
+        display: grid;
+        min-height: 300px;
+        place-items: center;
+        gap: 16px;
+        overflow: hidden;
+        text-align: center;
+      }
+
+      .matching-loader {
+        width: 58px;
+        height: 58px;
+        border: 6px solid #e5e9f7;
+        border-top-color: var(--brand-blue);
+        border-right-color: var(--brand-pink);
+        border-radius: 999px;
+        animation: matching-spin 900ms linear infinite;
+      }
+
+      .matching-status {
+        margin: 0;
+        color: var(--brand-navy);
+        font-size: clamp(1.2rem, 3vw, 1.65rem);
+        font-weight: 800;
+      }
+
+      .matching-benefit {
+        min-height: 1.4em;
+        margin: 0;
+        color: var(--accent);
+        font-size: clamp(1.45rem, 4vw, 2.2rem);
+        font-weight: 800;
+        line-height: 1.1;
+      }
+
+      .confetti {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+      }
+
+      .confetti-piece {
+        position: absolute;
+        top: 30%;
+        width: 8px;
+        height: 14px;
+        border-radius: 2px;
+        opacity: 0;
+      }
+
+      .step.is-matching-success .confetti-piece {
+        animation: confetti-fall 900ms ease-out forwards;
       }
 
       .options {
@@ -412,6 +496,38 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         line-height: 1.6;
       }
 
+      @keyframes matching-spin {
+        to {
+          transform: rotate(1turn);
+        }
+      }
+
+      @keyframes confetti-fall {
+        0% {
+          opacity: 0;
+          transform: translate3d(0, 0, 0) rotate(0deg);
+        }
+
+        14% {
+          opacity: 1;
+        }
+
+        100% {
+          opacity: 0;
+          transform: translate3d(var(--confetti-x, 0), var(--confetti-y, 140px), 0) rotate(var(--confetti-r, 180deg));
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .matching-loader {
+          animation: none;
+        }
+
+        .confetti {
+          display: none;
+        }
+      }
+
       @media (min-width: 561px) {
         .form-panel {
           height: 724px;
@@ -588,6 +704,9 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         let currentStep = config.activeStepIndex;
         let isSubmitting = false;
         let autoAdvanceTimer;
+        let matchingTimers = [];
+        let activeMatchingRunId = 0;
+        const completedMatchingSteps = new Set();
         let isActionPointerDown = false;
         let isStateSuggestionPointerDown = false;
         let focusedTextInput;
@@ -599,20 +718,41 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           }
         }
 
+        function clearMatchingTimers() {
+          activeMatchingRunId += 1;
+          matchingTimers.forEach((timer) => {
+            window.clearTimeout(timer);
+          });
+          matchingTimers = [];
+        }
+
+        function scheduleMatchingTimer(callback, delay) {
+          const timer = window.setTimeout(() => {
+            matchingTimers = matchingTimers.filter((candidate) => candidate !== timer);
+            callback();
+          }, delay);
+
+          matchingTimers.push(timer);
+        }
+
         function showStep(nextStep) {
           clearAutoAdvance();
+          clearMatchingTimers();
           focusedTextInput = undefined;
           const visibleStepIndexes = getVisibleStepIndexes();
           const fallbackStep = getResumeVisibleStepIndex();
           const requestedStep = Math.max(0, Math.min(nextStep, steps.length - 1));
           currentStep = visibleStepIndexes.includes(requestedStep) ? requestedStep : fallbackStep;
+          const question = getQuestion();
           const currentVisiblePosition = getCurrentVisiblePosition();
           const visibleStepCount = Math.max(visibleStepIndexes.length, 1);
 
           steps.forEach((step, index) => {
             step.setAttribute("aria-hidden", String(index !== currentStep));
+            step.classList.remove("is-matching-success");
           });
 
+          form.dataset.activeKind = question.kind;
           const stepCount = steps[currentStep].querySelector("[data-step-count]");
           if (stepCount) {
             stepCount.textContent = "Paso " + (currentVisiblePosition + 1) + " de " + visibleStepCount;
@@ -621,8 +761,17 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           progressBar.style.width = ((currentVisiblePosition + 1) / visibleStepCount) * 100 + "%";
           backButton.disabled = currentVisiblePosition === 0 || isSubmitting;
           nextButton.textContent = isCurrentStepFinal() ? "Enviar" : "Siguiente";
-          nextButton.disabled = isSubmitting;
+          nextButton.disabled =
+            isSubmitting ||
+            (question.kind === "interstitial" &&
+              answers[question.key] !== question.completionAnswer &&
+              answers[question.key] !== question.seenAnswer &&
+              !completedMatchingSteps.has(question.key));
           error.textContent = "";
+
+          if (question.kind === "interstitial") {
+            runMatchingStep();
+          }
         }
 
         function isQuestionVisible(question) {
@@ -651,10 +800,24 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           const firstUnansweredStep = visibleStepIndexes.find((stepIndex) => {
             const question = config.questions[stepIndex];
 
-            return question && !answers[question.key];
+            return question && !isStepAnswered(question);
           });
 
           return firstUnansweredStep ?? visibleStepIndexes[visibleStepIndexes.length - 1] ?? 0;
+        }
+
+        function isStepAnswered(question) {
+          const answer = answers[question.key];
+
+          if (!answer) {
+            return false;
+          }
+
+          if (question.kind === "interstitial") {
+            return answer === question.seenAnswer;
+          }
+
+          return true;
         }
 
         function isCurrentStepFinal() {
@@ -692,6 +855,17 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           }
         }
 
+        function replaceToStep(nextStep) {
+          const safeStep = Math.max(0, Math.min(nextStep, steps.length - 1));
+          const nextQuestion = config.questions[safeStep];
+
+          showStep(safeStep);
+
+          if (nextQuestion && window.location.pathname !== nextQuestion.url) {
+            window.history.replaceState({ step: safeStep }, "", nextQuestion.url);
+          }
+        }
+
         function navigateToUrl(url) {
           const stepIndex = config.questions.findIndex((question) => question.url === url);
 
@@ -703,12 +877,27 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           navigateToStep(stepIndex);
         }
 
+        function replaceToUrl(url) {
+          const stepIndex = config.questions.findIndex((question) => question.url === url);
+
+          if (stepIndex === -1) {
+            window.location.replace(url);
+            return;
+          }
+
+          replaceToStep(stepIndex);
+        }
+
         function getQuestion() {
           return config.questions[currentStep];
         }
 
         function getCurrentAnswer() {
           const question = getQuestion();
+
+          if (question.kind === "interstitial") {
+            return question.seenAnswer;
+          }
 
           if (question.kind === "choice") {
             const checked = steps[currentStep].querySelector("input[type='radio']:checked");
@@ -722,6 +911,10 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         function validateCurrentStep() {
           const question = getQuestion();
           const answer = getCurrentAnswer();
+
+          if (question.kind === "interstitial") {
+            return true;
+          }
 
           if (!answer) {
             error.textContent = "Esta respuesta es requerida.";
@@ -787,6 +980,123 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           const answer = getCurrentAnswer();
 
           return saveCheckpoint(question.key, answer);
+        }
+
+        function getCoverageStateName() {
+          const stateCode = String(answers.residence_state || config.stateCode).toUpperCase();
+          const state = config.usStates.find((candidate) => candidate.code === stateCode);
+
+          return state ? state.name : stateCode;
+        }
+
+        function formatMatchingBenefit(benefit) {
+          return benefit.replace("{{stateName}}", getCoverageStateName());
+        }
+
+        function getMatchingElements() {
+          const step = steps[currentStep];
+
+          return {
+            step,
+            status: step.querySelector("[data-matching-status]"),
+            benefit: step.querySelector("[data-matching-benefit]"),
+          };
+        }
+
+        function triggerMatchingConfetti(step) {
+          const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+          if (reducedMotion) {
+            return;
+          }
+
+          step.classList.remove("is-matching-success");
+          void step.offsetWidth;
+          step.classList.add("is-matching-success");
+        }
+
+        function runMatchingStep() {
+          const question = getQuestion();
+
+          if (question.kind !== "interstitial") {
+            return;
+          }
+
+          const runId = activeMatchingRunId;
+          const elements = getMatchingElements();
+
+          if (!elements.status || !elements.benefit) {
+            return;
+          }
+
+          const benefitTexts = question.benefits.map(formatMatchingBenefit);
+          elements.step.classList.remove("is-matching-success");
+          elements.status.textContent = question.loadingLabel;
+          elements.benefit.textContent = benefitTexts[0] ?? "";
+
+          if (answers[question.key] === question.seenAnswer) {
+            elements.status.textContent = question.successLabel;
+            elements.benefit.textContent = "";
+            scheduleMatchingTimer(() => {
+              if (runId !== activeMatchingRunId) {
+                return;
+              }
+
+              replaceToStep(getNextVisibleStepIndex());
+            }, 300);
+            return;
+          }
+
+          if (answers[question.key] === question.completionAnswer || completedMatchingSteps.has(question.key)) {
+            elements.status.textContent = question.successLabel;
+            elements.benefit.textContent = "";
+            return;
+          }
+
+          benefitTexts.slice(1).forEach((benefit, index) => {
+            scheduleMatchingTimer(() => {
+              if (runId !== activeMatchingRunId) {
+                return;
+              }
+
+              elements.benefit.textContent = benefit;
+            }, (index + 1) * 650);
+          });
+
+          scheduleMatchingTimer(() => {
+            if (runId !== activeMatchingRunId) {
+              return;
+            }
+
+            elements.status.textContent = question.successLabel;
+            elements.benefit.textContent = "";
+            triggerMatchingConfetti(elements.step);
+
+            scheduleMatchingTimer(() => {
+              void completeMatchingStep(question, runId);
+            }, 900);
+          }, Math.max(1, benefitTexts.length) * 650);
+        }
+
+        async function completeMatchingStep(question, runId) {
+          if (runId !== activeMatchingRunId) {
+            return;
+          }
+
+          try {
+            await saveCheckpoint(question.key, question.completionAnswer);
+          } catch (checkpointError) {
+            error.textContent =
+              checkpointError instanceof Error ? checkpointError.message : "No pudimos guardar este paso.";
+          }
+
+          if (runId !== activeMatchingRunId) {
+            return;
+          }
+
+          completedMatchingSteps.add(question.key);
+          nextButton.disabled = false;
+          nextButton.textContent = "Siguiente";
         }
 
         function normalizeUsState(value) {
@@ -1112,6 +1422,29 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         async function handleNext() {
           clearAutoAdvance();
 
+          const question = getQuestion();
+
+          if (question.kind === "interstitial" && answers[question.key] === question.seenAnswer) {
+            navigateToStep(getNextVisibleStepIndex());
+            return;
+          }
+
+          if (question.kind === "interstitial") {
+            if (answers[question.key] !== question.completionAnswer && !completedMatchingSteps.has(question.key)) {
+              return;
+            }
+
+            try {
+              const nextUrl = await saveCheckpoint(question.key, question.seenAnswer);
+
+              replaceToUrl(nextUrl ?? config.questions[getNextVisibleStepIndex()].url);
+            } catch (checkpointError) {
+              error.textContent =
+                checkpointError instanceof Error ? checkpointError.message : "No pudimos guardar este paso.";
+            }
+            return;
+          }
+
           if (!validateCurrentStep()) {
             return;
           }
@@ -1378,7 +1711,7 @@ function renderQuestion(
 ): string {
   const isCurrent = index === activeStepIndex;
 
-  return `<article class="step" data-step="${index}" aria-hidden="${String(!isCurrent)}">
+  return `<article class="step" data-step="${index}" data-step-kind="${escapeHtml(question.kind)}" aria-hidden="${String(!isCurrent)}">
     <p class="step-count" data-step-count>Paso ${index + 1} de ${totalQuestions}</p>
     <h1 class="question-title">${escapeHtml(question.label)}</h1>
     ${
@@ -1386,9 +1719,39 @@ function renderQuestion(
         ? renderOptions(question, answers)
         : question.kind === "state"
           ? renderStateInput(question, answers)
-          : renderTextInput(question, answers)
+          : question.kind === "interstitial"
+            ? renderInterstitial(question)
+            : renderTextInput(question, answers)
     }
   </article>`;
+}
+
+function renderInterstitial(question: InterstitialQuestion): string {
+  return `<div class="matching-content">
+    <div class="matching-loader" aria-hidden="true"></div>
+    <p class="matching-status" data-matching-status>${escapeHtml(question.loadingLabel)}</p>
+    <p class="matching-benefit" data-matching-benefit>${escapeHtml(question.benefits[0] ?? "")}</p>
+    <div class="confetti" aria-hidden="true">
+      ${renderConfettiPieces()}
+    </div>
+  </div>`;
+}
+
+function renderConfettiPieces(): string {
+  const colors = ["var(--brand-blue)", "var(--brand-pink)", "var(--brand-navy)", "var(--brand-cream)"];
+  const offsets = [-120, -86, -52, -18, 18, 52, 86, 120];
+
+  return offsets
+    .map((offset, index) => {
+      const left = 50 + offset / 4;
+      const y = 110 + (index % 3) * 26;
+      const rotation = (index % 2 === 0 ? 1 : -1) * (160 + index * 24);
+      const delay = index * 38;
+      const color = colors[index % colors.length];
+
+      return `<span class="confetti-piece" style="left: ${left}%; background: ${color}; --confetti-x: ${offset}px; --confetti-y: ${y}px; --confetti-r: ${rotation}deg; animation-delay: ${delay}ms;"></span>`;
+    })
+    .join("");
 }
 
 function renderOptions(question: ChoiceQuestion, answers: Record<string, string>): string {

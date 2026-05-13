@@ -1,6 +1,6 @@
 export type FormStatus = "ACTIVE" | "INACTIVE";
 
-export type SourceQuestionType = "CUSTOM" | "FIRST_NAME" | "LAST_NAME" | "PHONE" | "STATE";
+export type SourceQuestionType = "CUSTOM" | "FIRST_NAME" | "LAST_NAME" | "PHONE" | "STATE" | "INTERSTITIAL";
 
 export type QuestionCondition = {
   questionKey: string;
@@ -28,7 +28,7 @@ export type ChoiceQuestion = BaseQuestion & {
 
 export type TextQuestion = BaseQuestion & {
   kind: "text";
-  type: Exclude<SourceQuestionType, "CUSTOM" | "STATE">;
+  type: Exclude<SourceQuestionType, "CUSTOM" | "STATE" | "INTERSTITIAL">;
   autocomplete: string;
   inputMode: "text" | "tel";
 };
@@ -40,7 +40,17 @@ export type StateQuestion = BaseQuestion & {
   inputMode: "text";
 };
 
-export type FormQuestion = ChoiceQuestion | TextQuestion | StateQuestion;
+export type InterstitialQuestion = BaseQuestion & {
+  kind: "interstitial";
+  type: "INTERSTITIAL";
+  loadingLabel: string;
+  successLabel: string;
+  completionAnswer: "completed";
+  seenAnswer: "seen";
+  benefits: readonly string[];
+};
+
+export type FormQuestion = ChoiceQuestion | TextQuestion | StateQuestion | InterstitialQuestion;
 
 export type InstantForm = {
   id: string;
@@ -138,6 +148,24 @@ export const formsByState = {
         ],
         type: "CUSTOM",
         id: "1000790812295278",
+      },
+      {
+        kind: "interstitial",
+        key: "matching_offer",
+        slug: "buscando-oferta",
+        label: "Estamos buscando su oferta",
+        loadingLabel: "Buscando opciones para ti...",
+        successLabel: "Encontramos una oferta para ti.",
+        completionAnswer: "completed",
+        seenAnswer: "seen",
+        benefits: [
+          "Precio barato",
+          "Fácil, rápido y confiable",
+          "Atención en español",
+          "Cobertura en {{stateName}}",
+        ],
+        type: "INTERSTITIAL",
+        id: "matching_offer",
       },
       {
         kind: "text",
