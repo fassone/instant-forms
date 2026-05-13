@@ -16,6 +16,7 @@ import {
 import {
   getFormByStateCode,
   getQuestionByKey,
+  getQuestionIndexByLegacySlug,
   getQuestionIndexBySlug,
   getStepUrl,
   type FormQuestion,
@@ -153,7 +154,23 @@ export function createApp(options: AppOptions = {}) {
     const stepIndex = getQuestionIndexBySlug(form, stepSlug);
 
     if (stepIndex === -1) {
-      return htmlResponse(renderUnavailablePage(`${stateCode}/${stepSlug}`), 404);
+      const legacyStepIndex = getQuestionIndexByLegacySlug(form, stepSlug);
+
+      if (legacyStepIndex !== -1) {
+        const answers = readCheckpointAnswers(c, form);
+
+        if (!canAccessStep(form, legacyStepIndex, answers)) {
+          const resumeStep = getQuestionAt(form, getResumeStepIndex(form, answers));
+
+          return c.redirect(getStepUrl(form, resumeStep), 302);
+        }
+
+        const legacyStep = getQuestionAt(form, legacyStepIndex);
+
+        return c.redirect(getStepUrl(form, legacyStep), 302);
+      }
+
+      return c.redirect(`/${form.stateCode}`, 302);
     }
 
     const answers = readCheckpointAnswers(c, form);
@@ -170,6 +187,17 @@ export function createApp(options: AppOptions = {}) {
         answers,
       }),
     );
+  });
+
+  app.get("/:stateCode/*", (c) => {
+    const stateCode = c.req.param("stateCode");
+    const form = getFormByStateCode(stateCode);
+
+    if (!form) {
+      return htmlResponse(renderUnavailablePage(stateCode), 404);
+    }
+
+    return c.redirect(`/${form.stateCode}`, 302);
   });
 
   app.notFound(() => htmlResponse(renderUnavailablePage("esta ruta"), 404));

@@ -70,7 +70,8 @@ bun test
 |---|---|
 | `GET /` | Redirects to `/tn`. |
 | `GET /tn` | Redirects to the next unanswered Tennessee step. |
-| `GET /tn/:stepSlug` | Renders a specific guarded Tennessee step, for example `/tn/belongs-to-state`. |
+| `GET /tn/:stepSlug` | Renders a specific guarded Tennessee step, for example `/tn/vive-en-tennessee`. |
+| `GET /tn/*` | Redirects unknown paths under Tennessee back to `/tn`. |
 | `GET /:stateCode` | Redirects a matching state form or returns a Spanish unavailable page. |
 | `POST /api/forms/:stateCode/checkpoints` | Validates one answer, saves it to the checkpoint cookie, and returns the next allowed URL. |
 | `POST /api/forms/:stateCode/submissions` | Validates and logs completed submissions. |
@@ -92,18 +93,18 @@ Question order:
 
 Contact labels are shown in Spanish: `Nombre`, `Apellido`, and `Número de teléfono`.
 
-Step URLs are generated from question keys by replacing underscores with hyphens:
+Step URLs use explicit Spanish slugs while submissions and cookies keep the stable internal question keys:
 
-- `/tn/belongs-to-state`
-- `/tn/has-license`
-- `/tn/has-insurance`
-- `/tn/is-clean-title`
-- `/tn/number-of-registered-cars`
-- `/tn/first-name`
-- `/tn/last-name`
-- `/tn/phone-number`
+- `/tn/vive-en-tennessee`
+- `/tn/tiene-licencia`
+- `/tn/tiene-seguro`
+- `/tn/titulo-limpio`
+- `/tn/autos-a-asegurar`
+- `/tn/nombre`
+- `/tn/apellido`
+- `/tn/telefono`
 
-Visitors can use browser Back/Forward across steps. Direct URLs are guarded: a visitor cannot open a step beyond the first unanswered required question.
+Visitors can use browser Back/Forward across steps. Direct URLs are guarded: a visitor cannot open a step beyond the first unanswered required question. Legacy English slugs redirect to the Spanish URLs.
 
 ## Checkpoints
 
