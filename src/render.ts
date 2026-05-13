@@ -119,7 +119,7 @@ export function renderFormPage(form: InstantForm): string {
       }
 
       .brand-trust {
-        margin: 0;
+        margin-top: 4px;
         color: var(--brand-navy);
         font-size: 0.95rem;
         font-weight: 800;
@@ -169,11 +169,12 @@ export function renderFormPage(form: InstantForm): string {
       }
 
       .question-title {
-        max-width: 18ch;
+        max-width: 100%;
         margin: 0 0 28px;
-        font-size: clamp(2rem, 6vw, 4.1rem);
+        font-size: clamp(2rem, 4vw, 2.75rem);
         line-height: 1.02;
         letter-spacing: 0;
+        text-wrap: balance;
       }
 
       .options {
@@ -360,15 +361,35 @@ export function renderFormPage(form: InstantForm): string {
       }
 
       @media (max-width: 560px) {
+        html {
+          height: 100%;
+          background: var(--surface);
+          overscroll-behavior: none;
+        }
+
+        body {
+          position: fixed;
+          inset: 0;
+          width: 100%;
+          height: 100%;
+          overflow: hidden;
+          overscroll-behavior: none;
+          background: var(--surface);
+        }
+
         .shell {
           align-items: stretch;
+          height: 100dvh;
+          min-height: 0;
+          overflow: hidden;
           padding: 0;
         }
 
         .form-panel,
         .thanks,
         .unavailable {
-          min-height: 100vh;
+          height: 100dvh;
+          min-height: 0;
           width: 100%;
           border: 0;
           border-radius: 0;
@@ -386,6 +407,10 @@ export function renderFormPage(form: InstantForm): string {
 
         .question-title {
           max-width: 100%;
+        }
+
+        #steps {
+          min-height: 0;
         }
 
         .actions {
@@ -416,7 +441,7 @@ export function renderFormPage(form: InstantForm): string {
         <header class="brand">
           <div class="brand-identity">
             <img class="brand-logo" src="/assets/logo.webp" alt="${escapeHtml(form.page.name)}" width="220" height="63">
-            <p class="brand-trust">Seguro para Latinos en Tennessee</p>
+            
           </div>
           <span class="state-pill">${escapeHtml(form.stateCode)}</span>
         </header>
