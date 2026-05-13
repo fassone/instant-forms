@@ -397,19 +397,13 @@ export function renderFormPage(form: InstantForm): string {
           padding: calc(40px + env(safe-area-inset-top)) 24px calc(32px + env(safe-area-inset-bottom));
         }
 
-        .form-panel:has(.text-input:focus) {
-          height: auto;
-          max-height: 100dvh;
+        .form-panel:has(.step[aria-hidden="false"] .text-input) {
           grid-template-rows: auto auto auto auto;
           align-content: start;
-          gap: 16px;
+          overflow: hidden;
         }
 
-        .shell:has(.text-input:focus) {
-          align-items: start;
-        }
-
-        .form-panel:has(.text-input:focus) .error:empty {
+        .form-panel:has(.step[aria-hidden="false"] .text-input) .error:empty {
           min-height: 0;
         }
 

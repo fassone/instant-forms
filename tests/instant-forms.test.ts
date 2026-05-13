@@ -177,13 +177,14 @@ describe("form rendering", () => {
     expect(html).toContain("background: var(--surface);");
     expect(html).toContain("height: 100dvh;");
     expect(html).toContain("calc(40px + env(safe-area-inset-top)) 24px calc(32px + env(safe-area-inset-bottom))");
-    expect(html).toContain(".form-panel:has(.text-input:focus)");
-    expect(html).toContain("height: auto;");
-    expect(html).toContain("max-height: 100dvh;");
+    expect(html).toContain('.form-panel:has(.step[aria-hidden="false"] .text-input)');
     expect(html).toContain("grid-template-rows: auto auto auto auto;");
     expect(html).toContain("align-content: start;");
-    expect(html).toContain(".shell:has(.text-input:focus)");
     expect(html).toContain(".error:empty");
+    expect(html).not.toContain(".form-panel:has(.text-input:focus)");
+    expect(html).not.toContain(".form-panel:has(.text-input:focus) footer");
+    expect(html).not.toContain("transform: translateY(clamp(-160px, -18dvh, -96px));");
+    expect(html).not.toContain(".shell:has(.text-input:focus)");
     expect(html).toContain("flex-direction: column;");
     expect(html).toContain("min-height: 58px;");
     expect(html).toContain("font-size: 1.12rem;");
