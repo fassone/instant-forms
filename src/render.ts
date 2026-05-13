@@ -775,6 +775,10 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         }
 
         function isQuestionVisible(question) {
+          if (question.kind === "interstitial" && answers[question.key] === question.seenAnswer) {
+            return false;
+          }
+
           if (!question.showWhen) {
             return true;
           }
@@ -1618,6 +1622,11 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
 
           if (stepIndex !== -1) {
             showStep(stepIndex);
+            const currentQuestion = config.questions[currentStep];
+
+            if (currentQuestion && currentQuestion.url !== window.location.pathname) {
+              window.history.replaceState({ step: currentStep }, "", currentQuestion.url);
+            }
           }
         });
 

@@ -525,6 +525,30 @@ describe("server routing", () => {
     });
   });
 
+  it("skips the matching route from previous-step checkpoints after it has been seen", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(
+      new Request("http://localhost/api/forms/tn/checkpoints", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: createCheckpointCookie({
+            belongs_to_state: "yes",
+            has_license: "yes",
+            has_insurance: "no",
+            is_clean_title: "yes",
+            matching_offer: "seen",
+          }),
+        },
+        body: JSON.stringify({ questionKey: "number_of_registered_cars", answer: "1" }),
+      }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({ ok: true, nextUrl: "/tn/nombre" });
+  });
+
   it("routes no Tennessee answers through the residence-state checkpoint", async () => {
     const handler = createFetchHandler();
     const noResponse = await handler(
@@ -787,6 +811,7 @@ describe("form rendering", () => {
     expect(html).toContain("function getCoverageStateName()");
     expect(html).toContain('answers.residence_state || config.stateCode');
     expect(html).toContain("function runMatchingStep()");
+    expect(html).toContain('question.kind === "interstitial" && answers[question.key] === question.seenAnswer');
     expect(html).toContain("function isStepAnswered(question)");
     expect(html).toContain("const completedMatchingSteps = new Set();");
     expect(html).toContain("function completeMatchingStep(question, runId)");
@@ -853,6 +878,7 @@ describe("form rendering", () => {
     expect(html).toContain("window.history.replaceState");
     expect(html).toContain('window.addEventListener("popstate"');
     expect(html).toContain("getStepIndexForPath(window.location.pathname)");
+    expect(html).toContain("currentQuestion.url !== window.location.pathname");
   });
 
   it("renders the requested active step and saved answers", () => {

@@ -177,12 +177,12 @@ export function canAccessStep(form: InstantForm, stepIndex: number, answers: Che
 }
 
 export function getNextStepIndex(form: InstantForm, currentStepIndex: number, answers: CheckpointAnswers): number {
-  const currentQuestion = form.questions[currentStepIndex];
   const visibleQuestions = getVisibleQuestions(form, answers);
-  const visibleQuestionIndex = currentQuestion
-    ? visibleQuestions.findIndex((question) => question.key === currentQuestion.key)
-    : -1;
-  const nextVisibleQuestion = visibleQuestions[visibleQuestionIndex + 1];
+  const nextVisibleQuestion = visibleQuestions.find((question) => {
+    const questionIndex = form.questions.findIndex((candidate) => candidate.key === question.key);
+
+    return questionIndex > currentStepIndex;
+  });
 
   if (!nextVisibleQuestion) {
     const resumeStepIndex = getResumeStepIndex(form, answers);

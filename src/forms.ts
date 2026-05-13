@@ -222,6 +222,10 @@ export function getStepUrl(form: InstantForm, question: FormQuestion): string {
 }
 
 export function isQuestionVisible(question: FormQuestion, answers: Record<string, string>): boolean {
+  if (question.kind === "interstitial" && answers[question.key] === question.seenAnswer) {
+    return false;
+  }
+
   if (!question.showWhen) {
     return true;
   }

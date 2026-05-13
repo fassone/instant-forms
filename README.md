@@ -119,7 +119,7 @@ Phone checkpoint values preserve the visitor's visible input, such as `+1 (615) 
 
 Residence-state checkpoint values accept state names or codes, such as `Texas` or `TX`, and store the normalized two-letter code.
 
-The matching step first stores `matching_offer: "completed"` when the loading transition finishes, so refreshes return to the success state instead of replaying the animation. It stores `matching_offer: "seen"` only when the visitor presses `Siguiente`, so contact steps remain guarded until that explicit click. It is omitted from final submission payloads.
+The matching step first stores `matching_offer: "completed"` when the loading transition finishes, so refreshes return to the success state instead of replaying the animation. It stores `matching_offer: "seen"` only when the visitor presses `Siguiente`, so contact steps remain guarded until that explicit click. Once `seen` is saved, the matching route is removed from server and client step navigation, so Back/Next skip it. It is omitted from final submission payloads.
 
 ## Submissions
 
