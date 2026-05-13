@@ -49,6 +49,36 @@ export function createApp(options: AppOptions = {}) {
 
   app.get("/assets/logo.webp", () => assetResponse(Bun.file(logoAssetUrl), "image/webp"));
 
+  app.get("/__preview/:stateCode/buscando-oferta", (c) => {
+    const stateCode = c.req.param("stateCode");
+    const form = getFormByStateCode(stateCode);
+
+    if (!form) {
+      return htmlResponse(renderUnavailablePage(stateCode), 404);
+    }
+
+    const previewForm = getMatchingPreviewForm(form);
+
+    if (!previewForm) {
+      return htmlResponse(renderUnavailablePage(stateCode), 404);
+    }
+
+    const previewPath = `/__preview/${form.stateCode}/buscando-oferta`;
+
+    return htmlResponse(
+      renderFormPage(previewForm, {
+        activeStepIndex: 0,
+        answers: {},
+        previewMode: true,
+        stepUrlOverrides: {
+          matching_offer: previewPath,
+        },
+      }),
+      200,
+      "no-store",
+    );
+  });
+
   app.post("/api/forms/:stateCode/checkpoints", async (c) => {
     const stateCode = c.req.param("stateCode");
     const form = getFormByStateCode(stateCode);
@@ -286,12 +316,25 @@ function getQuestionAt(form: InstantForm, index: number): FormQuestion {
   return question;
 }
 
-function htmlResponse(body: string, status = 200): Response {
+function getMatchingPreviewForm(form: InstantForm): InstantForm | undefined {
+  const matchingStep = form.questions.find((question) => question.kind === "interstitial" && question.key === "matching_offer");
+
+  if (!matchingStep) {
+    return undefined;
+  }
+
+  return {
+    ...form,
+    questions: [matchingStep],
+  };
+}
+
+function htmlResponse(body: string, status = 200, cacheControl = "public, max-age=300"): Response {
   return new Response(body, {
     status,
     headers: {
       "Content-Type": "text/html; charset=utf-8",
-      "Cache-Control": "public, max-age=300",
+      "Cache-Control": cacheControl,
     },
   });
 }

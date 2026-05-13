@@ -73,6 +73,7 @@ bun test
 | `GET /tn` | Redirects to the next unanswered Tennessee step. |
 | `GET /tn/:stepSlug` | Renders a specific guarded Tennessee step, for example `/tn/vive-en-tennessee`. |
 | `GET /tn/*` | Redirects unknown paths under Tennessee back to `/tn`. |
+| `GET /__preview/tn/buscando-oferta` | Local no-store preview for iterating on the matching transition. |
 | `GET /:stateCode` | Redirects a matching state form or returns a Spanish unavailable page. |
 | `POST /api/forms/:stateCode/checkpoints` | Validates one answer, saves it to the checkpoint cookie, and returns the next allowed URL. |
 | `POST /api/forms/:stateCode/submissions` | Validates and logs completed submissions. |

@@ -154,7 +154,7 @@ export const formsByState = {
         key: "matching_offer",
         slug: "buscando-oferta",
         label: "Estamos buscando su oferta",
-        loadingLabel: "Buscando opciones para ti...",
+        loadingLabel: "",
         successLabel: "Encontramos una oferta para ti.",
         completionAnswer: "completed",
         seenAnswer: "seen",

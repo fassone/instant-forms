@@ -437,6 +437,23 @@ describe("server routing", () => {
     expect(response.headers.get("Cache-Control")).toBe("public, max-age=31536000, immutable");
   });
 
+  it("serves a no-store matching preview route without the full form flow", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(new Request("http://localhost/__preview/tn/buscando-oferta"));
+    const html = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(html).toContain('"previewMode":true');
+    expect(html).toContain('"url":"/__preview/tn/buscando-oferta"');
+    expect(html).toContain(".matching-status:empty");
+    expect(html).toContain('data-matching-status></p>');
+    expect(html).toContain("Encontramos una oferta para ti.");
+    expect(html).toContain('data-step="0" data-step-kind="interstitial" aria-hidden="false"');
+    expect(html).not.toContain("¿Usted vive en Tennessee?");
+    expect(html).not.toContain('"slug":"nombre"');
+  });
+
   it("returns an unavailable page for unsupported state codes", async () => {
     const handler = createFetchHandler();
     const response = await handler(new Request("http://localhost/ga"));
@@ -802,7 +819,7 @@ describe("form rendering", () => {
     expect(html).toContain('"kind":"interstitial"');
     expect(html).toContain('"slug":"buscando-oferta"');
     expect(html).toContain('"url":"/tn/buscando-oferta"');
-    expect(html).toContain("Buscando opciones para ti...");
+    expect(html).not.toContain("Buscando opciones para ti...");
     expect(html).toContain("Precio barato");
     expect(html).toContain("Fácil, rápido y confiable");
     expect(html).toContain("Atención en español");
@@ -811,6 +828,43 @@ describe("form rendering", () => {
     expect(html).toContain("function getCoverageStateName()");
     expect(html).toContain('answers.residence_state || config.stateCode');
     expect(html).toContain("function runMatchingStep()");
+    expect(html).toContain("function showMatchingSuccess(question, elements)");
+    expect(html).toContain("let matchingTextTransitionId = 0;");
+    expect(html).toContain("matchingTextTransitionId += 1;");
+    expect(html).toContain("function applyMatchingBenefitText(elements, text, className, onTextShown)");
+    expect(html).toContain("function fadeMatchingBenefitIn(elements, transitionId)");
+    expect(html).toContain("function setMatchingBenefitText(elements, text, className, options = {})");
+    expect(html).toContain('setMatchingBenefitText(elements, question.successLabel, "is-success", {');
+    expect(html).toContain('elements.benefit.classList.add(className)');
+    expect(html).toContain("matchingBenefitFadeOutMs = 300");
+    expect(html).toContain("matchingBenefitFadeInMs = 420");
+    expect(html).toContain("matchingBenefitDisplayMs = 1000");
+    expect(html).toContain("matchingBenefitMinCount = 2");
+    expect(html).toContain("matchingBenefitMaxCount = 3");
+    expect(html).toContain("function shuffleMatchingBenefits(benefits)");
+    expect(html).toContain("Math.floor(Math.random() * (index + 1))");
+    expect(html).toContain("function getRandomMatchingBenefitCount(availableBenefitCount)");
+    expect(html).toContain("Math.random() * (maxBenefitCount - minBenefitCount + 1)");
+    expect(html).toContain("function getMatchingBenefitSequence(benefits)");
+    expect(html).toContain("return shuffledBenefits.slice(0, getRandomMatchingBenefitCount(shuffledBenefits.length))");
+    expect(html).toContain("const benefitTexts = getMatchingBenefitSequence(question.benefits.map(formatMatchingBenefit))");
+    expect(html).toContain("(index + 1) * matchingBenefitDisplayMs");
+    expect(html).toContain("const successDelay = Math.max(1, benefitTexts.length) * matchingBenefitDisplayMs");
+    expect(html).toContain("is-fading-out");
+    expect(html).toContain("is-fading-in");
+    expect(html).toContain("is-visible");
+    expect(html).toContain("matching-benefit-fade-out 300ms ease forwards");
+    expect(html).toContain("matching-benefit-fade-in 420ms ease forwards");
+    expect(html).toContain("@keyframes matching-benefit-fade-out");
+    expect(html).toContain("@keyframes matching-benefit-fade-in");
+    expect(html).toContain("scheduleMatchingTimer(() =>");
+    expect(html).toContain("if (transitionId !== matchingTextTransitionId)");
+    expect(html).toContain("applyMatchingBenefitText(elements, text, className, onTextShown)");
+    expect(html).toContain("setMatchingBenefitText(elements, benefitTexts[0] ?? \"\", \"\", { initial: true })");
+    expect(html).toContain("onTextShown: () =>");
+    expect(html).toContain("triggerMatchingConfetti(elements.step)");
+    expect(html).toContain("confetti-pop");
+    expect(html).toContain('elements.status.textContent = ""');
     expect(html).toContain('question.kind === "interstitial" && answers[question.key] === question.seenAnswer');
     expect(html).toContain("function isStepAnswered(question)");
     expect(html).toContain("const completedMatchingSteps = new Set();");
@@ -821,11 +875,28 @@ describe("form rendering", () => {
     expect(html).toContain('saveCheckpoint(question.key, question.completionAnswer)');
     expect(html).toContain('saveCheckpoint(question.key, question.seenAnswer)');
     expect(html).toContain("replaceToUrl(nextUrl ?? config.questions[getNextVisibleStepIndex()].url)");
-    expect(html).toContain('window.matchMedia("(prefers-reduced-motion: reduce)").matches');
+    expect(html).toContain("@media (prefers-reduced-motion: reduce)");
     expect(html).toContain('nextButton.textContent = "Siguiente"');
+    expect(html).not.toContain("matching-loader");
     expect(html).not.toContain("data-matching-retry");
     expect(html).not.toContain('.form-panel[data-active-kind="interstitial"] footer');
     expect(html).toContain(".step.is-matching-success .confetti-piece");
+    expect(html).toContain(
+      "confetti-float var(--confetti-duration, 1900ms) ease-in-out var(--confetti-float-delay, 520ms) infinite alternate",
+    );
+    expect(html).toContain("--confetti-x: -170px");
+    expect(html).toContain("--confetti-y: -110px");
+    expect(html).toContain("--confetti-drift-x:");
+    expect(html).toContain("--confetti-drift-y:");
+    expect(html).toContain("--confetti-mid-x:");
+    expect(html).toContain("--confetti-mid-y:");
+    expect(html).toContain('data-shape="slash"');
+    expect(html).toContain('data-shape="dot"');
+    expect(html).toContain('data-shape="diamond"');
+    expect(html).toContain("--confetti-w:");
+    expect(html).toContain("--confetti-duration:");
+    expect(html).toContain("--confetti-delay:");
+    expect(html).toContain("--confetti-float-delay:");
   });
 
   it("wires a forgiving US phone mask without blocking browser autofill", () => {
