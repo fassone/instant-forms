@@ -46,16 +46,20 @@ export function renderFormPage(form: InstantForm): string {
     <style>
       :root {
         color-scheme: light;
-        --bg: #f4f7f6;
-        --surface: #ffffff;
-        --text: #15211e;
-        --muted: #5d6b66;
-        --border: #d9e3df;
-        --primary: #0f766e;
-        --primary-dark: #115e59;
-        --accent: #d97706;
+        --brand-navy: #073b8e;
+        --brand-blue: #064df6;
+        --brand-pink: #f80057;
+        --brand-cream: #fff7df;
+        --bg: #073b8e;
+        --surface: #fffdf4;
+        --text: #111427;
+        --muted: #4d5878;
+        --border: #d9dff0;
+        --primary: var(--brand-blue);
+        --primary-dark: #0437b3;
+        --accent: var(--brand-pink);
         --danger: #b42318;
-        --shadow: 0 20px 60px rgba(21, 33, 30, 0.12);
+        --shadow: 0 24px 70px rgba(1, 28, 76, 0.22);
         font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       }
 
@@ -67,7 +71,7 @@ export function renderFormPage(form: InstantForm): string {
         min-height: 100vh;
         margin: 0;
         background:
-          linear-gradient(135deg, rgba(15, 118, 110, 0.08), rgba(217, 119, 6, 0.08)),
+          linear-gradient(145deg, rgba(6, 77, 246, 0.24), rgba(248, 0, 87, 0.08)),
           var(--bg);
         color: var(--text);
       }
@@ -92,7 +96,7 @@ export function renderFormPage(form: InstantForm): string {
         gap: 28px;
         border: 1px solid var(--border);
         border-radius: 8px;
-        background: rgba(255, 255, 255, 0.96);
+        background: rgba(255, 253, 244, 0.98);
         box-shadow: var(--shadow);
         padding: clamp(24px, 5vw, 56px);
       }
@@ -104,17 +108,29 @@ export function renderFormPage(form: InstantForm): string {
         gap: 16px;
       }
 
-      .brand-name {
+      .brand-identity {
+        min-width: 0;
+      }
+
+      .brand-logo {
+        display: block;
+        width: clamp(160px, 34vw, 220px);
+        height: auto;
+      }
+
+      .brand-trust {
         margin: 0;
-        font-size: 1rem;
+        color: var(--brand-navy);
+        font-size: 0.95rem;
         font-weight: 800;
         letter-spacing: 0;
       }
 
       .state-pill {
-        border: 1px solid var(--border);
+        border: 1px solid rgba(6, 77, 246, 0.22);
         border-radius: 999px;
-        color: var(--muted);
+        background: rgba(6, 77, 246, 0.07);
+        color: var(--brand-navy);
         font-size: 0.85rem;
         font-weight: 700;
         padding: 6px 12px;
@@ -125,14 +141,14 @@ export function renderFormPage(form: InstantForm): string {
         height: 8px;
         overflow: hidden;
         border-radius: 999px;
-        background: #e6eeeb;
+        background: #e5e9f7;
       }
 
       .progress-bar {
         width: 12.5%;
         height: 100%;
         border-radius: inherit;
-        background: linear-gradient(90deg, var(--primary), var(--accent));
+        background: linear-gradient(90deg, var(--brand-blue), var(--brand-pink));
         transition: width 180ms ease;
       }
 
@@ -147,7 +163,7 @@ export function renderFormPage(form: InstantForm): string {
 
       .step-count {
         margin: 0 0 12px;
-        color: var(--muted);
+        color: var(--brand-navy);
         font-size: 0.95rem;
         font-weight: 700;
       }
@@ -172,7 +188,7 @@ export function renderFormPage(form: InstantForm): string {
         gap: 14px;
         border: 1px solid var(--border);
         border-radius: 8px;
-        background: #fbfdfc;
+        background: #ffffff;
         cursor: pointer;
         padding: 16px 18px;
         transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
@@ -181,13 +197,13 @@ export function renderFormPage(form: InstantForm): string {
       .option:hover,
       .option:has(input:focus-visible) {
         border-color: var(--primary);
-        box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.13);
+        box-shadow: 0 0 0 4px rgba(6, 77, 246, 0.13);
         transform: translateY(-1px);
       }
 
       .option:has(input:checked) {
-        border-color: var(--primary);
-        background: #ecfdf5;
+        border-color: var(--brand-blue);
+        background: #eff4ff;
       }
 
       .option input {
@@ -203,7 +219,7 @@ export function renderFormPage(form: InstantForm): string {
         place-items: center;
         border: 1px solid var(--border);
         border-radius: 6px;
-        color: var(--muted);
+        color: var(--brand-navy);
         font-size: 0.85rem;
         font-weight: 800;
       }
@@ -234,7 +250,7 @@ export function renderFormPage(form: InstantForm): string {
       .error {
         min-height: 24px;
         margin: 0;
-        color: var(--danger);
+        color: red;
         font-size: 0.95rem;
         font-weight: 700;
       }
@@ -251,7 +267,7 @@ export function renderFormPage(form: InstantForm): string {
         border: 1px solid transparent;
         border-radius: 8px;
         cursor: pointer;
-        font-weight: 800;
+        font-weight: 700;
         padding: 0 20px;
       }
 
@@ -267,12 +283,12 @@ export function renderFormPage(form: InstantForm): string {
       }
 
       .button-primary {
-        background: var(--primary);
+        background: var(--accent);
         color: #ffffff;
       }
 
       .button-primary:hover {
-        background: var(--primary-dark);
+        background: #d9004d;
       }
 
       .thanks,
@@ -280,7 +296,7 @@ export function renderFormPage(form: InstantForm): string {
         width: min(100%, 720px);
         border: 1px solid var(--border);
         border-radius: 8px;
-        background: rgba(255, 255, 255, 0.96);
+        background: rgba(255, 253, 244, 0.98);
         box-shadow: var(--shadow);
         padding: clamp(28px, 6vw, 64px);
       }
@@ -305,6 +321,44 @@ export function renderFormPage(form: InstantForm): string {
         line-height: 1.6;
       }
 
+      @media (min-width: 760px) {
+        .options {
+          gap: 16px;
+        }
+
+        .option {
+          min-height: 78px;
+          gap: 18px;
+          padding: 20px 24px;
+        }
+
+        .option input {
+          width: 24px;
+          height: 24px;
+        }
+
+        .option-index {
+          width: 34px;
+          height: 34px;
+          font-size: 0.95rem;
+        }
+
+        .option-text {
+          font-size: 1.28rem;
+        }
+
+        .actions {
+          gap: 16px;
+        }
+
+        .button {
+          min-height: 70px;
+          min-width: 190px;
+          padding: 0 42px;
+          font-size: 1.4rem;
+        }
+      }
+
       @media (max-width: 560px) {
         .shell {
           align-items: stretch;
@@ -325,6 +379,10 @@ export function renderFormPage(form: InstantForm): string {
           align-items: flex-start;
         }
 
+        .brand-logo {
+          width: min(58vw, 190px);
+        }
+
         .question-title {
           max-width: 100%;
         }
@@ -343,7 +401,10 @@ export function renderFormPage(form: InstantForm): string {
     <main class="shell">
       <form class="form-panel" id="lead-form" novalidate>
         <header class="brand">
-          <p class="brand-name">${escapeHtml(form.page.name)}</p>
+          <div class="brand-identity">
+            <img class="brand-logo" src="/assets/logo.webp" alt="${escapeHtml(form.page.name)}" width="220" height="63">
+            <p class="brand-trust">Seguro para Latinos en Tennessee</p>
+          </div>
           <span class="state-pill">${escapeHtml(form.stateCode)}</span>
         </header>
         <div class="progress-shell" aria-hidden="true">
@@ -466,6 +527,100 @@ export function renderFormPage(form: InstantForm): string {
           return "+1" + nationalNumber;
         }
 
+        function isUnsupportedInternationalPhone(value) {
+          const trimmedValue = value.trim();
+          if (!trimmedValue.startsWith("+")) {
+            return false;
+          }
+
+          const digitsOnly = trimmedValue.replace(/\\D/g, "");
+          return digitsOnly.length > 0 && !digitsOnly.startsWith("1");
+        }
+
+        function formatUsPhoneForDisplay(value) {
+          if (isUnsupportedInternationalPhone(value)) {
+            return value;
+          }
+
+          const trimmedValue = value.trim();
+          const digitsOnly = value.replace(/\\D/g, "");
+          if (trimmedValue.startsWith("+1") && digitsOnly.length <= 1) {
+            return value;
+          }
+
+          const normalizedPhone = normalizeUsPhoneNumber(value);
+          const nationalDigits = normalizedPhone
+            ? normalizedPhone.slice(2)
+            : getPartialUsPhoneDigits(value);
+
+          return formatNationalPhoneDigits(nationalDigits);
+        }
+
+        function getPartialUsPhoneDigits(value) {
+          const trimmedValue = value.trim();
+          const digitsOnly = value.replace(/\\D/g, "");
+
+          if (trimmedValue.startsWith("+1") && digitsOnly.startsWith("1")) {
+            return digitsOnly.slice(1, 11);
+          }
+
+          if (digitsOnly.length > 10 && digitsOnly.startsWith("1")) {
+            return digitsOnly.slice(1, 11);
+          }
+
+          return digitsOnly.slice(0, 10);
+        }
+
+        function formatNationalPhoneDigits(digits) {
+          if (digits.length === 0) {
+            return "";
+          }
+
+          if (digits.length <= 3) {
+            return "(" + digits;
+          }
+
+          if (digits.length <= 6) {
+            return "(" + digits.slice(0, 3) + ") " + digits.slice(3);
+          }
+
+          return "(" + digits.slice(0, 3) + ") " + digits.slice(3, 6) + "-" + digits.slice(6, 10);
+        }
+
+        function isPhoneInputElement(value) {
+          return value instanceof HTMLInputElement && value.type === "tel";
+        }
+
+        function handlePhoneInput(input) {
+          const formattedValue = formatUsPhoneForDisplay(input.value);
+          if (formattedValue === input.value) {
+            return;
+          }
+
+          input.value = formattedValue;
+          input.setSelectionRange(formattedValue.length, formattedValue.length);
+        }
+
+        function shouldBlockExtraPhoneInput(event) {
+          const target = event.target;
+          if (!isPhoneInputElement(target) || !normalizeUsPhoneNumber(target.value)) {
+            return false;
+          }
+
+          const selectionStart = target.selectionStart ?? target.value.length;
+          const selectionEnd = target.selectionEnd ?? selectionStart;
+          if (selectionStart !== selectionEnd) {
+            return false;
+          }
+
+          if (event.inputType?.startsWith("delete")) {
+            return false;
+          }
+
+          const inputData = event.data ?? "";
+          return /[\\d()+.\\-\\s]/.test(inputData);
+        }
+
         function advanceAfterChoiceSelection(answer) {
           const question = getQuestion();
           if (question.kind !== "choice" || isSubmitting) {
@@ -535,6 +690,21 @@ export function renderFormPage(form: InstantForm): string {
         backButton.addEventListener("click", () => {
           clearAutoAdvance();
           showStep(currentStep - 1);
+        });
+
+        form.addEventListener("beforeinput", (event) => {
+          if (shouldBlockExtraPhoneInput(event)) {
+            event.preventDefault();
+          }
+        });
+
+        form.addEventListener("input", (event) => {
+          const target = event.target;
+          if (!isPhoneInputElement(target)) {
+            return;
+          }
+
+          handlePhoneInput(target);
         });
 
         form.addEventListener("change", (event) => {

@@ -2,6 +2,8 @@ import { getFormByStateCode } from "./forms";
 import { renderFormPage, renderUnavailablePage } from "./render";
 import { validateSubmission, type SubmissionPayload } from "./validation";
 
+const logoAssetUrl = new URL("./assets/logo.webp", import.meta.url);
+
 export type SubmissionLogger = (payload: SubmissionPayload) => void;
 
 export type AppOptions = {
@@ -17,6 +19,10 @@ export function createFetchHandler(options: AppOptions = {}) {
 
     if (request.method === "GET" && url.pathname === "/") {
       return Response.redirect(new URL("/tn", url).toString(), 302);
+    }
+
+    if (request.method === "GET" && url.pathname === "/assets/logo.webp") {
+      return assetResponse(Bun.file(logoAssetUrl), "image/webp");
     }
 
     if (
@@ -110,6 +116,15 @@ function jsonResponse(body: unknown, status: number): Response {
     headers: {
       "Content-Type": "application/json; charset=utf-8",
       "Cache-Control": "no-store",
+    },
+  });
+}
+
+function assetResponse(body: Blob, contentType: string): Response {
+  return new Response(body, {
+    headers: {
+      "Content-Type": contentType,
+      "Cache-Control": "public, max-age=31536000, immutable",
     },
   });
 }

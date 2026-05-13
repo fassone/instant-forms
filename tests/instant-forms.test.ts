@@ -107,6 +107,15 @@ describe("US phone normalization", () => {
 });
 
 describe("server routing", () => {
+  it("serves the cached WebP logo asset", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(new Request("http://localhost/assets/logo.webp"));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toBe("image/webp");
+    expect(response.headers.get("Cache-Control")).toBe("public, max-age=31536000, immutable");
+  });
+
   it("returns an unavailable page for unsupported state codes", async () => {
     const handler = createFetchHandler();
     const response = await handler(new Request("http://localhost/ga"));
@@ -137,6 +146,28 @@ describe("server routing", () => {
 });
 
 describe("form rendering", () => {
+  it("renders the logo, trust line, and brand theme tokens", () => {
+    const html = renderFormPage(getRequiredTennesseeForm());
+
+    expect(html).toContain('src="/assets/logo.webp"');
+    expect(html).toContain("Seguro para Latinos en Tennessee");
+    expect(html).toContain("--brand-navy: #073b8e");
+    expect(html).toContain("--brand-blue: #064df6");
+    expect(html).toContain("--brand-pink: #f80057");
+    expect(html).toContain("background: var(--accent)");
+  });
+
+  it("uses larger desktop controls while preserving mobile sizing rules", () => {
+    const html = renderFormPage(getRequiredTennesseeForm());
+
+    expect(html).toContain("@media (min-width: 760px)");
+    expect(html).toContain("min-height: 78px;");
+    expect(html).toContain("min-height: 70px;");
+    expect(html).toContain("min-width: 190px;");
+    expect(html).toContain("font-size: 1.24rem;");
+    expect(html).toContain("@media (max-width: 560px)");
+  });
+
   it("wires choice answers to delayed auto-advance on click and number keys", () => {
     const html = renderFormPage(getRequiredTennesseeForm());
 
@@ -146,6 +177,20 @@ describe("form rendering", () => {
     expect(html).toContain("advanceAfterChoiceSelection(target.value)");
     expect(html).toContain("advanceAfterChoiceSelection(option.value)");
     expect(html).toContain("}, 180);");
+  });
+
+  it("wires a forgiving US phone mask without blocking browser autofill", () => {
+    const html = renderFormPage(getRequiredTennesseeForm());
+
+    expect(html).toContain('form.addEventListener("input"');
+    expect(html).toContain('form.addEventListener("beforeinput"');
+    expect(html).toContain("function formatUsPhoneForDisplay(value)");
+    expect(html).toContain("function isUnsupportedInternationalPhone(value)");
+    expect(html).toContain("function shouldBlockExtraPhoneInput(event)");
+    expect(html).toContain('type="tel"');
+    expect(html).toContain('autocomplete="tel"');
+    expect(html).not.toContain("maxlength=");
+    expect(html).not.toContain("pattern=");
   });
 });
 
