@@ -1465,6 +1465,18 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           return value instanceof HTMLInputElement && value.classList.contains("text-input");
         }
 
+        function isTypingTarget(value) {
+          if (value instanceof HTMLInputElement) {
+            return ["email", "number", "password", "search", "tel", "text", "url"].includes(value.type);
+          }
+
+          return (
+            value instanceof HTMLTextAreaElement ||
+            value instanceof HTMLSelectElement ||
+            (value instanceof HTMLElement && value.isContentEditable)
+          );
+        }
+
         function isMobileViewport() {
           return window.matchMedia("(max-width: 560px)").matches;
         }
@@ -1582,6 +1594,35 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
               }
             })();
           }, 180);
+        }
+
+        function selectChoiceByNumberKey(event) {
+          if (event.defaultPrevented || isTypingTarget(event.target)) {
+            return false;
+          }
+
+          const question = getQuestion();
+          if (question.kind !== "choice" || !/^[1-9]$/.test(event.key)) {
+            return false;
+          }
+
+          const optionIndex = Number(event.key) - 1;
+          const optionKey = question.options[optionIndex];
+          if (!optionKey) {
+            return false;
+          }
+
+          const option = Array.from(steps[currentStep].querySelectorAll("input[type='radio']")).find(
+            (input) => input.value === optionKey,
+          );
+          if (!(option instanceof HTMLInputElement)) {
+            return false;
+          }
+
+          event.preventDefault();
+          option.checked = true;
+          advanceAfterChoiceSelection(option.value);
+          return true;
         }
 
         async function submitForm() {
@@ -1793,25 +1834,10 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
             nextButton.click();
             return;
           }
+        });
 
-          const question = getQuestion();
-          if (question.kind !== "choice" || !/^[1-9]$/.test(event.key)) {
-            return;
-          }
-
-          const optionIndex = Number(event.key) - 1;
-          const optionKey = question.options[optionIndex];
-          if (!optionKey) {
-            return;
-          }
-
-          const option = Array.from(steps[currentStep].querySelectorAll("input[type='radio']")).find(
-            (input) => input.value === optionKey,
-          );
-          if (option) {
-            option.checked = true;
-            advanceAfterChoiceSelection(option.value);
-          }
+        document.addEventListener("keydown", (event) => {
+          selectChoiceByNumberKey(event);
         });
 
         window.addEventListener("popstate", () => {

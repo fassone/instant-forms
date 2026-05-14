@@ -838,6 +838,12 @@ describe("form rendering", () => {
     expect(html).toContain("function normalizeUsPhoneNumber(value)");
     expect(html).toContain('form.addEventListener("change"');
     expect(html).toContain("advanceAfterChoiceSelection(target.value)");
+    expect(html).toContain("function selectChoiceByNumberKey(event)");
+    expect(html).toContain("function isTypingTarget(value)");
+    expect(html).toContain('document.addEventListener("keydown"');
+    expect(html).toContain("selectChoiceByNumberKey(event)");
+    expect(html).toContain("event.preventDefault()");
+    expect(html).toContain("option.checked = true");
     expect(html).toContain("advanceAfterChoiceSelection(option.value)");
     expect(html).toContain("}, 180);");
   });
