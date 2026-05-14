@@ -1,11 +1,14 @@
 import { describe, expect, it } from "bun:test";
-import { createStateAutocompleteItems, rankAutocompleteItems } from "../src/autocomplete";
-import { encodeCheckpointAnswers, getCheckpointCookieName } from "../src/checkpoints";
-import { autocompleteSource, defineFormFlow, getFormByAreaCode, getStepSlug, isCountedStep, step } from "../src/forms";
-import { renderFormPage } from "../src/render";
-import { createFetchHandler } from "../src/server";
-import { US_STATES, normalizeUsState } from "../src/us-states";
-import { normalizeUsPhoneNumber, validateSubmission } from "../src/validation";
+import { existsSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+import { createFetchHandler } from "../../src/app/server";
+import { US_STATES, normalizeUsState } from "../../src/data/us-states";
+import { autocompleteSource, defineFormFlow, getFormByAreaCode, getStepSlug, isCountedStep, step } from "../../src/flows";
+import { encodeCheckpointAnswers, getCheckpointCookieName } from "../../src/persistence/checkpoints";
+import { renderFormPage } from "../../src/rendering";
+import { createStateAutocompleteItems, rankAutocompleteItems } from "../../src/steps/autocomplete/ranking";
+import { normalizeUsPhoneNumber } from "../../src/steps/phone/us-phone";
+import { validateSubmission } from "../../src/submissions/validation";
 
 const preContactAnswers = {
   belongs_to_state: "yes",
@@ -42,6 +45,8 @@ const validAnswers = {
   last_name: "Lopez",
   phone_number: "(615) 555-1234",
 };
+
+const repoRoot = join(import.meta.dir, "../..");
 
 describe("form registry", () => {
   it("resolves the Tennessee form by lowercase area code", () => {
@@ -154,6 +159,46 @@ describe("form registry", () => {
         { text: "Linea rosa", color: "accent" },
       ],
     });
+  });
+});
+
+describe("repository structure", () => {
+  const requiredReadmes = [
+    "README.md",
+    "src/README.md",
+    "src/app/README.md",
+    "src/app/http/README.md",
+    "src/app/routes/README.md",
+    "src/assets/README.md",
+    "src/data/README.md",
+    "src/flows/README.md",
+    "src/flows/dsl/README.md",
+    "src/flows/tn/README.md",
+    "src/persistence/README.md",
+    "src/rendering/README.md",
+    "src/rendering/client/README.md",
+    "src/rendering/templates/README.md",
+    "src/steps/README.md",
+    "src/steps/adapters/README.md",
+    "src/steps/autocomplete/README.md",
+    "src/steps/phone/README.md",
+    "src/submissions/README.md",
+    "tests/README.md",
+    "tests/unit/README.md",
+    "tests/ui/README.md",
+    "tests/ui/snapshots/README.md",
+  ];
+
+  it("keeps source files inside explicit domain folders", () => {
+    const looseSourceFiles = readdirSync(join(repoRoot, "src")).filter((entry) => entry.endsWith(".ts"));
+
+    expect(looseSourceFiles).toEqual([]);
+  });
+
+  it("keeps README documentation at each source and test folder boundary", () => {
+    const missingReadmes = requiredReadmes.filter((readmePath) => !existsSync(join(repoRoot, readmePath)));
+
+    expect(missingReadmes).toEqual([]);
   });
 });
 

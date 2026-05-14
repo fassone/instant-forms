@@ -1,4 +1,4 @@
-import { createFetchHandler } from "./src/server";
+import { createFetchHandler } from "./src/app/server";
 
 const port = Number(Bun.env.PORT ?? 3000);
 

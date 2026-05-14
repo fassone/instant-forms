@@ -1,19 +1,12 @@
-import { Hono, type Context } from "hono";
-import { deleteCookie, getCookie, setCookie } from "hono/cookie";
-import type { ContentfulStatusCode } from "hono/utils/http-status";
+import type { Hono } from "hono";
 
 import {
-  CHECKPOINT_COOKIE_MAX_AGE_SECONDS,
-  decodeCheckpointAnswers,
-  encodeCheckpointAnswers,
-  getCheckpointCookieName,
+  canAccessStep,
   getNextStepIndex,
   getResumeStepIndex,
-  canAccessStep,
   sanitizeCheckpointAnswers,
   validateCheckpointAnswer,
-  type CheckpointAnswers,
-} from "./checkpoints";
+} from "../../persistence/checkpoints";
 import {
   getFormByAreaCode,
   getStepByKey,
@@ -23,61 +16,16 @@ import {
   isStepVisible,
   type FormStep,
   type InstantForm,
-} from "./forms";
-import { renderFormPage, renderUnavailablePage } from "./render";
-import { validateSubmission, type SubmissionPayload } from "./validation";
-
-const logoAssetUrl = new URL("./assets/logo.webp", import.meta.url);
+} from "../../flows";
+import { renderFormPage, renderUnavailablePage } from "../../rendering";
+import { validateSubmission, type SubmissionPayload } from "../../submissions/validation";
+import { clearCheckpointAnswers, readCheckpointAnswers, setCheckpointAnswers } from "../http/cookies";
+import { htmlResponse, jsonResponse, redirectNoStore } from "../http/responses";
 
 export type SubmissionLogger = (payload: SubmissionPayload) => void;
 
-export type AppOptions = {
-  logger?: SubmissionLogger;
-};
-
-export function createFetchHandler(options: AppOptions = {}) {
-  const app = createApp(options);
-
-  return (request: Request): Promise<Response> | Response => app.fetch(request);
-}
-
-export function createApp(options: AppOptions = {}) {
-  const logger = options.logger ?? (() => undefined);
-  const app = new Hono();
-
+export function registerFormRoutes(app: Hono, logger: SubmissionLogger): void {
   app.get("/", (c) => redirectNoStore(c, "/tn"));
-
-  app.get("/assets/logo.webp", () => assetResponse(Bun.file(logoAssetUrl), "image/webp"));
-
-  app.get("/__preview/:areaCode/buscando-oferta", (c) => {
-    const areaCode = c.req.param("areaCode");
-    const form = getFormByAreaCode(areaCode);
-
-    if (!form) {
-      return htmlResponse(renderUnavailablePage(areaCode), 404);
-    }
-
-    const previewForm = getMatchingPreviewForm(form);
-
-    if (!previewForm) {
-      return htmlResponse(renderUnavailablePage(areaCode), 404);
-    }
-
-    const previewPath = `/__preview/${form.areaCode}/buscando-oferta`;
-
-    return htmlResponse(
-      renderFormPage(previewForm, {
-        activeStepIndex: 0,
-        answers: {},
-        previewMode: true,
-        stepUrlOverrides: {
-          matching_offer: previewPath,
-        },
-      }),
-      200,
-      "no-store",
-    );
-  });
 
   app.post("/api/forms/:areaCode/checkpoints", async (c) => {
     const areaCode = c.req.param("areaCode");
@@ -266,10 +214,6 @@ export function createApp(options: AppOptions = {}) {
 
     return redirectNoStore(c, `/${form.areaCode}`);
   });
-
-  app.notFound(() => htmlResponse(renderUnavailablePage("esta ruta"), 404));
-
-  return app;
 }
 
 async function parseJsonBody(request: Request): Promise<{ ok: true; value: unknown } | { ok: false }> {
@@ -280,34 +224,6 @@ async function parseJsonBody(request: Request): Promise<{ ok: true; value: unkno
   }
 }
 
-function readCheckpointAnswers(c: Context, form: InstantForm): CheckpointAnswers {
-  const cookieValue = getCookie(c, getCheckpointCookieName(form.areaCode));
-  const decodedAnswers = decodeCheckpointAnswers(cookieValue);
-
-  return sanitizeCheckpointAnswers(form, decodedAnswers);
-}
-
-function setCheckpointAnswers(c: Context, form: InstantForm, answers: CheckpointAnswers): void {
-  setCookie(c, getCheckpointCookieName(form.areaCode), encodeCheckpointAnswers(answers), {
-    httpOnly: true,
-    sameSite: "Lax",
-    path: "/",
-    maxAge: CHECKPOINT_COOKIE_MAX_AGE_SECONDS,
-    secure: isSecureRequest(c.req.raw),
-  });
-}
-
-function clearCheckpointAnswers(c: Context, form: InstantForm): void {
-  deleteCookie(c, getCheckpointCookieName(form.areaCode), {
-    path: "/",
-    secure: isSecureRequest(c.req.raw),
-  });
-}
-
-function isSecureRequest(request: Request): boolean {
-  return new URL(request.url).protocol === "https:" || request.headers.get("x-forwarded-proto") === "https";
-}
-
 function getStepAt(form: InstantForm, index: number): FormStep {
   const stepDefinition = form.steps[index];
 
@@ -316,50 +232,6 @@ function getStepAt(form: InstantForm, index: number): FormStep {
   }
 
   return stepDefinition;
-}
-
-function getMatchingPreviewForm(form: InstantForm): InstantForm | undefined {
-  const matchingStep = form.steps.find((stepDefinition) => stepDefinition.kind === "interstitial" && stepDefinition.key === "matching_offer");
-
-  if (!matchingStep) {
-    return undefined;
-  }
-
-  return {
-    ...form,
-    steps: [matchingStep],
-  };
-}
-
-function htmlResponse(body: string, status = 200, cacheControl = "public, max-age=300"): Response {
-  return new Response(body, {
-    status,
-    headers: {
-      "Content-Type": "text/html; charset=utf-8",
-      "Cache-Control": cacheControl,
-    },
-  });
-}
-
-function redirectNoStore(c: Context, url: string): Response {
-  c.header("Cache-Control", "no-store");
-
-  return c.redirect(url, 302);
-}
-
-function jsonResponse(c: Context, body: unknown, status: ContentfulStatusCode): Response {
-  c.header("Cache-Control", "no-store");
-
-  return c.json(body, status);
-}
-
-function assetResponse(body: Blob, contentType: string): Response {
-  return new Response(body, {
-    headers: {
-      "Content-Type": contentType,
-      "Cache-Control": "public, max-age=31536000, immutable",
-    },
-  });
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

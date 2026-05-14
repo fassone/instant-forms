@@ -1,7 +1,6 @@
-import { isStepVisible } from "./forms";
-import type { InstantForm } from "./forms";
-import { US_PHONE_VALIDATION_MESSAGE, normalizeUsPhoneNumber } from "./phone";
-import { validateStepSubmissionAnswer } from "./step-adapters";
+import { isStepVisible, type InstantForm } from "../flows";
+import { US_PHONE_VALIDATION_MESSAGE, normalizeUsPhoneNumber } from "../steps/phone/us-phone";
+import { validateStepSubmissionAnswer } from "../steps/adapters";
 
 export type AnswerMap = Record<string, string>;
 

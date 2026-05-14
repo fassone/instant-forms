@@ -3,6 +3,7 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: "./tests/ui",
   testMatch: "**/*.pw.ts",
+  snapshotPathTemplate: "{testDir}/snapshots/{arg}-{projectName}-{platform}{ext}",
   timeout: 30_000,
   expect: {
     timeout: 5_000,

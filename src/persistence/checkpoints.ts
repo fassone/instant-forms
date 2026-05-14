@@ -1,6 +1,5 @@
-import { getVisibleSteps, isStepVisible } from "./forms";
-import type { FormStep, InstantForm } from "./forms";
-import { isStepAnswered, validateStepCheckpointAnswer } from "./step-adapters";
+import { getVisibleSteps, isStepVisible, type FormStep, type InstantForm } from "../flows";
+import { isStepAnswered, validateStepCheckpointAnswer } from "../steps/adapters";
 
 export type CheckpointAnswers = Record<string, string>;
 
