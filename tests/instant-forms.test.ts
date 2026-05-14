@@ -887,6 +887,11 @@ describe("form rendering", () => {
     expect(html).toContain("function normalizeUsPhoneNumber(value)");
     expect(html).toContain('form.addEventListener("change"');
     expect(html).toContain("advanceAfterChoiceSelection(target.value)");
+    expect(html).toContain("function getClickedChoiceInput(target)");
+    expect(html).toContain("function advanceAfterChoiceClick(event)");
+    expect(html).toContain('target.closest(".option")');
+    expect(html).toContain("option.querySelector(\"input[type='radio']\")");
+    expect(html).toContain("advanceAfterChoiceSelection(input.value)");
     expect(html).toContain("function selectChoiceByNumberKey(event)");
     expect(html).toContain("function isTypingTarget(value)");
     expect(html).toContain('document.addEventListener("keydown"');

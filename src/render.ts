@@ -1628,6 +1628,35 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           }, 180);
         }
 
+        function getClickedChoiceInput(target) {
+          if (!(target instanceof HTMLElement)) {
+            return undefined;
+          }
+
+          const option = target.closest(".option");
+          if (!(option instanceof HTMLElement) || !steps[currentStep].contains(option)) {
+            return undefined;
+          }
+
+          const input = option.querySelector("input[type='radio']");
+
+          return input instanceof HTMLInputElement ? input : undefined;
+        }
+
+        function advanceAfterChoiceClick(event) {
+          const question = getQuestion();
+          if (question.kind !== "choice") {
+            return;
+          }
+
+          const input = getClickedChoiceInput(event.target);
+          if (!input || !input.checked) {
+            return;
+          }
+
+          advanceAfterChoiceSelection(input.value);
+        }
+
         function selectChoiceByNumberKey(event) {
           if (event.defaultPrevented || isTypingTarget(event.target)) {
             return false;
@@ -1806,6 +1835,10 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           }
 
           nextButton.click();
+        });
+
+        form.addEventListener("click", (event) => {
+          advanceAfterChoiceClick(event);
         });
 
         form.addEventListener("beforeinput", (event) => {
