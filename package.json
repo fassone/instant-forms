@@ -7,9 +7,12 @@
     "dev": "bun run index.ts",
     "start": "bun run index.ts",
     "test": "bun test",
+    "test:ui": "playwright test",
+    "test:ui:update": "playwright test --update-snapshots",
     "typecheck": "bunx tsc --noEmit"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@types/bun": "latest"
   },
   "peerDependencies": {

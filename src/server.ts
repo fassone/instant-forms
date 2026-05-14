@@ -15,13 +15,13 @@ import {
   type CheckpointAnswers,
 } from "./checkpoints";
 import {
-  getFormByStateCode,
-  getQuestionByKey,
-  getQuestionIndexByLegacySlug,
-  getQuestionIndexBySlug,
+  getFormByAreaCode,
+  getStepByKey,
+  getStepIndexByLegacySlug,
+  getStepIndexBySlug,
   getStepUrl,
-  isQuestionVisible,
-  type FormQuestion,
+  isStepVisible,
+  type FormStep,
   type InstantForm,
 } from "./forms";
 import { renderFormPage, renderUnavailablePage } from "./render";
@@ -49,21 +49,21 @@ export function createApp(options: AppOptions = {}) {
 
   app.get("/assets/logo.webp", () => assetResponse(Bun.file(logoAssetUrl), "image/webp"));
 
-  app.get("/__preview/:stateCode/buscando-oferta", (c) => {
-    const stateCode = c.req.param("stateCode");
-    const form = getFormByStateCode(stateCode);
+  app.get("/__preview/:areaCode/buscando-oferta", (c) => {
+    const areaCode = c.req.param("areaCode");
+    const form = getFormByAreaCode(areaCode);
 
     if (!form) {
-      return htmlResponse(renderUnavailablePage(stateCode), 404);
+      return htmlResponse(renderUnavailablePage(areaCode), 404);
     }
 
     const previewForm = getMatchingPreviewForm(form);
 
     if (!previewForm) {
-      return htmlResponse(renderUnavailablePage(stateCode), 404);
+      return htmlResponse(renderUnavailablePage(areaCode), 404);
     }
 
-    const previewPath = `/__preview/${form.stateCode}/buscando-oferta`;
+    const previewPath = `/__preview/${form.areaCode}/buscando-oferta`;
 
     return htmlResponse(
       renderFormPage(previewForm, {
@@ -79,14 +79,14 @@ export function createApp(options: AppOptions = {}) {
     );
   });
 
-  app.post("/api/forms/:stateCode/checkpoints", async (c) => {
-    const stateCode = c.req.param("stateCode");
-    const form = getFormByStateCode(stateCode);
+  app.post("/api/forms/:areaCode/checkpoints", async (c) => {
+    const areaCode = c.req.param("areaCode");
+    const form = getFormByAreaCode(areaCode);
 
     if (!form) {
       return jsonResponse(
         c,
-        { ok: false, errors: [{ field: "stateCode", message: "State form is not available." }] },
+        { ok: false, errors: [{ field: "areaCode", message: "Area form is not available." }] },
         404,
       );
     }
@@ -98,71 +98,71 @@ export function createApp(options: AppOptions = {}) {
     }
 
     const questionKey = typeof body.value.questionKey === "string" ? body.value.questionKey : "";
-    const question = getQuestionByKey(form, questionKey);
+    const stepDefinition = getStepByKey(form, questionKey);
 
-    if (!question) {
+    if (!stepDefinition) {
       return jsonResponse(c, { ok: false, errors: [{ field: "questionKey", message: "Question is not available." }] }, 404);
     }
 
     const answers = readCheckpointAnswers(c, form);
-    const questionIndex = form.questions.findIndex((candidate) => candidate.key === question.key);
+    const stepIndex = form.steps.findIndex((candidate) => candidate.key === stepDefinition.key);
 
-    if (question.kind === "interstitial" && (questionIndex === -1 || !canAccessStep(form, questionIndex, answers))) {
-      return jsonResponse(c, { ok: false, errors: [{ field: question.key, message: "Question is not available yet." }] }, 400);
+    if (stepDefinition.kind === "interstitial" && (stepIndex === -1 || !canAccessStep(form, stepIndex, answers))) {
+      return jsonResponse(c, { ok: false, errors: [{ field: stepDefinition.key, message: "Question is not available yet." }] }, 400);
     }
 
     const requestedAnswer = typeof body.value.answer === "string" ? body.value.answer.trim() : "";
 
     if (
-      question.kind === "interstitial" &&
-      requestedAnswer === question.seenAnswer &&
-      answers[question.key] !== question.completionAnswer &&
-      answers[question.key] !== question.seenAnswer
+      stepDefinition.kind === "interstitial" &&
+      requestedAnswer === stepDefinition.seenAnswer &&
+      answers[stepDefinition.key] !== stepDefinition.completionAnswer &&
+      answers[stepDefinition.key] !== stepDefinition.seenAnswer
     ) {
-      return jsonResponse(c, { ok: false, errors: [{ field: question.key, message: "Question is not complete yet." }] }, 400);
+      return jsonResponse(c, { ok: false, errors: [{ field: stepDefinition.key, message: "Question is not complete yet." }] }, 400);
     }
 
-    if (!isQuestionVisible(question, answers)) {
-      return jsonResponse(c, { ok: false, errors: [{ field: question.key, message: "Question is not available yet." }] }, 400);
+    if (!isStepVisible(stepDefinition, answers)) {
+      return jsonResponse(c, { ok: false, errors: [{ field: stepDefinition.key, message: "Question is not available yet." }] }, 400);
     }
 
-    const validation = validateCheckpointAnswer(question, body.value.answer);
+    const validation = validateCheckpointAnswer(stepDefinition, body.value.answer);
 
     if (!validation.ok) {
-      return jsonResponse(c, { ok: false, errors: [{ field: question.key, message: validation.message }] }, 400);
+      return jsonResponse(c, { ok: false, errors: [{ field: stepDefinition.key, message: validation.message }] }, 400);
     }
 
-    answers[question.key] = validation.answer;
+    answers[stepDefinition.key] = validation.answer;
     const sanitizedAnswers = sanitizeCheckpointAnswers(form, answers);
     setCheckpointAnswers(c, form, sanitizedAnswers);
 
     const nextIndex =
-      question.kind === "interstitial" && validation.answer === question.completionAnswer
-        ? questionIndex
-        : questionIndex === -1
+      stepDefinition.kind === "interstitial" && validation.answer === stepDefinition.completionAnswer
+        ? stepIndex
+        : stepIndex === -1
           ? getResumeStepIndex(form, sanitizedAnswers)
-          : getNextStepIndex(form, questionIndex, sanitizedAnswers);
-    const nextQuestion = getQuestionAt(form, nextIndex);
+          : getNextStepIndex(form, stepIndex, sanitizedAnswers);
+    const nextStep = getStepAt(form, nextIndex);
 
     return jsonResponse(
       c,
       {
         ok: true,
-        nextUrl: getStepUrl(form, nextQuestion),
+        nextUrl: getStepUrl(form, nextStep),
         answers: sanitizedAnswers,
       },
       200,
     );
   });
 
-  app.post("/api/forms/:stateCode/submissions", async (c) => {
-    const stateCode = c.req.param("stateCode");
-    const form = getFormByStateCode(stateCode);
+  app.post("/api/forms/:areaCode/submissions", async (c) => {
+    const areaCode = c.req.param("areaCode");
+    const form = getFormByAreaCode(areaCode);
 
     if (!form) {
       return jsonResponse(
         c,
-        { ok: false, errors: [{ field: "stateCode", message: "State form is not available." }] },
+        { ok: false, errors: [{ field: "areaCode", message: "Area form is not available." }] },
         404,
       );
     }
@@ -185,63 +185,63 @@ export function createApp(options: AppOptions = {}) {
     return jsonResponse(c, { ok: true, submittedAt: validation.payload.submittedAt }, 201);
   });
 
-  app.get("/:stateCode", (c) => {
-    const stateCode = c.req.param("stateCode");
-    const form = getFormByStateCode(stateCode);
+  app.get("/:areaCode", (c) => {
+    const areaCode = c.req.param("areaCode");
+    const form = getFormByAreaCode(areaCode);
 
     if (!form) {
-      return htmlResponse(renderUnavailablePage(stateCode), 404);
+      return htmlResponse(renderUnavailablePage(areaCode), 404);
     }
 
     const answers = readCheckpointAnswers(c, form);
-    const resumeStep = getQuestionAt(form, getResumeStepIndex(form, answers));
+    const resumeStep = getStepAt(form, getResumeStepIndex(form, answers));
 
     return redirectNoStore(c, getStepUrl(form, resumeStep));
   });
 
-  app.get("/:stateCode/:stepSlug", (c) => {
-    const stateCode = c.req.param("stateCode");
+  app.get("/:areaCode/:stepSlug", (c) => {
+    const areaCode = c.req.param("areaCode");
     const stepSlug = c.req.param("stepSlug");
-    const form = getFormByStateCode(stateCode);
+    const form = getFormByAreaCode(areaCode);
 
     if (!form) {
-      return htmlResponse(renderUnavailablePage(stateCode), 404);
+      return htmlResponse(renderUnavailablePage(areaCode), 404);
     }
 
-    const stepIndex = getQuestionIndexBySlug(form, stepSlug);
+    const stepIndex = getStepIndexBySlug(form, stepSlug);
 
     if (stepIndex === -1) {
-      const legacyStepIndex = getQuestionIndexByLegacySlug(form, stepSlug);
+      const legacyStepIndex = getStepIndexByLegacySlug(form, stepSlug);
 
       if (legacyStepIndex !== -1) {
         const answers = readCheckpointAnswers(c, form);
 
         if (!canAccessStep(form, legacyStepIndex, answers)) {
-          const resumeStep = getQuestionAt(form, getResumeStepIndex(form, answers));
+          const resumeStep = getStepAt(form, getResumeStepIndex(form, answers));
 
           return redirectNoStore(c, getStepUrl(form, resumeStep));
         }
 
-        const legacyStep = getQuestionAt(form, legacyStepIndex);
+        const legacyStep = getStepAt(form, legacyStepIndex);
 
         return redirectNoStore(c, getStepUrl(form, legacyStep));
       }
 
-      return redirectNoStore(c, `/${form.stateCode}`);
+      return redirectNoStore(c, `/${form.areaCode}`);
     }
 
     const answers = readCheckpointAnswers(c, form);
 
     if (!canAccessStep(form, stepIndex, answers)) {
-      const resumeStep = getQuestionAt(form, getResumeStepIndex(form, answers));
+      const resumeStep = getStepAt(form, getResumeStepIndex(form, answers));
 
       return redirectNoStore(c, getStepUrl(form, resumeStep));
     }
 
-    const requestedStep = getQuestionAt(form, stepIndex);
+    const requestedStep = getStepAt(form, stepIndex);
 
     if (requestedStep.kind === "interstitial" && answers[requestedStep.key] === requestedStep.seenAnswer) {
-      const nextStep = getQuestionAt(form, getNextStepIndex(form, stepIndex, answers));
+      const nextStep = getStepAt(form, getNextStepIndex(form, stepIndex, answers));
 
       return redirectNoStore(c, getStepUrl(form, nextStep));
     }
@@ -256,15 +256,15 @@ export function createApp(options: AppOptions = {}) {
     );
   });
 
-  app.get("/:stateCode/*", (c) => {
-    const stateCode = c.req.param("stateCode");
-    const form = getFormByStateCode(stateCode);
+  app.get("/:areaCode/*", (c) => {
+    const areaCode = c.req.param("areaCode");
+    const form = getFormByAreaCode(areaCode);
 
     if (!form) {
-      return htmlResponse(renderUnavailablePage(stateCode), 404);
+      return htmlResponse(renderUnavailablePage(areaCode), 404);
     }
 
-    return redirectNoStore(c, `/${form.stateCode}`);
+    return redirectNoStore(c, `/${form.areaCode}`);
   });
 
   app.notFound(() => htmlResponse(renderUnavailablePage("esta ruta"), 404));
@@ -281,14 +281,14 @@ async function parseJsonBody(request: Request): Promise<{ ok: true; value: unkno
 }
 
 function readCheckpointAnswers(c: Context, form: InstantForm): CheckpointAnswers {
-  const cookieValue = getCookie(c, getCheckpointCookieName(form.stateCode));
+  const cookieValue = getCookie(c, getCheckpointCookieName(form.areaCode));
   const decodedAnswers = decodeCheckpointAnswers(cookieValue);
 
   return sanitizeCheckpointAnswers(form, decodedAnswers);
 }
 
 function setCheckpointAnswers(c: Context, form: InstantForm, answers: CheckpointAnswers): void {
-  setCookie(c, getCheckpointCookieName(form.stateCode), encodeCheckpointAnswers(answers), {
+  setCookie(c, getCheckpointCookieName(form.areaCode), encodeCheckpointAnswers(answers), {
     httpOnly: true,
     sameSite: "Lax",
     path: "/",
@@ -298,7 +298,7 @@ function setCheckpointAnswers(c: Context, form: InstantForm, answers: Checkpoint
 }
 
 function clearCheckpointAnswers(c: Context, form: InstantForm): void {
-  deleteCookie(c, getCheckpointCookieName(form.stateCode), {
+  deleteCookie(c, getCheckpointCookieName(form.areaCode), {
     path: "/",
     secure: isSecureRequest(c.req.raw),
   });
@@ -308,18 +308,18 @@ function isSecureRequest(request: Request): boolean {
   return new URL(request.url).protocol === "https:" || request.headers.get("x-forwarded-proto") === "https";
 }
 
-function getQuestionAt(form: InstantForm, index: number): FormQuestion {
-  const question = form.questions[index];
+function getStepAt(form: InstantForm, index: number): FormStep {
+  const stepDefinition = form.steps[index];
 
-  if (!question) {
-    throw new Error(`Missing question at index ${index}.`);
+  if (!stepDefinition) {
+    throw new Error(`Missing step at index ${index}.`);
   }
 
-  return question;
+  return stepDefinition;
 }
 
 function getMatchingPreviewForm(form: InstantForm): InstantForm | undefined {
-  const matchingStep = form.questions.find((question) => question.kind === "interstitial" && question.key === "matching_offer");
+  const matchingStep = form.steps.find((stepDefinition) => stepDefinition.kind === "interstitial" && stepDefinition.key === "matching_offer");
 
   if (!matchingStep) {
     return undefined;
@@ -327,7 +327,7 @@ function getMatchingPreviewForm(form: InstantForm): InstantForm | undefined {
 
   return {
     ...form,
-    questions: [matchingStep],
+    steps: [matchingStep],
   };
 }
 

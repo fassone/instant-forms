@@ -1,8 +1,10 @@
+import { US_STATE_VALIDATION_MESSAGE, normalizeUsState } from "./us-states";
+
 export type FormStatus = "ACTIVE" | "INACTIVE";
 
-export type SourceQuestionType = "CUSTOM" | "FIRST_NAME" | "LAST_NAME" | "PHONE" | "STATE" | "INTERSTITIAL";
+export type SourceStepType = "CUSTOM" | "FIRST_NAME" | "LAST_NAME" | "PHONE" | "AUTOCOMPLETE" | "INTERSTITIAL";
 
-export type QuestionCondition = {
+export type StepCondition = {
   questionKey: string;
   answer: string;
 };
@@ -12,246 +14,406 @@ export type FormOption = {
   value: string;
 };
 
-type BaseQuestion = {
+export type StepTemplateKey = "choice" | "text" | "phone" | "autocomplete" | "interstitial";
+
+export type CheckpointMode = "answer" | "checkpoint_only";
+
+export type StepBehavior = {
+  autoAdvance?: boolean;
+  mobileBlurSubmit?: boolean;
+  mask?: "us_phone";
+  suggestions?: "autocomplete";
+  interstitialTiming?: "matching_offer";
+};
+
+type BaseStep = {
   key: string;
   slug: string;
   label: string;
   id: string;
+  template: StepTemplateKey;
+  checkpointMode: CheckpointMode;
+  behavior: StepBehavior;
   countsAsStep?: boolean;
-  showWhen?: QuestionCondition;
+  showWhen?: StepCondition;
 };
 
-export type ChoiceQuestion = BaseQuestion & {
+export type ChoiceStep = BaseStep & {
   kind: "choice";
   type: "CUSTOM";
   options: readonly FormOption[];
 };
 
-export type TextQuestion = BaseQuestion & {
+export type TextStep = BaseStep & {
   kind: "text";
-  type: Exclude<SourceQuestionType, "CUSTOM" | "STATE" | "INTERSTITIAL">;
-  autocomplete: string;
-  inputMode: "text" | "tel";
-};
-
-export type StateQuestion = BaseQuestion & {
-  kind: "state";
-  type: "STATE";
+  type: "FIRST_NAME" | "LAST_NAME";
   autocomplete: string;
   inputMode: "text";
-  suggestionSource: "us_states";
 };
 
-export type InterstitialQuestion = BaseQuestion & {
+export type PhoneStep = BaseStep & {
+  kind: "phone";
+  type: "PHONE";
+  autocomplete: "tel";
+  inputMode: "tel";
+};
+
+export type AutocompleteSourceKey = "us_states";
+
+export type AutocompleteSourceDefinition = {
+  key: AutocompleteSourceKey;
+  clientKey: "usStates";
+  normalize: (value: string) => string | undefined;
+  validationMessage: string;
+};
+
+export type AutocompleteStep = BaseStep & {
+  kind: "autocomplete";
+  type: "AUTOCOMPLETE";
+  autocomplete: string;
+  inputMode: "text";
+  source: AutocompleteSourceDefinition;
+  validationMessage: string;
+  normalize: (value: string) => string | undefined;
+};
+
+export type SuccessLineColor = "brand-navy" | "accent";
+
+export type InterstitialSuccessLine = {
+  text: string;
+  color: SuccessLineColor;
+};
+
+export type InterstitialStep = BaseStep & {
   kind: "interstitial";
   type: "INTERSTITIAL";
   loadingLabel: string;
-  successLabel: string;
+  successLines: readonly InterstitialSuccessLine[];
   completionAnswer: "completed";
   seenAnswer: "seen";
   benefits: readonly string[];
 };
 
-export type FormQuestion = ChoiceQuestion | TextQuestion | StateQuestion | InterstitialQuestion;
+export type FormStep = ChoiceStep | TextStep | PhoneStep | AutocompleteStep | InterstitialStep;
 
 export type InstantForm = {
   id: string;
   name: string;
   status: FormStatus;
-  stateCode: string;
+  areaCode: string;
   page: {
     id: string;
     name: string;
   };
-  questions: readonly FormQuestion[];
+  steps: readonly FormStep[];
 };
 
-export const formsByState = {
-  tn: {
+type BaseStepInput = {
+  key: string;
+  slug: string;
+  label: string;
+  id?: string;
+  countsAsStep?: boolean;
+  showWhen?: StepCondition;
+};
+
+type ChoiceStepInput = BaseStepInput & {
+  options: readonly { key: string; label: string }[];
+};
+
+type TextStepInput = BaseStepInput & {
+  type?: TextStep["type"];
+  autocomplete: string;
+};
+
+type PhoneStepInput = BaseStepInput;
+
+type AutocompleteStepInput = BaseStepInput & {
+  source: AutocompleteSourceDefinition;
+  autocomplete: string;
+  inputMode?: "text";
+  normalize?: (value: string) => string | undefined;
+  validationMessage?: string;
+};
+
+type InterstitialStepInput = BaseStepInput & {
+  loadingLabel?: string;
+  successLines: readonly InterstitialSuccessLine[];
+  completionAnswer?: "completed";
+  seenAnswer?: "seen";
+  benefits: readonly string[];
+};
+
+type FormFlowInput = {
+  id: string;
+  name: string;
+  status: FormStatus;
+  areaCode: string;
+  page: {
+    id: string;
+    name: string;
+  };
+  steps: readonly FormStep[];
+};
+
+export const autocompleteSource = {
+  usStates(): AutocompleteSourceDefinition {
+    return {
+      key: "us_states",
+      clientKey: "usStates",
+      normalize: normalizeUsState,
+      validationMessage: US_STATE_VALIDATION_MESSAGE,
+    };
+  },
+} as const;
+
+export const step = {
+  choice(input: ChoiceStepInput): ChoiceStep {
+    return {
+      ...baseStep(input, "choice", "answer", { autoAdvance: true }),
+      kind: "choice",
+      type: "CUSTOM",
+      options: input.options.map((option) => ({ key: option.key, value: option.label })),
+    };
+  },
+
+  text(input: TextStepInput): TextStep {
+    return {
+      ...baseStep(input, "text", "answer", { mobileBlurSubmit: true }),
+      kind: "text",
+      type: input.type ?? "FIRST_NAME",
+      autocomplete: input.autocomplete,
+      inputMode: "text",
+    };
+  },
+
+  phone(input: PhoneStepInput): PhoneStep {
+    return {
+      ...baseStep(input, "phone", "answer", { mask: "us_phone", mobileBlurSubmit: true }),
+      kind: "phone",
+      type: "PHONE",
+      autocomplete: "tel",
+      inputMode: "tel",
+    };
+  },
+
+  autocomplete(input: AutocompleteStepInput): AutocompleteStep {
+    return {
+      ...baseStep(input, "autocomplete", "answer", { suggestions: "autocomplete" }),
+      kind: "autocomplete",
+      type: "AUTOCOMPLETE",
+      autocomplete: input.autocomplete,
+      inputMode: input.inputMode ?? "text",
+      source: input.source,
+      validationMessage: input.validationMessage ?? input.source.validationMessage,
+      normalize: input.normalize ?? input.source.normalize,
+    };
+  },
+
+  interstitial(input: InterstitialStepInput): InterstitialStep {
+    return {
+      ...baseStep(input, "interstitial", "checkpoint_only", { interstitialTiming: "matching_offer" }),
+      kind: "interstitial",
+      type: "INTERSTITIAL",
+      loadingLabel: input.loadingLabel ?? "",
+      successLines: input.successLines,
+      completionAnswer: input.completionAnswer ?? "completed",
+      seenAnswer: input.seenAnswer ?? "seen",
+      benefits: input.benefits,
+    };
+  },
+} as const;
+
+export function defineFormFlow(input: FormFlowInput): InstantForm {
+  return {
+    ...input,
+    areaCode: input.areaCode.trim().toLowerCase(),
+  };
+}
+
+export const formsByArea = {
+  tn: defineFormFlow({
     id: "1011189481863371",
     name: "ES - TN - v6",
     status: "ACTIVE",
-    stateCode: "tn",
+    areaCode: "tn",
     page: {
       id: "298730479987891",
       name: "Seguros Aseguranza",
     },
-    questions: [
-      {
-        kind: "choice",
+    steps: [
+      step.choice({
         key: "belongs_to_state",
         slug: "vive-en-tennessee",
         label: "¿Usted vive en Tennessee?",
-        options: [
-          { key: "yes", value: "Si" },
-          { key: "no", value: "No" },
-        ],
-        type: "CUSTOM",
         id: "1653615922583282",
-      },
-      {
-        kind: "state",
+        options: [
+          { key: "yes", label: "Si" },
+          { key: "no", label: "No" },
+        ],
+      }),
+      step.autocomplete({
         key: "residence_state",
         slug: "estado-donde-vive",
         label: "¿En qué estado vive?",
-        type: "STATE",
         id: "residence_state",
         autocomplete: "address-level1",
-        inputMode: "text",
-        suggestionSource: "us_states",
+        source: autocompleteSource.usStates(),
         showWhen: {
           questionKey: "belongs_to_state",
           answer: "no",
         },
-      },
-      {
-        kind: "choice",
+      }),
+      step.choice({
         key: "has_license",
         slug: "tiene-licencia",
         label: "¿Usted tiene licencia de los Estado Unidos?",
-        options: [
-          { key: "yes", value: "Si" },
-          { key: "no", value: "No" },
-        ],
-        type: "CUSTOM",
         id: "782123394910922",
-      },
-      {
-        kind: "choice",
+        options: [
+          { key: "yes", label: "Si" },
+          { key: "no", label: "No" },
+        ],
+      }),
+      step.choice({
         key: "has_insurance",
         slug: "tiene-seguro",
         label: "¿Usted tiene seguro de los Estado Unidos?",
-        options: [
-          { key: "yes", value: "Si" },
-          { key: "no", value: "No" },
-        ],
-        type: "CUSTOM",
         id: "2197559684116183",
-      },
-      {
-        kind: "choice",
+        options: [
+          { key: "yes", label: "Si" },
+          { key: "no", label: "No" },
+        ],
+      }),
+      step.choice({
         key: "is_clean_title",
         slug: "titulo-limpio",
         label: "¿Su auto tiene título limpio?",
-        options: [
-          { key: "yes", value: "Si" },
-          { key: "no", value: "No" },
-        ],
-        type: "CUSTOM",
         id: "1044815071204693",
-      },
-      {
-        kind: "choice",
+        options: [
+          { key: "yes", label: "Si" },
+          { key: "no", label: "No" },
+        ],
+      }),
+      step.choice({
         key: "number_of_registered_cars",
         slug: "autos-a-asegurar",
         label: "¿Cuantos autos quiere asegurar?",
-        options: [
-          { key: "1", value: "1" },
-          { key: "2+", value: "2+" },
-        ],
-        type: "CUSTOM",
         id: "1000790812295278",
-      },
-      {
-        kind: "interstitial",
+        options: [
+          { key: "1", label: "1" },
+          { key: "2+", label: "2+" },
+        ],
+      }),
+      step.interstitial({
         key: "matching_offer",
         slug: "buscando-oferta",
         label: "Estamos buscando su seguro ideal",
-        loadingLabel: "",
-        successLabel: "Encontramos agentes listos para cotizarle.\nDescubra cuánto puede ahorrar.",
-        completionAnswer: "completed",
-        seenAnswer: "seen",
+        id: "matching_offer",
+        countsAsStep: false,
         benefits: [
           "Revisando sus respuestas",
           "Buscando agentes disponibles",
           "Priorizando atención en español",
-          "Preparando opciones en {{stateName}}",
+          "Preparando opciones en {{areaName}}",
         ],
-        type: "INTERSTITIAL",
-        id: "matching_offer",
-      },
-      {
-        kind: "text",
+        successLines: [
+          { text: "Encontramos agentes listos para cotizarle.", color: "brand-navy" },
+          { text: "Descubra cuánto puede ahorrar.", color: "accent" },
+        ],
+      }),
+      step.text({
         key: "first_name",
         slug: "nombre",
         label: "Nombre",
-        type: "FIRST_NAME",
         id: "1283697083392173",
+        type: "FIRST_NAME",
         autocomplete: "given-name",
-        inputMode: "text",
-      },
-      {
-        kind: "text",
+      }),
+      step.text({
         key: "last_name",
         slug: "apellido",
         label: "Apellido",
-        type: "LAST_NAME",
         id: "1529546892176037",
+        type: "LAST_NAME",
         autocomplete: "family-name",
-        inputMode: "text",
-      },
-      {
-        kind: "text",
+      }),
+      step.phone({
         key: "phone_number",
         slug: "telefono",
         label: "Número de teléfono",
-        type: "PHONE",
         id: "1594967471565670",
-        autocomplete: "tel",
-        inputMode: "tel",
-      },
+      }),
     ],
-  },
+  }),
 } as const satisfies Record<string, InstantForm>;
 
-export type StateCode = keyof typeof formsByState;
+export type AreaCode = keyof typeof formsByArea;
 
-export function getFormByStateCode(stateCode: string): InstantForm | undefined {
-  const normalizedStateCode = stateCode.trim().toLowerCase();
+export function getFormByAreaCode(areaCode: string): InstantForm | undefined {
+  const normalizedAreaCode = areaCode.trim().toLowerCase();
 
-  return (formsByState as Record<string, InstantForm>)[normalizedStateCode];
+  return (formsByArea as Record<string, InstantForm>)[normalizedAreaCode];
 }
 
-export function getQuestionSlug(question: FormQuestion): string {
-  return question.slug;
+export function getStepSlug(stepDefinition: FormStep): string {
+  return stepDefinition.slug;
 }
 
-export function getLegacyQuestionSlug(question: FormQuestion): string {
-  return question.key.replaceAll("_", "-");
+export function getLegacyStepSlug(stepDefinition: FormStep): string {
+  return stepDefinition.key.replaceAll("_", "-");
 }
 
-export function getStepUrl(form: InstantForm, question: FormQuestion): string {
-  return `/${form.stateCode}/${getQuestionSlug(question)}`;
+export function getStepUrl(form: InstantForm, stepDefinition: FormStep): string {
+  return `/${form.areaCode}/${getStepSlug(stepDefinition)}`;
 }
 
-export function isQuestionVisible(question: FormQuestion, answers: Record<string, string>): boolean {
-  if (question.kind === "interstitial" && answers[question.key] === question.seenAnswer) {
+export function isStepVisible(stepDefinition: FormStep, answers: Record<string, string>): boolean {
+  if (stepDefinition.kind === "interstitial" && answers[stepDefinition.key] === stepDefinition.seenAnswer) {
     return false;
   }
 
-  if (!question.showWhen) {
+  if (!stepDefinition.showWhen) {
     return true;
   }
 
-  return answers[question.showWhen.questionKey] === question.showWhen.answer;
+  return answers[stepDefinition.showWhen.questionKey] === stepDefinition.showWhen.answer;
 }
 
-export function getVisibleQuestions(form: InstantForm, answers: Record<string, string>): readonly FormQuestion[] {
-  return form.questions.filter((question) => isQuestionVisible(question, answers));
+export function getVisibleSteps(form: InstantForm, answers: Record<string, string>): readonly FormStep[] {
+  return form.steps.filter((stepDefinition) => isStepVisible(stepDefinition, answers));
 }
 
-export function isCountedStep(question: FormQuestion): boolean {
-  return question.countsAsStep ?? question.kind !== "interstitial";
+export function isCountedStep(stepDefinition: FormStep): boolean {
+  return stepDefinition.countsAsStep ?? stepDefinition.kind !== "interstitial";
 }
 
-export function getQuestionIndexBySlug(form: InstantForm, slug: string): number {
-  return form.questions.findIndex((question) => getQuestionSlug(question) === slug);
+export function getStepIndexBySlug(form: InstantForm, slug: string): number {
+  return form.steps.findIndex((stepDefinition) => getStepSlug(stepDefinition) === slug);
 }
 
-export function getQuestionIndexByLegacySlug(form: InstantForm, slug: string): number {
-  return form.questions.findIndex((question) => getLegacyQuestionSlug(question) === slug);
+export function getStepIndexByLegacySlug(form: InstantForm, slug: string): number {
+  return form.steps.findIndex((stepDefinition) => getLegacyStepSlug(stepDefinition) === slug);
 }
 
-export function getQuestionByKey(form: InstantForm, key: string): FormQuestion | undefined {
-  return form.questions.find((question) => question.key === key);
+export function getStepByKey(form: InstantForm, key: string): FormStep | undefined {
+  return form.steps.find((stepDefinition) => stepDefinition.key === key);
+}
+
+function baseStep(
+  input: BaseStepInput,
+  template: StepTemplateKey,
+  checkpointMode: CheckpointMode,
+  behavior: StepBehavior,
+): BaseStep {
+  return {
+    key: input.key,
+    slug: input.slug,
+    label: input.label,
+    id: input.id ?? input.key,
+    template,
+    checkpointMode,
+    behavior,
+    countsAsStep: input.countsAsStep,
+    showWhen: input.showWhen,
+  };
 }

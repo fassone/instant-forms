@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { createStateAutocompleteItems, rankAutocompleteItems } from "../src/autocomplete";
 import { encodeCheckpointAnswers, getCheckpointCookieName } from "../src/checkpoints";
-import { getFormByStateCode, getQuestionSlug, isCountedStep } from "../src/forms";
+import { autocompleteSource, defineFormFlow, getFormByAreaCode, getStepSlug, isCountedStep, step } from "../src/forms";
 import { renderFormPage } from "../src/render";
 import { createFetchHandler } from "../src/server";
 import { US_STATES, normalizeUsState } from "../src/us-states";
@@ -44,17 +44,17 @@ const validAnswers = {
 };
 
 describe("form registry", () => {
-  it("resolves the Tennessee form by lowercase state code", () => {
-    const form = getFormByStateCode("tn");
+  it("resolves the Tennessee form by lowercase area code", () => {
+    const form = getFormByAreaCode("tn");
 
-    expect(form?.stateCode).toBe("tn");
+    expect(form?.areaCode).toBe("tn");
     expect(form?.id).toBe("1011189481863371");
   });
 
   it("keeps contact fields at the end of the flow", () => {
-    const form = getFormByStateCode("tn");
+    const form = getFormByAreaCode("tn");
 
-    expect(form?.questions.map((question) => question.key).slice(-3)).toEqual([
+    expect(form?.steps.map((stepDefinition) => stepDefinition.key).slice(-3)).toEqual([
       "first_name",
       "last_name",
       "phone_number",
@@ -64,7 +64,7 @@ describe("form registry", () => {
   it("uses Spanish slugs for public step URLs", () => {
     const form = getRequiredTennesseeForm();
 
-    expect(form.questions.map((question) => getQuestionSlug(question))).toEqual([
+    expect(form.steps.map((question) => getStepSlug(question))).toEqual([
       "vive-en-tennessee",
       "estado-donde-vive",
       "tiene-licencia",
@@ -80,13 +80,80 @@ describe("form registry", () => {
 
   it("uses reusable counted-step semantics", () => {
     const form = getRequiredTennesseeForm();
-    const firstQuestion = form.questions[0];
-    const matchingQuestion = form.questions.find((question) => question.kind === "interstitial");
+    const firstQuestion = form.steps[0];
+    const matchingQuestion = form.steps.find((question) => question.kind === "interstitial");
 
     expect(firstQuestion ? isCountedStep(firstQuestion) : undefined).toBe(true);
     expect(matchingQuestion ? isCountedStep(matchingQuestion) : undefined).toBe(false);
     expect(firstQuestion ? isCountedStep({ ...firstQuestion, countsAsStep: false }) : undefined).toBe(false);
     expect(matchingQuestion ? isCountedStep({ ...matchingQuestion, countsAsStep: true }) : undefined).toBe(true);
+  });
+
+  it("compiles declarative DSL steps with templates, behaviors, and success colors", () => {
+    const flow = defineFormFlow({
+      areaCode: "XX",
+      id: "test-form",
+      name: "Test Flow",
+      status: "ACTIVE",
+      page: { id: "page", name: "Test Page" },
+      steps: [
+        step.choice({
+          key: "choice_key",
+          slug: "elige",
+          label: "Elige",
+          options: [{ key: "yes", label: "Si" }],
+        }),
+        step.text({
+          key: "first_name",
+          slug: "nombre",
+          label: "Nombre",
+          autocomplete: "given-name",
+        }),
+        step.phone({
+          key: "phone_number",
+          slug: "telefono",
+          label: "Número de teléfono",
+        }),
+        step.autocomplete({
+          key: "residence_state",
+          slug: "estado",
+          label: "Estado",
+          autocomplete: "address-level1",
+          source: autocompleteSource.usStates(),
+        }),
+        step.interstitial({
+          key: "matching_offer",
+          slug: "buscando",
+          label: "Buscando",
+          successLines: [
+            { text: "Linea azul", color: "brand-navy" },
+            { text: "Linea rosa", color: "accent" },
+          ],
+          benefits: ["Beneficio"],
+        }),
+      ],
+    });
+
+    expect(flow.areaCode).toBe("xx");
+    expect(flow.steps.map((stepDefinition) => [stepDefinition.kind, stepDefinition.template])).toEqual([
+      ["choice", "choice"],
+      ["text", "text"],
+      ["phone", "phone"],
+      ["autocomplete", "autocomplete"],
+      ["interstitial", "interstitial"],
+    ]);
+    expect(flow.steps[0]?.behavior.autoAdvance).toBe(true);
+    expect(flow.steps[2]?.behavior.mask).toBe("us_phone");
+    expect(flow.steps[3]?.behavior.suggestions).toBe("autocomplete");
+    expect(flow.steps[4]?.countsAsStep).toBeUndefined();
+    expect(flow.steps[4] && isCountedStep(flow.steps[4])).toBe(false);
+    expect(flow.steps[4]).toMatchObject({
+      checkpointMode: "checkpoint_only",
+      successLines: [
+        { text: "Linea azul", color: "brand-navy" },
+        { text: "Linea rosa", color: "accent" },
+      ],
+    });
   });
 });
 
@@ -135,7 +202,7 @@ describe("submission validation", () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.payload.answers.phone_number).toBe("+16155551234");
-      expect(result.payload.stateCode).toBe("tn");
+      expect(result.payload.areaCode).toBe("tn");
       expect(result.payload.formId).toBe("1011189481863371");
     }
   });
@@ -367,9 +434,11 @@ describe("server routing", () => {
     expect(matchingHtml).toContain('<p class="step-count" data-step-count aria-hidden="true">Paso 5 de 8</p>');
     expect(matchingHtml).toContain('class="matching-benefit is-success is-visible"');
     expect(matchingHtml).toContain(
-      '<span class="matching-success-line">Encontramos agentes listos para cotizarle.</span>',
+      '<span class="matching-success-line" data-color="brand-navy">Encontramos agentes listos para cotizarle.</span>',
     );
-    expect(matchingHtml).toContain('<span class="matching-success-line">Descubra cuánto puede ahorrar.</span>');
+    expect(matchingHtml).toContain(
+      '<span class="matching-success-line" data-color="accent">Descubra cuánto puede ahorrar.</span>',
+    );
   });
 
   it("excludes matching from step count on the out-of-state path", async () => {
@@ -552,7 +621,7 @@ describe("server routing", () => {
     expect(html).not.toContain('"slug":"nombre"');
   });
 
-  it("returns an unavailable page for unsupported state codes", async () => {
+  it("returns an unavailable page for unsupported area codes", async () => {
     const handler = createFetchHandler();
     const response = await handler(new Request("http://localhost/ga"));
 
@@ -824,7 +893,7 @@ describe("server routing", () => {
     expect(response.status).toBe(201);
     expect(loggedPayloads).toHaveLength(1);
     expect(loggedPayloads[0]).toMatchObject({
-      stateCode: "tn",
+      areaCode: "tn",
       formId: "1011189481863371",
       pageName: "Seguros Aseguranza",
     });
@@ -958,12 +1027,12 @@ describe("form rendering", () => {
     expect(html).toContain("Revisando sus respuestas");
     expect(html).toContain("Buscando agentes disponibles");
     expect(html).toContain("Priorizando atención en español");
-    expect(html).toContain("Preparando opciones en {{stateName}}");
+    expect(html).toContain("Preparando opciones en {{areaName}}");
     expect(html).toContain("Encontramos agentes listos para cotizarle.");
     expect(html).toContain("Descubra cuánto puede ahorrar.");
-    expect(html).toContain("Encontramos agentes listos para cotizarle.\\nDescubra cuánto puede ahorrar.");
+    expect(html).toContain('"successLines":[{"text":"Encontramos agentes listos para cotizarle.","color":"brand-navy"}');
     expect(html).toContain("function getCoverageStateName()");
-    expect(html).toContain('answers.residence_state || config.stateCode');
+    expect(html).toContain('answers.residence_state || config.areaCode');
     expect(html).toContain("function runMatchingStep()");
     expect(html).toContain("function showMatchingSuccess(question, elements, options = {})");
     expect(html).toContain('"countsAsStep":false');
@@ -977,7 +1046,7 @@ describe("form rendering", () => {
     expect(html).toContain("function applyMatchingBenefitText(elements, text, className)");
     expect(html).toContain("function fadeMatchingBenefitIn(elements, transitionId)");
     expect(html).toContain("function setMatchingBenefitText(elements, text, className, options = {})");
-    expect(html).toContain('setMatchingBenefitText(elements, question.successLabel, "is-success", options)');
+    expect(html).toContain('setMatchingBenefitText(elements, question.successLines, "is-success", options)');
     expect(html).toContain("showMatchingSuccess(question, elements, { immediate: true })");
     expect(html).toContain('elements.benefit.classList.add(className)');
     expect(html).toContain("matchingBenefitFadeOutMs = 300");
@@ -1008,9 +1077,9 @@ describe("form rendering", () => {
     expect(html).toContain("paint-order: stroke fill");
     expect(html).toContain("white-space: pre-line");
     expect(html).toContain(".matching-success-line");
-    expect(html).toContain(".matching-success-line:first-child");
+    expect(html).toContain('.matching-success-line[data-color="brand-navy"]');
     expect(html).toContain("color: var(--brand-navy)");
-    expect(html).toContain(".matching-success-line:last-child");
+    expect(html).toContain('.matching-success-line[data-color="accent"]');
     expect(html).toContain("color: var(--accent)");
     expect(html).toContain("0 0.025em 0 rgba(255, 253, 244, 0.74)");
     expect(html).toContain("0 0.1em 0.22em rgba(7, 59, 142, 0.14)");
@@ -1023,11 +1092,12 @@ describe("form rendering", () => {
     expect(html).toContain("scheduleMatchingTimer(() =>");
     expect(html).toContain("if (transitionId !== matchingTextTransitionId)");
     expect(html).toContain("applyMatchingBenefitText(elements, text, className)");
-    expect(html).toContain("function renderMatchingBenefitContent(element, text, className)");
+    expect(html).toContain("function renderMatchingBenefitContent(element, content, className)");
     expect(html).toContain("element.replaceChildren()");
     expect(html).toContain('if (className !== "is-success")');
-    expect(html).toContain('text.split("\\n").filter((line) => line.trim())');
+    expect(html).toContain('String(content)\n                .split("\\n")');
     expect(html).toContain('lineElement.className = "matching-success-line"');
+    expect(html).toContain("lineElement.dataset.color = line.color");
     expect(html).toContain("setMatchingBenefitText(elements, benefitTimeline[0]?.text ?? \"\", \"\", { initial: true })");
     expect(html).not.toContain("onTextShown");
     expect(html).not.toContain("getContext");
@@ -1053,7 +1123,7 @@ describe("form rendering", () => {
     expect(html).toContain("!completedMatchingSteps.has(question.key)");
     expect(html).toContain('saveCheckpoint(question.key, question.completionAnswer)');
     expect(html).toContain('saveCheckpoint(question.key, question.seenAnswer)');
-    expect(html).toContain("replaceToUrl(nextUrl ?? config.questions[getNextVisibleStepIndex()].url)");
+    expect(html).toContain("replaceToUrl(nextUrl ?? config.steps[getNextVisibleStepIndex()].url)");
     expect(html).toContain('nextButton.textContent = "Siguiente"');
     expect(html).not.toContain("matching-loader");
     expect(html).not.toContain("data-matching-retry");
@@ -1138,6 +1208,8 @@ describe("form rendering", () => {
 
     expect(html).toContain('"activeStepIndex":0');
     expect(html).toContain('"initialAnswers":{}');
+    expect(html).toContain('"areaCode":"tn"');
+    expect(html).not.toContain('"stateCode"');
     expect(html).toContain('"slug":"vive-en-tennessee"');
     expect(html).toContain('"slug":"estado-donde-vive"');
     expect(html).toContain('"slug":"buscando-oferta"');
@@ -1159,7 +1231,7 @@ describe("form rendering", () => {
     });
 
     expect(html).toContain('data-step="0" data-step-kind="choice" data-step-counted="true" aria-hidden="true"');
-    expect(html).toContain('data-step="1" data-step-kind="state" data-step-counted="true" aria-hidden="false"');
+    expect(html).toContain('data-step="1" data-step-kind="autocomplete" data-step-counted="true" aria-hidden="false"');
     expect(html).toContain('value="yes" checked');
     expect(html).toContain('"initialAnswers":{"belongs_to_state":"yes"}');
   });
@@ -1167,13 +1239,13 @@ describe("form rendering", () => {
   it("renders the mobile-friendly state autocomplete wiring", () => {
     const html = renderFormPage(getRequiredTennesseeForm());
 
-    expect(html).toContain('data-state-input="true"');
+    expect(html).toContain('data-autocomplete-input="true"');
     expect(html).toContain('placeholder="Escriba su estado aquí"');
-    expect(html).toContain("data-state-suggestions");
+    expect(html).toContain("data-autocomplete-suggestions");
     expect(html).toContain("function normalizeUsState(value)");
-    expect(html).toContain("class=\"state-suggestions-shell\"");
-    expect(html).toContain("data-state-suggestions-shell");
-    expect(html).toContain('"suggestionSource":"us_states"');
+    expect(html).toContain("class=\"autocomplete-suggestions-shell\"");
+    expect(html).toContain("data-autocomplete-suggestions-shell");
+    expect(html).toContain('"source":"usStates"');
     expect(html).toContain('"autocompleteSources"');
     expect(html).toContain('"washington d c"');
     expect(html).toContain("function getAutocompleteConfig(question)");
@@ -1182,9 +1254,9 @@ describe("form rendering", () => {
     expect(html).toContain("Number.POSITIVE_INFINITY");
     expect(html).toContain("autocompleteConfig.getLabel(left.item).localeCompare(autocompleteConfig.getLabel(right.item))");
     expect(html).not.toContain(".slice(0, 3);");
-    expect(html).toContain('#steps:has(.step[data-step-kind="state"][aria-hidden="false"])');
-    expect(html).toContain('.step[data-step-kind="state"][aria-hidden="false"]');
-    expect(html).toContain(".step[data-step-kind=\"state\"][aria-hidden=\"false\"] .state-field");
+    expect(html).toContain('#steps:has(.step[data-step-kind="autocomplete"][aria-hidden="false"])');
+    expect(html).toContain('.step[data-step-kind="autocomplete"][aria-hidden="false"]');
+    expect(html).toContain('.step[data-step-kind="autocomplete"][aria-hidden="false"] .autocomplete-field');
     expect(html).toContain("grid-template-rows: auto minmax(0, 1fr);");
     expect(html).toContain("align-self: stretch;");
     expect(html).toContain("height: auto;");
@@ -1192,22 +1264,22 @@ describe("form rendering", () => {
     expect(html).not.toContain("height: 180px;");
     expect(html).toContain("overflow-y: auto;");
     expect(html).toContain("overscroll-behavior: contain;");
-    expect(html).toContain("state-scroll-fade-top");
-    expect(html).toContain("state-scroll-fade-bottom");
-    expect(html).toContain("function updateStateSuggestionScrollHints(suggestions)");
+    expect(html).toContain("autocomplete-scroll-fade-top");
+    expect(html).toContain("autocomplete-scroll-fade-bottom");
+    expect(html).toContain("function updateAutocompleteSuggestionScrollHints(suggestions)");
     expect(html).toContain("window.requestAnimationFrame(() =>");
     expect(html).toContain("data-can-scroll-up");
     expect(html).toContain("data-can-scroll-down");
-    expect(html).toContain('target.matches("[data-state-suggestions]")');
-    expect(html).toContain("function updateStateSuggestions(input)");
-    expect(html).toContain("isStateSuggestionPointerDown");
-    expect(html).toContain('target.closest("[data-state-suggestions-shell]")');
+    expect(html).toContain('target.matches("[data-autocomplete-suggestions]")');
+    expect(html).toContain("function updateAutocompleteSuggestions(input)");
+    expect(html).toContain("isAutocompleteSuggestionPointerDown");
+    expect(html).toContain('target.closest("[data-autocomplete-suggestions-shell]")');
     expect(html).toContain("Ingrese un estado válido de Estados Unidos.");
   });
 });
 
 function getRequiredTennesseeForm() {
-  const form = getFormByStateCode("tn");
+  const form = getFormByAreaCode("tn");
 
   if (!form) {
     throw new Error("Expected Tennessee form to exist.");

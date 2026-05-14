@@ -1,51 +1,65 @@
 import { createStateAutocompleteItems } from "./autocomplete";
-import { getQuestionSlug, getStepUrl, isCountedStep, isQuestionVisible as isServerQuestionVisible } from "./forms";
-import type { ChoiceQuestion, FormQuestion, InstantForm, InterstitialQuestion, StateQuestion, TextQuestion } from "./forms";
+import { getStepSlug, getStepUrl, isCountedStep, isStepVisible as isServerStepVisible } from "./forms";
+import type {
+  AutocompleteStep,
+  ChoiceStep,
+  FormStep,
+  InstantForm,
+  InterstitialStep,
+  PhoneStep,
+  TextStep,
+} from "./forms";
 import { US_STATES } from "./us-states";
 
-type ClientQuestionCondition = {
+type ClientStepCondition = {
   questionKey: string;
   answer: string;
 };
 
-type ClientQuestionBase = {
+type ClientStepBase = {
   key: string;
   slug: string;
   url: string;
   countsAsStep: boolean;
-  showWhen?: ClientQuestionCondition;
+  behavior: FormStep["behavior"];
+  showWhen?: ClientStepCondition;
 };
 
-type ClientQuestion =
-  | (ClientQuestionBase & {
+type ClientStep =
+  | (ClientStepBase & {
       kind: "choice";
       options: readonly string[];
     })
-  | (ClientQuestionBase & {
+  | (ClientStepBase & {
       kind: "text";
-      type: TextQuestion["type"];
+      type: TextStep["type"];
     })
-  | (ClientQuestionBase & {
-      kind: "state";
-      type: StateQuestion["type"];
-      suggestionSource: StateQuestion["suggestionSource"];
+  | (ClientStepBase & {
+      kind: "phone";
+      type: PhoneStep["type"];
     })
-  | (ClientQuestionBase & {
+  | (ClientStepBase & {
+      kind: "autocomplete";
+      type: AutocompleteStep["type"];
+      source: AutocompleteStep["source"]["clientKey"];
+      validationMessage: string;
+    })
+  | (ClientStepBase & {
       kind: "interstitial";
-      type: InterstitialQuestion["type"];
+      type: InterstitialStep["type"];
       loadingLabel: string;
-      successLabel: string;
-      completionAnswer: InterstitialQuestion["completionAnswer"];
-      seenAnswer: InterstitialQuestion["seenAnswer"];
+      successLines: InterstitialStep["successLines"];
+      completionAnswer: InterstitialStep["completionAnswer"];
+      seenAnswer: InterstitialStep["seenAnswer"];
       benefits: readonly string[];
     });
 
 type ClientFormConfig = {
-  stateCode: string;
+  areaCode: string;
   activeStepIndex: number;
   initialAnswers: Record<string, string>;
   previewMode: boolean;
-  questions: readonly ClientQuestion[];
+  steps: readonly ClientStep[];
   usStates: typeof US_STATES;
   autocompleteSources: {
     usStates: ReturnType<typeof createStateAutocompleteItems>;
@@ -59,18 +73,75 @@ export type RenderFormPageOptions = {
   stepUrlOverrides?: Record<string, string>;
 };
 
+function createClientStep(stepDefinition: FormStep, url: string): ClientStep {
+  const baseStep = {
+    key: stepDefinition.key,
+    slug: getStepSlug(stepDefinition),
+    url,
+    countsAsStep: isCountedStep(stepDefinition),
+    behavior: stepDefinition.behavior,
+    showWhen: stepDefinition.showWhen,
+  };
+
+  if (stepDefinition.kind === "choice") {
+    return {
+      ...baseStep,
+      kind: "choice",
+      options: stepDefinition.options.map((option) => option.key),
+    };
+  }
+
+  if (stepDefinition.kind === "phone") {
+    return {
+      ...baseStep,
+      kind: "phone",
+      type: stepDefinition.type,
+    };
+  }
+
+  if (stepDefinition.kind === "autocomplete") {
+    return {
+      ...baseStep,
+      kind: "autocomplete",
+      type: stepDefinition.type,
+      source: stepDefinition.source.clientKey,
+      validationMessage: stepDefinition.validationMessage,
+    };
+  }
+
+  if (stepDefinition.kind === "interstitial") {
+    return {
+      ...baseStep,
+      kind: "interstitial",
+      type: stepDefinition.type,
+      loadingLabel: stepDefinition.loadingLabel,
+      successLines: stepDefinition.successLines,
+      completionAnswer: stepDefinition.completionAnswer,
+      seenAnswer: stepDefinition.seenAnswer,
+      benefits: stepDefinition.benefits,
+    };
+  }
+
+  return {
+    ...baseStep,
+    kind: "text",
+    type: stepDefinition.type,
+  };
+}
+
 export function renderFormPage(form: InstantForm, options: RenderFormPageOptions = {}): string {
-  const lastStepIndex = Math.max(0, form.questions.length - 1);
+  const lastStepIndex = Math.max(0, form.steps.length - 1);
   const activeStepIndex = Math.max(0, Math.min(options.activeStepIndex ?? 0, lastStepIndex));
   const initialAnswers = options.answers ?? {};
   const stepUrlOverrides = options.stepUrlOverrides ?? {};
-  const getClientStepUrl = (question: FormQuestion) => stepUrlOverrides[question.key] ?? getStepUrl(form, question);
-  const initialStepCountLabels = form.questions.map((_, index) => getStepCountLabel(form, index, initialAnswers));
+  const getClientStepUrl = (stepDefinition: FormStep) =>
+    stepUrlOverrides[stepDefinition.key] ?? getStepUrl(form, stepDefinition);
+  const initialStepCountLabels = form.steps.map((_, index) => getStepCountLabel(form, index, initialAnswers));
   const initialProgressPercent = getStepProgressPercent(form, activeStepIndex, initialAnswers);
-  const activeQuestion = form.questions[activeStepIndex] ?? form.questions[0];
-  const initialStepCountAriaHidden = activeQuestion && !isCountedStep(activeQuestion) ? ' aria-hidden="true"' : "";
+  const activeStep = form.steps[activeStepIndex] ?? form.steps[0];
+  const initialStepCountAriaHidden = activeStep && !isCountedStep(activeStep) ? ' aria-hidden="true"' : "";
   const clientConfig: ClientFormConfig = {
-    stateCode: form.stateCode,
+    areaCode: form.areaCode,
     activeStepIndex,
     initialAnswers,
     previewMode: options.previewMode ?? false,
@@ -78,59 +149,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
     autocompleteSources: {
       usStates: createStateAutocompleteItems(US_STATES),
     },
-    questions: form.questions.map((question) => {
-      if (question.kind === "choice") {
-        return {
-          kind: "choice",
-          key: question.key,
-          slug: getQuestionSlug(question),
-          url: getClientStepUrl(question),
-          countsAsStep: isCountedStep(question),
-          showWhen: question.showWhen,
-          options: question.options.map((option) => option.key),
-        };
-      }
-
-      if (question.kind === "state") {
-        return {
-          kind: "state",
-          key: question.key,
-          slug: getQuestionSlug(question),
-          url: getClientStepUrl(question),
-          countsAsStep: isCountedStep(question),
-          showWhen: question.showWhen,
-          type: question.type,
-          suggestionSource: question.suggestionSource,
-        };
-      }
-
-      if (question.kind === "interstitial") {
-        return {
-          kind: "interstitial",
-          key: question.key,
-          slug: getQuestionSlug(question),
-          url: getClientStepUrl(question),
-          countsAsStep: isCountedStep(question),
-          showWhen: question.showWhen,
-          type: question.type,
-          loadingLabel: question.loadingLabel,
-          successLabel: question.successLabel,
-          completionAnswer: question.completionAnswer,
-          seenAnswer: question.seenAnswer,
-          benefits: question.benefits,
-        };
-      }
-
-      return {
-        kind: "text",
-        key: question.key,
-        slug: getQuestionSlug(question),
-        url: getClientStepUrl(question),
-        countsAsStep: isCountedStep(question),
-        showWhen: question.showWhen,
-        type: question.type,
-      };
-    }),
+    steps: form.steps.map((stepDefinition) => createClientStep(stepDefinition, getClientStepUrl(stepDefinition))),
   };
 
   return `<!doctype html>
@@ -138,7 +157,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>${escapeHtml(form.page.name)} | ${escapeHtml(form.stateCode.toUpperCase())}</title>
+    <title>${escapeHtml(form.page.name)} | ${escapeHtml(form.areaCode.toUpperCase())}</title>
     <style>
       :root {
         color-scheme: light;
@@ -222,7 +241,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         letter-spacing: 0;
       }
 
-      .state-pill {
+      .area-pill {
         border: 1px solid rgba(6, 77, 246, 0.22);
         border-radius: 999px;
         background: rgba(6, 77, 246, 0.07);
@@ -278,7 +297,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         display: grid;
       }
 
-      #steps:has(.step[data-step-kind="state"][aria-hidden="false"]) {
+      #steps:has(.step[data-step-kind="autocomplete"][aria-hidden="false"]) {
         display: grid;
       }
 
@@ -290,7 +309,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         align-self: stretch;
       }
 
-      .step[data-step-kind="state"][aria-hidden="false"] {
+      .step[data-step-kind="autocomplete"][aria-hidden="false"] {
         display: grid;
         grid-template-rows: auto minmax(0, 1fr);
         height: 100%;
@@ -390,11 +409,11 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         display: block;
       }
 
-      .matching-success-line:first-child {
+      .matching-success-line[data-color="brand-navy"] {
         color: var(--brand-navy);
       }
 
-      .matching-success-line:last-child {
+      .matching-success-line[data-color="accent"] {
         color: var(--accent);
       }
 
@@ -479,33 +498,33 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         border-color: var(--primary);
       }
 
-      .state-field {
+      .autocomplete-field {
         min-height: 0;
         position: relative;
       }
 
-      .step[data-step-kind="state"][aria-hidden="false"] .state-field {
+      .step[data-step-kind="autocomplete"][aria-hidden="false"] .autocomplete-field {
         display: grid;
         grid-template-rows: auto minmax(0, 1fr);
       }
 
-      .state-suggestions-shell {
+      .autocomplete-suggestions-shell {
         position: relative;
         min-height: 0;
         margin-top: 12px;
       }
 
-      .step[data-step-kind="state"][aria-hidden="false"] .state-suggestions-shell {
+      .step[data-step-kind="autocomplete"][aria-hidden="false"] .autocomplete-suggestions-shell {
         align-self: stretch;
         height: auto;
       }
 
-      .state-suggestions-shell[data-state-empty="true"] {
+      .autocomplete-suggestions-shell[data-autocomplete-empty="true"] {
         pointer-events: none;
         visibility: hidden;
       }
 
-      .state-suggestions {
+      .autocomplete-suggestions {
         display: grid;
         height: 100%;
         align-content: start;
@@ -517,7 +536,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         scrollbar-gutter: stable;
       }
 
-      .state-scroll-fade {
+      .autocomplete-scroll-fade {
         position: absolute;
         right: 0;
         left: 0;
@@ -528,22 +547,22 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         transition: opacity 140ms ease;
       }
 
-      .state-scroll-fade-top {
+      .autocomplete-scroll-fade-top {
         top: 0;
         background: linear-gradient(180deg, var(--surface), rgba(255, 253, 244, 0));
       }
 
-      .state-scroll-fade-bottom {
+      .autocomplete-scroll-fade-bottom {
         bottom: 0;
         background: linear-gradient(0deg, var(--surface), rgba(255, 253, 244, 0));
       }
 
-      .state-suggestions-shell[data-can-scroll-up="true"] .state-scroll-fade-top,
-      .state-suggestions-shell[data-can-scroll-down="true"] .state-scroll-fade-bottom {
+      .autocomplete-suggestions-shell[data-can-scroll-up="true"] .autocomplete-scroll-fade-top,
+      .autocomplete-suggestions-shell[data-can-scroll-down="true"] .autocomplete-scroll-fade-bottom {
         opacity: 1;
       }
 
-      .state-suggestion {
+      .autocomplete-suggestion {
         min-height: 48px;
         border: 1px solid var(--border);
         border-radius: 8px;
@@ -555,13 +574,13 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         text-align: left;
       }
 
-      .state-suggestion:focus-visible,
-      .state-suggestion:hover {
+      .autocomplete-suggestion:focus-visible,
+      .autocomplete-suggestion:hover {
         border-color: var(--primary);
         box-shadow: 0 0 0 4px rgba(6, 77, 246, 0.13);
       }
 
-      .state-suggestion-code {
+      .autocomplete-suggestion-value {
         color: var(--brand-navy);
         font-size: 0.85em;
         margin-left: 6px;
@@ -777,7 +796,8 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           padding: calc(40px + env(safe-area-inset-top)) 24px calc(32px + env(safe-area-inset-bottom));
         }
 
-        .form-panel:has(.step[aria-hidden="false"][data-step-kind="text"] .text-input:focus) {
+        .form-panel:has(.step[aria-hidden="false"][data-step-kind="text"] .text-input:focus),
+        .form-panel:has(.step[aria-hidden="false"][data-step-kind="phone"] .text-input:focus) {
           grid-template-rows: auto auto auto auto;
           align-content: start;
           overflow: hidden;
@@ -829,7 +849,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
             <img class="brand-logo" src="/assets/logo.webp" alt="${escapeHtml(form.page.name)}" width="220" height="63">
             
           </div>
-          <span class="state-pill">${escapeHtml(form.stateCode)}</span>
+          <span class="area-pill">${escapeHtml(form.areaCode)}</span>
         </header>
         <div class="progress-area">
           <div class="progress-meta">
@@ -840,7 +860,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           </div>
         </div>
         <section id="steps">
-          ${form.questions
+          ${form.steps
             .map((question, index) => renderQuestion(question, index, activeStepIndex, initialAnswers))
             .join("")}
         </section>
@@ -902,7 +922,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         let matchingTextTransitionId = 0;
         const completedMatchingSteps = new Set();
         let isActionPointerDown = false;
-        let isStateSuggestionPointerDown = false;
+        let isAutocompleteSuggestionPointerDown = false;
         let focusedTextInput;
         let errorModalReturnFocusTarget;
 
@@ -987,7 +1007,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         }
 
         function getVisibleStepIndexes() {
-          return config.questions
+          return config.steps
             .map((question, index) => (isQuestionVisible(question) ? index : -1))
             .filter((index) => index !== -1);
         }
@@ -998,7 +1018,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
 
         function getCountedVisibleStepIndexes() {
           return getVisibleStepIndexes().filter((stepIndex) => {
-            const question = config.questions[stepIndex];
+            const question = config.steps[stepIndex];
 
             return question && isCountedStep(question);
           });
@@ -1030,7 +1050,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         function getResumeVisibleStepIndex() {
           const visibleStepIndexes = getVisibleStepIndexes();
           const firstUnansweredStep = visibleStepIndexes.find((stepIndex) => {
-            const question = config.questions[stepIndex];
+            const question = config.steps[stepIndex];
 
             return question && !isStepAnswered(question);
           });
@@ -1084,12 +1104,12 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         }
 
         function getStepIndexForPath(pathname) {
-          return config.questions.findIndex((question) => question.url === pathname);
+          return config.steps.findIndex((question) => question.url === pathname);
         }
 
         function replaceHiddenMatchingRouteIfNeeded() {
           const stepIndex = getStepIndexForPath(window.location.pathname);
-          const question = config.questions[stepIndex];
+          const question = config.steps[stepIndex];
 
           if (!question || !shouldHideMatchingStep(question)) {
             return false;
@@ -1101,7 +1121,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
 
         function navigateToStep(nextStep) {
           const safeStep = Math.max(0, Math.min(nextStep, steps.length - 1));
-          const nextQuestion = config.questions[safeStep];
+          const nextQuestion = config.steps[safeStep];
 
           showStep(safeStep);
 
@@ -1112,7 +1132,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
 
         function replaceToStep(nextStep) {
           const safeStep = Math.max(0, Math.min(nextStep, steps.length - 1));
-          const nextQuestion = config.questions[safeStep];
+          const nextQuestion = config.steps[safeStep];
 
           showStep(safeStep);
 
@@ -1122,7 +1142,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         }
 
         function navigateToUrl(url) {
-          const stepIndex = config.questions.findIndex((question) => question.url === url);
+          const stepIndex = config.steps.findIndex((question) => question.url === url);
 
           if (stepIndex === -1) {
             window.location.href = url;
@@ -1133,7 +1153,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         }
 
         function replaceToUrl(url) {
-          const stepIndex = config.questions.findIndex((question) => question.url === url);
+          const stepIndex = config.steps.findIndex((question) => question.url === url);
 
           if (stepIndex === -1) {
             window.location.replace(url);
@@ -1144,7 +1164,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         }
 
         function getQuestion() {
-          return config.questions[currentStep];
+          return config.steps[currentStep];
         }
 
         function getCurrentAnswer() {
@@ -1223,11 +1243,11 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
             return false;
           }
 
-          if (question.type === "STATE") {
+          if (question.kind === "autocomplete") {
             const normalizedState = normalizeUsState(answer);
 
             if (!normalizedState) {
-              showErrorModal("Ingrese un estado válido de Estados Unidos.", {
+              showErrorModal(question.validationMessage || "Ingrese un estado válido de Estados Unidos.", {
                 returnFocusTarget: getValidationErrorReturnFocusTarget(shouldFocusInvalid),
               });
               return false;
@@ -1238,7 +1258,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
             return true;
           }
 
-          if (question.type === "PHONE") {
+          if (question.kind === "phone") {
             const normalizedPhone = normalizeUsPhoneNumber(answer);
 
             if (!normalizedPhone) {
@@ -1261,10 +1281,10 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         async function saveCheckpoint(questionKey, answer) {
           if (config.previewMode) {
             answers[questionKey] = answer;
-            return config.questions[currentStep]?.url;
+            return config.steps[currentStep]?.url;
           }
 
-          const response = await fetch("/api/forms/" + encodeURIComponent(config.stateCode) + "/checkpoints", {
+          const response = await fetch("/api/forms/" + encodeURIComponent(config.areaCode) + "/checkpoints", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ questionKey, answer }),
@@ -1294,14 +1314,14 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         }
 
         function getCoverageStateName() {
-          const stateCode = String(answers.residence_state || config.stateCode).toUpperCase();
-          const state = config.usStates.find((candidate) => candidate.code === stateCode);
+          const areaCode = String(answers.residence_state || config.areaCode).toUpperCase();
+          const state = config.usStates.find((candidate) => candidate.code === areaCode);
 
-          return state ? state.name : stateCode;
+          return state ? state.name : areaCode;
         }
 
         function formatMatchingBenefit(benefit) {
-          return benefit.replace("{{stateName}}", getCoverageStateName());
+          return benefit.replace("{{areaName}}", getCoverageStateName());
         }
 
         function shuffleMatchingBenefits(benefits) {
@@ -1420,27 +1440,33 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           }, matchingBenefitFadeOutMs);
         }
 
-        function renderMatchingBenefitContent(element, text, className) {
+        function renderMatchingBenefitContent(element, content, className) {
           element.replaceChildren();
 
           if (className !== "is-success") {
-            element.textContent = text;
+            element.textContent = String(content);
             return;
           }
 
-          const successLines = text.split("\\n").filter((line) => line.trim());
+          const successLines = Array.isArray(content)
+            ? content
+            : String(content)
+                .split("\\n")
+                .filter((line) => line.trim())
+                .map((line, index) => ({ text: line, color: index === 0 ? "brand-navy" : "accent" }));
 
           successLines.forEach((line) => {
             const lineElement = document.createElement("span");
             lineElement.className = "matching-success-line";
-            lineElement.textContent = line;
+            lineElement.dataset.color = line.color;
+            lineElement.textContent = line.text;
             element.appendChild(lineElement);
           });
         }
 
         function showMatchingSuccess(question, elements, options = {}) {
           elements.status.textContent = "";
-          setMatchingBenefitText(elements, question.successLabel, "is-success", options);
+          setMatchingBenefitText(elements, question.successLines, "is-success", options);
         }
 
         function runMatchingStep() {
@@ -1569,7 +1595,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         }
 
         function getAutocompleteConfig(question) {
-          if (question.kind === "state" && question.suggestionSource === "us_states") {
+          if (question.kind === "autocomplete" && question.source === "usStates") {
             return {
               items: config.autocompleteSources.usStates,
               getValue: (item) => item.value,
@@ -1642,8 +1668,8 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
             .map((result) => result.item);
         }
 
-        function updateStateSuggestionScrollHints(suggestions) {
-          const shell = suggestions.closest("[data-state-suggestions-shell]");
+        function updateAutocompleteSuggestionScrollHints(suggestions) {
+          const shell = suggestions.closest("[data-autocomplete-suggestions-shell]");
           if (!(shell instanceof HTMLElement)) {
             return;
           }
@@ -1654,8 +1680,8 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           shell.dataset.canScrollDown = String(canScrollDown);
         }
 
-        function updateStateSuggestionPanel(shell, suggestions, isEmpty) {
-          shell.dataset.stateEmpty = String(isEmpty);
+        function updateAutocompleteSuggestionPanel(shell, suggestions, isEmpty) {
+          shell.dataset.autocompleteEmpty = String(isEmpty);
           shell.setAttribute("aria-hidden", String(isEmpty));
 
           if (isEmpty) {
@@ -1666,14 +1692,14 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
 
           suggestions.scrollTop = 0;
           window.requestAnimationFrame(() => {
-            updateStateSuggestionScrollHints(suggestions);
+            updateAutocompleteSuggestionScrollHints(suggestions);
           });
         }
 
-        function updateStateSuggestions(input) {
+        function updateAutocompleteSuggestions(input) {
           const step = input.closest("[data-step]");
-          const shell = step ? step.querySelector("[data-state-suggestions-shell]") : undefined;
-          const suggestions = step ? step.querySelector("[data-state-suggestions]") : undefined;
+          const shell = step ? step.querySelector("[data-autocomplete-suggestions-shell]") : undefined;
+          const suggestions = step ? step.querySelector("[data-autocomplete-suggestions]") : undefined;
           const question = getQuestion();
           const autocompleteConfig = getAutocompleteConfig(question);
 
@@ -1685,21 +1711,21 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           suggestions.replaceChildren(
             ...suggestedItems.map((item) => {
               const button = document.createElement("button");
-              button.className = "state-suggestion";
+              button.className = "autocomplete-suggestion";
               button.type = "button";
-              button.dataset.stateSuggestion = autocompleteConfig.getValue(item);
-              button.dataset.stateName = autocompleteConfig.getLabel(item);
+              button.dataset.autocompleteSuggestion = autocompleteConfig.getValue(item);
+              button.dataset.autocompleteLabel = autocompleteConfig.getLabel(item);
               button.innerHTML =
                 "<span>" +
                 autocompleteConfig.getLabel(item) +
-                "</span><span class=\\"state-suggestion-code\\">" +
+                "</span><span class=\\"autocomplete-suggestion-value\\">" +
                 autocompleteConfig.getValue(item) +
                 "</span>";
 
               return button;
             }),
           );
-          updateStateSuggestionPanel(shell, suggestions, suggestedItems.length === 0);
+          updateAutocompleteSuggestionPanel(shell, suggestions, suggestedItems.length === 0);
         }
 
         function normalizeUsPhoneNumber(value) {
@@ -1782,8 +1808,8 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           return value instanceof HTMLInputElement && value.type === "tel";
         }
 
-        function isStateInputElement(value) {
-          return value instanceof HTMLInputElement && value.dataset.stateInput === "true";
+        function isAutocompleteInputElement(value) {
+          return value instanceof HTMLInputElement && value.dataset.autocompleteInput === "true";
         }
 
         function isTextInputElement(value) {
@@ -1843,11 +1869,12 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
 
         function shouldSubmitTextInputOnMobileBlur(event) {
           const target = event.target;
+          const question = getQuestion();
           if (
             !isMobileViewport() ||
             !isTextInputElement(target) ||
+            !question.behavior.mobileBlurSubmit ||
             isActionPointerDown ||
-            isStateSuggestionPointerDown ||
             isSubmitting
           ) {
             return false;
@@ -1863,11 +1890,12 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         function shouldSubmitTextInputOnMobileOutsidePointer(event) {
           const activeElement = isTextInputElement(document.activeElement) ? document.activeElement : focusedTextInput;
           const target = event.target;
+          const question = getQuestion();
           if (
             !isMobileViewport() ||
             !isTextInputElement(activeElement) ||
+            !question.behavior.mobileBlurSubmit ||
             isActionPointerDown ||
-            isStateSuggestionPointerDown ||
             isSubmitting
           ) {
             return false;
@@ -1881,7 +1909,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
             target !== activeElement &&
             !target.closest(".text-input") &&
             !target.closest(".actions") &&
-            !target.closest("[data-state-suggestions-shell]")
+            !target.closest("[data-autocomplete-suggestions-shell]")
           );
         }
 
@@ -1912,7 +1940,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
                   return;
                 }
 
-                navigateToUrl(nextUrl ?? config.questions[getNextVisibleStepIndex()].url);
+                navigateToUrl(nextUrl ?? config.steps[getNextVisibleStepIndex()].url);
               } catch (checkpointError) {
                 showErrorModal(
                   checkpointError instanceof Error ? checkpointError.message : "No pudimos guardar esta respuesta.",
@@ -1987,7 +2015,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           showStep(currentStep);
 
           try {
-            const response = await fetch("/api/forms/" + encodeURIComponent(config.stateCode) + "/submissions", {
+            const response = await fetch("/api/forms/" + encodeURIComponent(config.areaCode) + "/submissions", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ answers }),
@@ -2040,7 +2068,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
             try {
               const nextUrl = await saveCheckpoint(question.key, question.seenAnswer);
 
-              replaceToUrl(nextUrl ?? config.questions[getNextVisibleStepIndex()].url);
+              replaceToUrl(nextUrl ?? config.steps[getNextVisibleStepIndex()].url);
             } catch (checkpointError) {
               showErrorModal(
                 checkpointError instanceof Error ? checkpointError.message : "No pudimos guardar este paso.",
@@ -2061,7 +2089,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
               return;
             }
 
-            navigateToUrl(nextUrl ?? config.questions[getNextVisibleStepIndex()].url);
+            navigateToUrl(nextUrl ?? config.steps[getNextVisibleStepIndex()].url);
           } catch (checkpointError) {
             showErrorModal(
               checkpointError instanceof Error ? checkpointError.message : "No pudimos guardar esta respuesta.",
@@ -2106,15 +2134,15 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
 
         form.addEventListener("pointerdown", (event) => {
           const target = event.target;
-          if (target instanceof HTMLElement && target.closest("[data-state-suggestions-shell]")) {
-            isStateSuggestionPointerDown = true;
+          if (target instanceof HTMLElement && target.closest("[data-autocomplete-suggestions-shell]")) {
+            isAutocompleteSuggestionPointerDown = true;
           }
         });
 
         ["pointerup", "pointercancel"].forEach((eventName) => {
           window.addEventListener(eventName, () => {
             window.setTimeout(() => {
-              isStateSuggestionPointerDown = false;
+              isAutocompleteSuggestionPointerDown = false;
             }, 0);
           });
         });
@@ -2131,21 +2159,21 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
             return;
           }
 
-          const suggestion = target.closest("[data-state-suggestion]");
+          const suggestion = target.closest("[data-autocomplete-suggestion]");
           if (!(suggestion instanceof HTMLElement)) {
             return;
           }
 
           const step = suggestion.closest("[data-step]");
-          const input = step ? step.querySelector("[data-state-input]") : undefined;
+          const input = step ? step.querySelector("[data-autocomplete-input]") : undefined;
           if (!(input instanceof HTMLInputElement)) {
             return;
           }
 
-          input.value = suggestion.dataset.stateName ?? suggestion.dataset.stateSuggestion ?? "";
-          const suggestionsShell = step?.querySelector("[data-state-suggestions-shell]");
+          input.value = suggestion.dataset.autocompleteLabel ?? suggestion.dataset.autocompleteSuggestion ?? "";
+          const suggestionsShell = step?.querySelector("[data-autocomplete-suggestions-shell]");
           if (suggestionsShell instanceof HTMLElement) {
-            suggestionsShell.dataset.stateEmpty = "true";
+            suggestionsShell.dataset.autocompleteEmpty = "true";
             suggestionsShell.dataset.canScrollUp = "false";
             suggestionsShell.dataset.canScrollDown = "false";
             suggestionsShell.setAttribute("aria-hidden", "true");
@@ -2158,8 +2186,8 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           "scroll",
           (event) => {
             const target = event.target;
-            if (target instanceof HTMLElement && target.matches("[data-state-suggestions]")) {
-              updateStateSuggestionScrollHints(target);
+            if (target instanceof HTMLElement && target.matches("[data-autocomplete-suggestions]")) {
+              updateAutocompleteSuggestionScrollHints(target);
             }
           },
           true,
@@ -2182,8 +2210,8 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           }
 
           if (!isPhoneInputElement(target)) {
-            if (isStateInputElement(target)) {
-              updateStateSuggestions(target);
+            if (isAutocompleteInputElement(target)) {
+              updateAutocompleteSuggestions(target);
             }
             return;
           }
@@ -2197,8 +2225,8 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
             focusedTextInput = target;
           }
 
-          if (isStateInputElement(target)) {
-            updateStateSuggestions(target);
+          if (isAutocompleteInputElement(target)) {
+            updateAutocompleteSuggestions(target);
           }
         });
 
@@ -2248,7 +2276,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
 
           if (stepIndex !== -1) {
             showStep(stepIndex);
-            const currentQuestion = config.questions[currentStep];
+            const currentQuestion = config.steps[currentStep];
 
             if (currentQuestion && currentQuestion.url !== window.location.pathname) {
               window.history.replaceState({ step: currentStep }, "", currentQuestion.url);
@@ -2262,7 +2290,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           }
 
           const stepIndex = getStepIndexForPath(window.location.pathname);
-          const question = config.questions[stepIndex];
+          const question = config.steps[stepIndex];
 
           if (question && question.kind === "interstitial") {
             window.location.reload();
@@ -2274,7 +2302,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
 
         showStep(config.activeStepIndex);
         if (!replaceHiddenMatchingRouteIfNeeded()) {
-          const currentQuestion = config.questions[currentStep];
+          const currentQuestion = config.steps[currentStep];
           if (currentQuestion) {
             window.history.replaceState({ step: currentStep }, "", currentQuestion.url);
           }
@@ -2285,7 +2313,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
 </html>`;
 }
 
-export function renderUnavailablePage(stateCode: string): string {
+export function renderUnavailablePage(areaCode: string): string {
   return `<!doctype html>
 <html lang="es">
   <head>
@@ -2349,23 +2377,23 @@ export function renderUnavailablePage(stateCode: string): string {
   <body>
     <main class="unavailable">
       <h1>No disponible.</h1>
-      <p>El formulario para ${escapeHtml(stateCode.toUpperCase())} no está disponible en este momento. Puede volver al <a href="/tn">formulario de Tennessee</a>.</p>
+      <p>El formulario para ${escapeHtml(areaCode.toUpperCase())} no está disponible en este momento. Puede volver al <a href="/tn">formulario de Tennessee</a>.</p>
     </main>
   </body>
 </html>`;
 }
 
 function getVisibleStepIndexesForAnswers(form: InstantForm, answers: Record<string, string>): number[] {
-  return form.questions
-    .map((question, index) => (isServerQuestionVisible(question, answers) ? index : -1))
+  return form.steps
+    .map((stepDefinition, index) => (isServerStepVisible(stepDefinition, answers) ? index : -1))
     .filter((index) => index !== -1);
 }
 
 function getCountedVisibleStepIndexesForAnswers(form: InstantForm, answers: Record<string, string>): number[] {
   return getVisibleStepIndexesForAnswers(form, answers).filter((index) => {
-    const question = form.questions[index];
+    const stepDefinition = form.steps[index];
 
-    return question ? isCountedStep(question) : false;
+    return stepDefinition ? isCountedStep(stepDefinition) : false;
   });
 }
 
@@ -2395,40 +2423,39 @@ function getStepProgressPercent(form: InstantForm, stepIndex: number, answers: R
   return (countedStepNumber / countedStepCount) * 100;
 }
 
+type StepTemplateRenderer<TStep extends FormStep> = (stepDefinition: TStep, answers: Record<string, string>) => string;
+
+const stepTemplateRegistry = {
+  choice: renderOptions,
+  text: renderTextInput,
+  phone: renderPhoneInput,
+  autocomplete: renderAutocompleteInput,
+  interstitial: renderInterstitial,
+} satisfies Record<FormStep["kind"], StepTemplateRenderer<any>>;
+
 function renderQuestion(
-  question: FormQuestion,
+  stepDefinition: FormStep,
   index: number,
   activeStepIndex: number,
   answers: Record<string, string>,
 ): string {
   const isCurrent = index === activeStepIndex;
-  const countsAsStep = isCountedStep(question);
+  const countsAsStep = isCountedStep(stepDefinition);
+  const renderTemplate = stepTemplateRegistry[stepDefinition.template] as StepTemplateRenderer<FormStep>;
 
-  return `<article class="step" data-step="${index}" data-step-kind="${escapeHtml(question.kind)}" data-step-counted="${String(countsAsStep)}" aria-hidden="${String(!isCurrent)}">
-    <h1 class="question-title">${escapeHtml(question.label)}</h1>
-    ${
-      question.kind === "choice"
-        ? renderOptions(question, answers)
-        : question.kind === "state"
-          ? renderStateInput(question, answers)
-          : question.kind === "interstitial"
-            ? renderInterstitial(question, answers)
-            : renderTextInput(question, answers)
-    }
+  return `<article class="step" data-step="${index}" data-step-kind="${escapeHtml(stepDefinition.kind)}" data-step-counted="${String(countsAsStep)}" aria-hidden="${String(!isCurrent)}">
+    <h1 class="question-title">${escapeHtml(stepDefinition.label)}</h1>
+    ${renderTemplate(stepDefinition, answers)}
   </article>`;
 }
 
-function renderInterstitial(question: InterstitialQuestion, answers: Record<string, string>): string {
-  const answer = answers[question.key];
-  const isComplete = answer === question.completionAnswer || answer === question.seenAnswer;
+function renderInterstitial(stepDefinition: InterstitialStep, answers: Record<string, string>): string {
+  const answer = answers[stepDefinition.key];
+  const isComplete = answer === stepDefinition.completionAnswer || answer === stepDefinition.seenAnswer;
   const benefitClass = isComplete ? "matching-benefit is-success is-visible" : "matching-benefit";
   const benefitContent = isComplete
-    ? question.successLabel
-        .split("\n")
-        .filter((line) => line.trim())
-        .map((line) => `<span class="matching-success-line">${escapeHtml(line)}</span>`)
-        .join("")
-    : escapeHtml(question.benefits[0] ?? "");
+    ? renderInterstitialSuccessLines(stepDefinition.successLines)
+    : escapeHtml(stepDefinition.benefits[0] ?? "");
 
   return `<div class="matching-content">
     <p class="matching-status" data-matching-status></p>
@@ -2436,14 +2463,23 @@ function renderInterstitial(question: InterstitialQuestion, answers: Record<stri
   </div>`;
 }
 
-function renderOptions(question: ChoiceQuestion, answers: Record<string, string>): string {
-  const currentAnswer = answers[question.key];
+function renderInterstitialSuccessLines(successLines: InterstitialStep["successLines"]): string {
+  return successLines
+    .map(
+      (line) =>
+        `<span class="matching-success-line" data-color="${escapeHtml(line.color)}">${escapeHtml(line.text)}</span>`,
+    )
+    .join("");
+}
+
+function renderOptions(stepDefinition: ChoiceStep, answers: Record<string, string>): string {
+  const currentAnswer = answers[stepDefinition.key];
 
   return `<div class="options">
-    ${question.options
+    ${stepDefinition.options
       .map(
         (option, index) => `<label class="option">
-          <input type="radio" name="${escapeHtml(question.key)}" value="${escapeHtml(option.key)}"${
+          <input type="radio" name="${escapeHtml(stepDefinition.key)}" value="${escapeHtml(option.key)}"${
             currentAnswer === option.key ? " checked" : ""
           }>
           <span class="option-index">${index + 1}</span>
@@ -2454,66 +2490,77 @@ function renderOptions(question: ChoiceQuestion, answers: Record<string, string>
   </div>`;
 }
 
-function renderTextInput(question: TextQuestion, answers: Record<string, string>): string {
-  const inputType = question.type === "PHONE" ? "tel" : "text";
-  const value = answers[question.key] ?? "";
-  const placeholder = getInputPlaceholder(question);
+function renderTextInput(stepDefinition: TextStep, answers: Record<string, string>): string {
+  return renderBaseTextInput(stepDefinition, answers, "text");
+}
+
+function renderPhoneInput(stepDefinition: PhoneStep, answers: Record<string, string>): string {
+  return renderBaseTextInput(stepDefinition, answers, "tel");
+}
+
+function renderBaseTextInput(
+  stepDefinition: TextStep | PhoneStep,
+  answers: Record<string, string>,
+  inputType: "tel" | "text",
+): string {
+  const value = answers[stepDefinition.key] ?? "";
+  const placeholder = getInputPlaceholder(stepDefinition);
 
   return `<input
     class="text-input"
     type="${inputType}"
-    name="${escapeHtml(question.key)}"
-    autocomplete="${escapeHtml(question.autocomplete)}"
-    inputmode="${escapeHtml(question.inputMode)}"
+    name="${escapeHtml(stepDefinition.key)}"
+    autocomplete="${escapeHtml(stepDefinition.autocomplete)}"
+    inputmode="${escapeHtml(stepDefinition.inputMode)}"
     placeholder="${escapeHtml(placeholder)}"
     value="${escapeHtml(value)}"
   >`;
 }
 
-function renderStateInput(question: StateQuestion, answers: Record<string, string>): string {
-  const value = answers[question.key] ?? "";
-  const placeholder = getInputPlaceholder(question);
+function renderAutocompleteInput(stepDefinition: AutocompleteStep, answers: Record<string, string>): string {
+  const value = answers[stepDefinition.key] ?? "";
+  const placeholder = getInputPlaceholder(stepDefinition);
 
-  return `<div class="state-field">
+  return `<div class="autocomplete-field">
     <input
       class="text-input"
       type="text"
-      name="${escapeHtml(question.key)}"
-      autocomplete="${escapeHtml(question.autocomplete)}"
-      inputmode="${escapeHtml(question.inputMode)}"
+      name="${escapeHtml(stepDefinition.key)}"
+      autocomplete="${escapeHtml(stepDefinition.autocomplete)}"
+      inputmode="${escapeHtml(stepDefinition.inputMode)}"
       placeholder="${escapeHtml(placeholder)}"
       value="${escapeHtml(value)}"
-      data-state-input="true"
+      data-autocomplete-input="true"
     >
     <div
-      class="state-suggestions-shell"
-      data-state-suggestions-shell
-      data-state-empty="true"
+      class="autocomplete-suggestions-shell"
+      data-autocomplete-suggestions-shell
+      data-autocomplete-empty="true"
       data-can-scroll-up="false"
       data-can-scroll-down="false"
       aria-hidden="true"
     >
-      <div class="state-scroll-fade state-scroll-fade-top" aria-hidden="true"></div>
-      <div class="state-suggestions" data-state-suggestions></div>
-      <div class="state-scroll-fade state-scroll-fade-bottom" aria-hidden="true"></div>
+      <div class="autocomplete-scroll-fade autocomplete-scroll-fade-top" aria-hidden="true"></div>
+      <div class="autocomplete-suggestions" data-autocomplete-suggestions></div>
+      <div class="autocomplete-scroll-fade autocomplete-scroll-fade-bottom" aria-hidden="true"></div>
     </div>
   </div>`;
 }
 
-function getInputPlaceholder(question: TextQuestion | StateQuestion): string {
-  if (question.kind === "state") {
+function getInputPlaceholder(stepDefinition: TextStep | PhoneStep | AutocompleteStep): string {
+  if (stepDefinition.kind === "autocomplete") {
     return "Escriba su estado aquí";
   }
 
-  if (question.type === "FIRST_NAME") {
+  if (stepDefinition.type === "FIRST_NAME") {
     return "Escriba su nombre aquí";
   }
 
-  if (question.type === "LAST_NAME") {
+  if (stepDefinition.type === "LAST_NAME") {
     return "Escriba su apellido aquí";
   }
 
-  if (question.type === "PHONE") {
+  if (stepDefinition.type === "PHONE") {
     return "Escriba su telefono aquí";
   }
 

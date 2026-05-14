@@ -1,7 +1,6 @@
-import { getVisibleQuestions, isQuestionVisible } from "./forms";
-import type { FormQuestion, InstantForm } from "./forms";
-import { US_STATE_VALIDATION_MESSAGE, normalizeUsState } from "./us-states";
-import { US_PHONE_VALIDATION_MESSAGE, normalizeUsPhoneNumber } from "./validation";
+import { getVisibleSteps, isStepVisible } from "./forms";
+import type { FormStep, InstantForm } from "./forms";
+import { isStepAnswered, validateStepCheckpointAnswer } from "./step-adapters";
 
 export type CheckpointAnswers = Record<string, string>;
 
@@ -17,8 +16,8 @@ export type CheckpointValidationResult =
 
 export const CHECKPOINT_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
 
-export function getCheckpointCookieName(stateCode: string): string {
-  return `instant_forms_${stateCode.toLowerCase()}_answers`;
+export function getCheckpointCookieName(areaCode: string): string {
+  return `instant_forms_${areaCode.toLowerCase()}_answers`;
 }
 
 export function encodeCheckpointAnswers(answers: CheckpointAnswers): string {
@@ -54,78 +53,40 @@ export function sanitizeCheckpointAnswers(form: InstantForm, input: unknown): Ch
 
   const answers: CheckpointAnswers = {};
 
-  for (const question of form.questions) {
-    if (!isQuestionVisible(question, answers)) {
+  for (const stepDefinition of form.steps) {
+    if (!isStepVisible(stepDefinition, answers)) {
       continue;
     }
 
-    const rawAnswer = input[question.key];
-    const validation = validateCheckpointAnswer(question, rawAnswer);
+    const rawAnswer = input[stepDefinition.key];
+    const validation = validateCheckpointAnswer(stepDefinition, rawAnswer);
 
     if (validation.ok) {
-      answers[question.key] = validation.answer;
+      answers[stepDefinition.key] = validation.answer;
     }
   }
 
   return answers;
 }
 
-export function validateCheckpointAnswer(question: FormQuestion, input: unknown): CheckpointValidationResult {
-  const answer = typeof input === "string" ? input.trim() : "";
+export function validateCheckpointAnswer(stepDefinition: FormStep, input: unknown): CheckpointValidationResult {
+  const validation = validateStepCheckpointAnswer(stepDefinition, input);
 
-  if (!answer) {
-    return { ok: false, message: "Esta respuesta es requerida." };
+  if (!validation.ok) {
+    return validation;
   }
 
-  if (question.kind === "interstitial") {
-    if (answer !== question.completionAnswer && answer !== question.seenAnswer) {
-      return { ok: false, message: "No pudimos completar este paso." };
-    }
-
-    return { ok: true, answer };
-  }
-
-  if (question.kind === "choice") {
-    const allowedOption = question.options.some((option) => option.key === answer);
-
-    if (!allowedOption) {
-      return { ok: false, message: "Answer is not a valid option." };
-    }
-
-    return { ok: true, answer };
-  }
-
-  if (question.kind === "state") {
-    const normalizedState = normalizeUsState(answer);
-
-    if (!normalizedState) {
-      return { ok: false, message: US_STATE_VALIDATION_MESSAGE };
-    }
-
-    return { ok: true, answer: normalizedState };
-  }
-
-  if (question.type === "PHONE") {
-    const normalizedPhone = normalizeUsPhoneNumber(answer);
-
-    if (!normalizedPhone) {
-      return { ok: false, message: US_PHONE_VALIDATION_MESSAGE };
-    }
-
-    return { ok: true, answer };
-  }
-
-  return { ok: true, answer };
+  return { ok: true, answer: validation.answer };
 }
 
 export function getFirstUnansweredStepIndex(form: InstantForm, answers: CheckpointAnswers): number | undefined {
-  const firstUnansweredQuestion = getVisibleQuestions(form, answers).find((question) => !isQuestionAnswered(question, answers));
+  const firstUnansweredStep = getVisibleSteps(form, answers).find((stepDefinition) => !isStepAnswered(stepDefinition, answers));
 
-  if (!firstUnansweredQuestion) {
+  if (!firstUnansweredStep) {
     return undefined;
   }
 
-  const firstUnansweredIndex = form.questions.findIndex((question) => question.key === firstUnansweredQuestion.key);
+  const firstUnansweredIndex = form.steps.findIndex((stepDefinition) => stepDefinition.key === firstUnansweredStep.key);
 
   return firstUnansweredIndex === -1 ? undefined : firstUnansweredIndex;
 }
@@ -137,27 +98,27 @@ export function getResumeStepIndex(form: InstantForm, answers: CheckpointAnswers
     return firstUnansweredIndex;
   }
 
-  const visibleQuestions = getVisibleQuestions(form, answers);
-  const lastVisibleQuestion = visibleQuestions[visibleQuestions.length - 1];
+  const visibleSteps = getVisibleSteps(form, answers);
+  const lastVisibleStep = visibleSteps[visibleSteps.length - 1];
 
-  if (!lastVisibleQuestion) {
+  if (!lastVisibleStep) {
     return 0;
   }
 
-  const lastVisibleIndex = form.questions.findIndex((question) => question.key === lastVisibleQuestion.key);
+  const lastVisibleIndex = form.steps.findIndex((stepDefinition) => stepDefinition.key === lastVisibleStep.key);
 
   return lastVisibleIndex === -1 ? 0 : lastVisibleIndex;
 }
 
 export function canAccessStep(form: InstantForm, stepIndex: number, answers: CheckpointAnswers): boolean {
-  const stepQuestion = form.questions[stepIndex];
+  const requestedStep = form.steps[stepIndex];
 
-  if (!stepQuestion || !isQuestionVisible(stepQuestion, answers)) {
+  if (!requestedStep || !isStepVisible(requestedStep, answers)) {
     return false;
   }
 
-  const visibleQuestions = getVisibleQuestions(form, answers);
-  const requestedVisibleIndex = visibleQuestions.findIndex((question) => question.key === stepQuestion.key);
+  const visibleSteps = getVisibleSteps(form, answers);
+  const requestedVisibleIndex = visibleSteps.findIndex((stepDefinition) => stepDefinition.key === requestedStep.key);
   const firstUnansweredIndex = getFirstUnansweredStepIndex(form, answers);
 
   if (requestedVisibleIndex === -1) {
@@ -168,45 +129,31 @@ export function canAccessStep(form: InstantForm, stepIndex: number, answers: Che
     return true;
   }
 
-  const firstUnansweredQuestion = form.questions[firstUnansweredIndex];
-  const firstUnansweredVisibleIndex = firstUnansweredQuestion
-    ? visibleQuestions.findIndex((question) => question.key === firstUnansweredQuestion.key)
+  const firstUnansweredStep = form.steps[firstUnansweredIndex];
+  const firstUnansweredVisibleIndex = firstUnansweredStep
+    ? visibleSteps.findIndex((stepDefinition) => stepDefinition.key === firstUnansweredStep.key)
     : -1;
 
   return firstUnansweredVisibleIndex !== -1 && requestedVisibleIndex <= firstUnansweredVisibleIndex;
 }
 
 export function getNextStepIndex(form: InstantForm, currentStepIndex: number, answers: CheckpointAnswers): number {
-  const visibleQuestions = getVisibleQuestions(form, answers);
-  const nextVisibleQuestion = visibleQuestions.find((question) => {
-    const questionIndex = form.questions.findIndex((candidate) => candidate.key === question.key);
+  const visibleSteps = getVisibleSteps(form, answers);
+  const nextVisibleStep = visibleSteps.find((stepDefinition) => {
+    const stepIndex = form.steps.findIndex((candidate) => candidate.key === stepDefinition.key);
 
-    return questionIndex > currentStepIndex;
+    return stepIndex > currentStepIndex;
   });
 
-  if (!nextVisibleQuestion) {
+  if (!nextVisibleStep) {
     const resumeStepIndex = getResumeStepIndex(form, answers);
 
     return resumeStepIndex;
   }
 
-  const nextStepIndex = form.questions.findIndex((question) => question.key === nextVisibleQuestion.key);
+  const nextStepIndex = form.steps.findIndex((stepDefinition) => stepDefinition.key === nextVisibleStep.key);
 
   return nextStepIndex === -1 ? getResumeStepIndex(form, answers) : nextStepIndex;
-}
-
-function isQuestionAnswered(question: FormQuestion, answers: CheckpointAnswers): boolean {
-  const answer = answers[question.key];
-
-  if (!answer) {
-    return false;
-  }
-
-  if (question.kind === "interstitial") {
-    return answer === question.seenAnswer;
-  }
-
-  return true;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -2,7 +2,7 @@
 
 A small Bun + Hono + TypeScript app for ultra-fast progressive lead forms.
 
-The first form is a Spanish Tennessee auto-insurance lead flow for Seguros Aseguranza. Forms are selected by lowercase state code, so future states can be added as new registry entries without changing the page shell.
+The first form is a Spanish Tennessee auto-insurance lead flow for Seguros Aseguranza. Forms are selected by lowercase area code, so future markets can be added as new registry entries without changing the page shell.
 
 ## Current Status
 
@@ -12,7 +12,7 @@ The first form is a Spanish Tennessee auto-insurance lead flow for Seguros Asegu
 - Entrypoint: `index.ts`
 - First route: `/tn`
 - Type checking: strict TypeScript via `tsconfig.json`
-- Tests: Bun test runner
+- Tests: Bun test runner plus Playwright browser UI tests
 - Required environment variables: none
 - Persistence: short-term checkpoint answers in an HttpOnly cookie; valid submissions are logged to the server console
 
@@ -44,6 +44,13 @@ Run tests:
 bun test
 ```
 
+Run browser UI tests:
+
+```bash
+bunx playwright install chromium
+bun run test:ui
+```
+
 ## Project Structure
 
 ```text
@@ -53,15 +60,21 @@ bun test
 ├── bun.lock
 ├── index.ts
 ├── package.json
+├── playwright.config.ts
 ├── src
+│   ├── autocomplete.ts
 │   ├── forms.ts
 │   ├── checkpoints.ts
+│   ├── phone.ts
 │   ├── render.ts
 │   ├── server.ts
+│   ├── step-adapters.ts
 │   ├── us-states.ts
 │   └── validation.ts
 ├── tests
-│   └── instant-forms.test.ts
+│   ├── instant-forms.test.ts
+│   └── ui
+│       └── instant-forms.pw.ts
 └── tsconfig.json
 ```
 
@@ -74,13 +87,15 @@ bun test
 | `GET /tn/:stepSlug` | Renders a specific guarded Tennessee step, for example `/tn/vive-en-tennessee`. |
 | `GET /tn/*` | Redirects unknown paths under Tennessee back to `/tn`. |
 | `GET /__preview/tn/buscando-oferta` | Local no-store preview for iterating on the matching transition. |
-| `GET /:stateCode` | Redirects a matching state form or returns a Spanish unavailable page. |
-| `POST /api/forms/:stateCode/checkpoints` | Validates one answer, saves it to the checkpoint cookie, and returns the next allowed URL. |
-| `POST /api/forms/:stateCode/submissions` | Validates and logs completed submissions. |
+| `GET /:areaCode` | Redirects a matching area form or returns a Spanish unavailable page. |
+| `POST /api/forms/:areaCode/checkpoints` | Validates one answer, saves it to the checkpoint cookie, and returns the next allowed URL. |
+| `POST /api/forms/:areaCode/submissions` | Validates and logs completed submissions. |
 
 ## Form Flow
 
-The Tennessee form asks one question per step. It does not disqualify visitors; every visitor continues through the flow. If a visitor answers that they do not live in Tennessee, the form inserts one extra step asking which state they live in.
+The Tennessee form is defined with a typed declarative DSL in `src/forms.ts`. The flow supports reusable step kinds: `choice`, `text`, `phone`, `autocomplete`, and `interstitial`. Rendering, validation, checkpoint behavior, counted-step progress, and client behavior flags come from the step definitions.
+
+The Tennessee form asks one question per step. It does not disqualify visitors; every visitor continues through the flow. If a visitor answers that they do not live in Tennessee, the form inserts one extra autocomplete step asking which state they live in.
 
 Question order:
 
@@ -95,7 +110,7 @@ Question order:
 9. `last_name`
 10. `phone_number`
 
-The `matching_offer` step is a checkpoint-only branded loading moment before contact information. It rotates short benefit lines, uses the visitor's real state in the coverage message, then unlocks the `Siguiente` button after the success message. Contact labels are shown in Spanish: `Nombre`, `Apellido`, and `Número de teléfono`.
+The `matching_offer` step is a checkpoint-only interstitial before contact information. It rotates short benefit lines, uses the visitor's real state in the location-aware message, then unlocks the `Siguiente` button after the success message. It is not counted in `Paso X de Y`. Its success copy is defined as separate colored lines, so text like `Encontramos agentes listos para cotizarle.` and `Descubra cuánto puede ahorrar.` can use distinct brand colors without custom template code. Contact labels are shown in Spanish: `Nombre`, `Apellido`, and `Número de teléfono`.
 
 Step URLs use explicit Spanish slugs while submissions and cookies keep the stable internal question keys:
 
@@ -114,7 +129,7 @@ Visitors can use browser Back/Forward across steps. Direct URLs are guarded: a v
 
 ## Checkpoints
 
-Each valid partial answer is saved in an HttpOnly cookie named `instant_forms_<stateCode>_answers`, using a 7-day max age, `SameSite=Lax`, `Path=/`, and `Secure` on HTTPS. The cookie stores a base64url JSON answer map and is validated/sanitized on every request before it is used.
+Each valid partial answer is saved in an HttpOnly cookie named `instant_forms_<areaCode>_answers`, using a 7-day max age, `SameSite=Lax`, `Path=/`, and `Secure` on HTTPS. The cookie stores a base64url JSON answer map and is validated/sanitized on every request before it is used.
 
 Phone checkpoint values preserve the visitor's visible input, such as `+1 (615) 555-1234`, so refresh and resume can prefill naturally. Final submissions still normalize phone answers to E.164.
 
@@ -147,7 +162,7 @@ When `belongs_to_state` is `no`, submissions must include `residence_state`, nor
 
 Valid submissions are logged to the server console with:
 
-- `stateCode`
+- `areaCode`
 - `formId`
 - `formName`
 - `pageId`
@@ -163,8 +178,10 @@ After a successful submission, the checkpoint cookie is cleared.
 - Use Hono routes for HTTP behavior.
 - Keep TypeScript strict and prefer explicit, typed boundaries.
 - Keep changes small and focused; avoid adding framework or build complexity before it is needed.
-- Add future state forms in `src/forms.ts` with lowercase state-code keys.
-- Add tests with Bun's test runner when meaningful behavior changes.
+- Add future area forms in `src/forms.ts` with lowercase area-code keys.
+- Add step behavior through the DSL builders and step adapters rather than one-off route or template branches.
+- Add fast behavior tests with Bun's test runner when meaningful behavior changes.
+- Add Playwright coverage for browser-visible behavior or layout-sensitive changes. Use `bun run test:ui:update` only when intentionally updating visual snapshots.
 - Update this README when setup, commands, runtime behavior, public usage, or environment variables change.
 - Do not commit secrets. If configuration becomes necessary, use environment variables and document them here.
 
