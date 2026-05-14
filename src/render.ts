@@ -67,6 +67,8 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
   const getClientStepUrl = (question: FormQuestion) => stepUrlOverrides[question.key] ?? getStepUrl(form, question);
   const initialStepCountLabels = form.questions.map((_, index) => getStepCountLabel(form, index, initialAnswers));
   const initialProgressPercent = getStepProgressPercent(form, activeStepIndex, initialAnswers);
+  const activeQuestion = form.questions[activeStepIndex] ?? form.questions[0];
+  const initialStepCountAriaHidden = activeQuestion && !isCountedStep(activeQuestion) ? ' aria-hidden="true"' : "";
   const clientConfig: ClientFormConfig = {
     stateCode: form.stateCode,
     activeStepIndex,
@@ -231,6 +233,20 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         text-transform: uppercase;
       }
 
+      .progress-area {
+        position: relative;
+      }
+
+      .progress-meta {
+        position: absolute;
+        right: 0;
+        bottom: calc(100% + 6px);
+        display: flex;
+        min-height: 1.3em;
+        align-items: center;
+        justify-content: flex-end;
+      }
+
       .progress-shell {
         height: 8px;
         overflow: hidden;
@@ -264,20 +280,21 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
 
       .step[data-step-kind="interstitial"][aria-hidden="false"] {
         display: grid;
-        grid-template-rows: auto auto minmax(0, 1fr);
+        grid-template-rows: auto minmax(0, 1fr);
         height: 100%;
         min-height: 0;
         align-self: stretch;
       }
 
       .step-count {
-        margin: 0 0 12px;
+        margin: 0;
         color: var(--brand-navy);
         font-size: 0.95rem;
         font-weight: 700;
+        line-height: 1.3;
       }
 
-      .step[data-step-counted="false"] .step-count {
+      .step-count[aria-hidden="true"] {
         visibility: hidden;
       }
 
@@ -759,14 +776,17 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           </div>
           <span class="state-pill">${escapeHtml(form.stateCode)}</span>
         </header>
-        <div class="progress-shell" aria-hidden="true">
-          <div class="progress-bar" id="progress-bar" style="width: ${initialProgressPercent}%"></div>
+        <div class="progress-area">
+          <div class="progress-meta">
+            <p class="step-count" data-step-count${initialStepCountAriaHidden}>${escapeHtml(initialStepCountLabels[activeStepIndex] ?? "Paso 1 de 1")}</p>
+          </div>
+          <div class="progress-shell" aria-hidden="true">
+            <div class="progress-bar" id="progress-bar" style="width: ${initialProgressPercent}%"></div>
+          </div>
         </div>
         <section id="steps">
           ${form.questions
-            .map((question, index) =>
-              renderQuestion(question, index, initialStepCountLabels[index] ?? "Paso 1 de 1", activeStepIndex, initialAnswers),
-            )
+            .map((question, index) => renderQuestion(question, index, activeStepIndex, initialAnswers))
             .join("")}
         </section>
         <footer>
@@ -792,6 +812,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         const thanks = document.getElementById("thanks");
         const steps = Array.from(document.querySelectorAll("[data-step]"));
         const progressBar = document.getElementById("progress-bar");
+        const stepCount = document.querySelector("[data-step-count]");
         const backButton = document.getElementById("back-button");
         const nextButton = document.getElementById("next-button");
         const actions = document.querySelector(".actions");
@@ -856,9 +877,9 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           });
 
           form.dataset.activeKind = question.kind;
-          const stepCount = steps[currentStep].querySelector("[data-step-count]");
           if (stepCount) {
             stepCount.textContent = "Paso " + countedStepNumber + " de " + countedStepCount;
+            stepCount.setAttribute("aria-hidden", String(!question.countsAsStep));
           }
 
           progressBar.style.width = (countedStepNumber / countedStepCount) * 100 + "%";
@@ -2242,16 +2263,13 @@ function getStepProgressPercent(form: InstantForm, stepIndex: number, answers: R
 function renderQuestion(
   question: FormQuestion,
   index: number,
-  stepCountLabel: string,
   activeStepIndex: number,
   answers: Record<string, string>,
 ): string {
   const isCurrent = index === activeStepIndex;
   const countsAsStep = isCountedStep(question);
-  const stepCountAriaHidden = countsAsStep ? "" : ' aria-hidden="true"';
 
   return `<article class="step" data-step="${index}" data-step-kind="${escapeHtml(question.kind)}" data-step-counted="${String(countsAsStep)}" aria-hidden="${String(!isCurrent)}">
-    <p class="step-count" data-step-count${stepCountAriaHidden}>${escapeHtml(stepCountLabel)}</p>
     <h1 class="question-title">${escapeHtml(question.label)}</h1>
     ${
       question.kind === "choice"

@@ -362,6 +362,8 @@ describe("server routing", () => {
     expect(matchingResponse.status).toBe(200);
     const matchingHtml = await matchingResponse.text();
     expect(matchingHtml).toContain('"matching_offer":"completed"');
+    expect((matchingHtml.match(/<p class="step-count" data-step-count/g) ?? []).length).toBe(1);
+    expect(matchingHtml).toContain('<div class="progress-meta">');
     expect(matchingHtml).toContain('<p class="step-count" data-step-count aria-hidden="true">Paso 5 de 8</p>');
     expect(matchingHtml).toContain('class="matching-benefit is-success is-visible"');
     expect(matchingHtml).toContain(
@@ -383,6 +385,7 @@ describe("server routing", () => {
 
     expect(response.status).toBe(200);
     expect(html).toContain('"matching_offer":"completed"');
+    expect((html.match(/<p class="step-count" data-step-count/g) ?? []).length).toBe(1);
     expect(html).toContain('<p class="step-count" data-step-count aria-hidden="true">Paso 6 de 9</p>');
   });
 
@@ -399,6 +402,7 @@ describe("server routing", () => {
     expect(response.status).toBe(200);
     const html = await response.text();
     expect(html).toContain('data-step="7" data-step-kind="text" data-step-counted="true" aria-hidden="false"');
+    expect((html.match(/<p class="step-count" data-step-count/g) ?? []).length).toBe(1);
     expect(html).toContain('<p class="step-count" data-step-count>Paso 6 de 8</p>');
   });
 
@@ -866,11 +870,18 @@ describe("form rendering", () => {
     expect(html).toContain("font-size: clamp(2rem, 4vw, 2.75rem);");
     expect(html).toContain("text-wrap: balance;");
     expect(html).toContain("#steps {\n        min-height: 0;");
-    expect(html).toContain('.step[data-step-counted="false"] .step-count');
+    expect(html).toContain('<div class="progress-meta">');
+    expect(html).toContain(".progress-area {\n        position: relative;");
+    expect(html).toContain("position: absolute;\n        right: 0;\n        bottom: calc(100% + 6px);");
+    expect(html).not.toContain(".progress-area {\n        display: grid;");
+    expect((html.match(/<p class="step-count" data-step-count/g) ?? []).length).toBe(1);
+    expect(html).toContain('const stepCount = document.querySelector("[data-step-count]");');
+    expect(html).toContain('stepCount.setAttribute("aria-hidden", String(!question.countsAsStep));');
+    expect(html).toContain('.step-count[aria-hidden="true"]');
     expect(html).toContain("visibility: hidden;");
     expect(html).toContain('#steps:has(.step[data-step-kind="interstitial"][aria-hidden="false"])');
     expect(html).toContain('.step[data-step-kind="interstitial"][aria-hidden="false"]');
-    expect(html).toContain("grid-template-rows: auto auto minmax(0, 1fr);");
+    expect(html).toContain("grid-template-rows: auto minmax(0, 1fr);");
     expect(html).toContain("height: 100%;");
     expect(html).toContain("align-content: center;");
     expect(html).toContain("justify-content: center;");
