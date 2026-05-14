@@ -60,6 +60,14 @@ bun run dev
 
 Open `http://localhost:3000/tn`.
 
+Build production form HTML:
+
+```bash
+bun run build:forms
+```
+
+The build writes minified route HTML into `/_dist/forms`. Each step page still ships CSS and JavaScript inline for speed, but production requests read the prebuilt shell and only inject the request-specific checkpoint config from the HttpOnly cookie. Development keeps readable CSS/JS and uses the same active-step-only SSR shape.
+
 ## Project Structure
 
 ```text

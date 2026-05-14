@@ -2,6 +2,7 @@ import { US_STATES } from "../../../shared/data/us-states";
 import {
   getStepSlug,
   isCountedStep,
+  isStepVisible,
   type AutocompleteStep,
   type FormStep,
   type InstantForm,
@@ -59,9 +60,16 @@ export type ClientFormConfig = {
   activeStepIndex: number;
   initialAnswers: Record<string, string>;
   previewMode: boolean;
+  currentStep: ClientStep;
   steps: readonly ClientStep[];
-  usStates: typeof US_STATES;
-  autocompleteSources: {
+  isFinalStep: boolean;
+  previousUrl?: string;
+  nextUrl?: string;
+  stepUrlsBySlug: Record<string, string>;
+  countedStepNumber: number;
+  countedStepCount: number;
+  usStates?: typeof US_STATES;
+  autocompleteSources?: {
     usStates: ReturnType<typeof createStateAutocompleteItems>;
   };
 };
@@ -73,20 +81,53 @@ export function createClientFormConfig(
   previewMode: boolean,
   getClientStepUrl: (stepDefinition: FormStep) => string,
 ): ClientFormConfig {
+  const currentStepDefinition = getStepAt(form, activeStepIndex);
+  const visibleStepIndexes = getVisibleStepIndexes(form, initialAnswers, previewMode);
+  const visiblePosition = visibleStepIndexes.indexOf(activeStepIndex);
+  const previousStepIndex = visiblePosition > 0 ? visibleStepIndexes[visiblePosition - 1] : undefined;
+  const nextStepIndex = visiblePosition === -1 ? undefined : visibleStepIndexes[visiblePosition + 1];
+  const countedStepIndexes = visibleStepIndexes.filter((index) => isCountedStep(getStepAt(form, index)));
+  const countedStepNumber = Math.max(countedStepIndexes.filter((index) => index <= activeStepIndex).length, 1);
+  const stepUrlsBySlug = Object.fromEntries(
+    form.steps.map((stepDefinition) => [getStepSlug(stepDefinition), getClientStepUrl(stepDefinition)]),
+  );
+  const currentStep = createClientStep(
+    currentStepDefinition,
+    getClientStepUrl(currentStepDefinition),
+    form,
+    initialAnswers,
+  );
+
   return {
     areaCode: form.areaCode,
-    activeStepIndex,
+    activeStepIndex: 0,
     initialAnswers,
     previewMode,
-    usStates: US_STATES,
-    autocompleteSources: {
-      usStates: createStateAutocompleteItems(US_STATES),
-    },
-    steps: form.steps.map((stepDefinition) => createClientStep(stepDefinition, getClientStepUrl(stepDefinition))),
+    currentStep,
+    steps: [currentStep],
+    isFinalStep: visiblePosition === visibleStepIndexes.length - 1,
+    previousUrl: previousStepIndex === undefined ? undefined : getClientStepUrl(getStepAt(form, previousStepIndex)),
+    nextUrl: nextStepIndex === undefined ? undefined : getClientStepUrl(getStepAt(form, nextStepIndex)),
+    stepUrlsBySlug,
+    countedStepNumber,
+    countedStepCount: Math.max(countedStepIndexes.length, 1),
+    ...(currentStepDefinition.kind === "autocomplete"
+      ? {
+          usStates: US_STATES,
+          autocompleteSources: {
+            usStates: createStateAutocompleteItems(US_STATES),
+          },
+        }
+      : {}),
   };
 }
 
-function createClientStep(stepDefinition: FormStep, url: string): ClientStep {
+function createClientStep(
+  stepDefinition: FormStep,
+  url: string,
+  form: InstantForm,
+  answers: Record<string, string>,
+): ClientStep {
   const baseStep = {
     key: stepDefinition.key,
     slug: getStepSlug(stepDefinition),
@@ -131,7 +172,9 @@ function createClientStep(stepDefinition: FormStep, url: string): ClientStep {
       successLines: stepDefinition.successLines,
       completionAnswer: stepDefinition.completionAnswer,
       seenAnswer: stepDefinition.seenAnswer,
-      benefits: stepDefinition.benefits,
+      benefits: stepDefinition.benefits.map((benefit) =>
+        benefit.replace("{{areaName}}", getCoverageStateName(form, answers)),
+      ),
     };
   }
 
@@ -140,4 +183,27 @@ function createClientStep(stepDefinition: FormStep, url: string): ClientStep {
     kind: "text",
     type: stepDefinition.type,
   };
+}
+
+function getVisibleStepIndexes(form: InstantForm, answers: Record<string, string>, previewMode: boolean): number[] {
+  return form.steps
+    .map((stepDefinition, index) => (previewMode || isStepVisible(stepDefinition, answers) ? index : -1))
+    .filter((index) => index !== -1);
+}
+
+function getCoverageStateName(form: InstantForm, answers: Record<string, string>): string {
+  const areaCode = String(answers.residence_state || form.areaCode).toUpperCase();
+  const state = US_STATES.find((candidate) => candidate.code === areaCode);
+
+  return state ? state.name : areaCode;
+}
+
+function getStepAt(form: InstantForm, index: number): FormStep {
+  const stepDefinition = form.steps[index];
+
+  if (!stepDefinition) {
+    throw new Error(`Missing step at index ${index}.`);
+  }
+
+  return stepDefinition;
 }

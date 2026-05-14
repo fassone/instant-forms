@@ -1,3 +1,3 @@
-// The browser controller is still serialized inline from render-form-page.ts.
-// This module marks the client-controller boundary for future extraction.
-export const controllerDelivery = "inline-controller-script" as const;
+// The browser controller stays inline for speed. Development responses keep the
+// readable controller source, while production responses compact the inline JS.
+export const controllerDelivery = "inline-controller-script-source-or-built" as const;

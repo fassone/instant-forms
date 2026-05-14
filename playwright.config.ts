@@ -1,5 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const port = Number(process.env.PLAYWRIGHT_PORT ?? 51234);
+const baseURL = `http://127.0.0.1:${port}`;
+
 export default defineConfig({
   testDir: "./tests/ui",
   testMatch: "**/*.pw.ts",
@@ -15,12 +18,12 @@ export default defineConfig({
   fullyParallel: true,
   reporter: [["list"]],
   use: {
-    baseURL: "http://127.0.0.1:51234",
+    baseURL,
     trace: "on-first-retry",
   },
   webServer: {
-    command: "PORT=51234 bun run dev",
-    url: "http://127.0.0.1:51234/tn",
+    command: `PORT=${port} bun run dev`,
+    url: `${baseURL}/tn`,
     reuseExistingServer: true,
     timeout: 15_000,
   },

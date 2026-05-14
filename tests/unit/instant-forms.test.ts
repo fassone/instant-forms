@@ -6,7 +6,8 @@ import { formRoutes } from "../../src/authoring/routes/registry";
 import { createFetchHandler } from "../../src/platform/app/server";
 import { autocompleteSource, defineFormFlow, getFormByAreaCode, getStepSlug, isCountedStep, step } from "../../src/platform/flow";
 import { encodeCheckpointAnswers, getCheckpointCookieName } from "../../src/platform/persistence/checkpoints";
-import { renderFormPage } from "../../src/platform/rendering";
+import { FORM_CONFIG_PLACEHOLDER_EXPRESSION, renderFormPage } from "../../src/platform/rendering";
+import { buildInlineCss, getInlineAssetMode } from "../../src/platform/rendering/inline-assets";
 import { defineFormRoutes, redirectTo, registerFormRoutePages, unavailable } from "../../src/platform/routing";
 import { createStateAutocompleteItems, rankAutocompleteItems } from "../../src/platform/steps/autocomplete/ranking";
 import { normalizeUsPhoneNumber } from "../../src/platform/steps/phone/us-phone";
@@ -50,7 +51,7 @@ const validAnswers = {
 };
 
 const unavailableContent = {
-  title: "Página no encontrada",
+  title: "404",
   message: "Esta página no existe o ya no está disponible.",
   cta: {
     label: "Ir al formulario",
@@ -143,7 +144,7 @@ describe("form registry", () => {
     expect(folderResponse.headers.get("Location")).toBe("/cotiza/vive-en-tennessee");
     expect(stepResponse.status).toBe(200);
     expect(html).toContain('"url":"/cotiza/vive-en-tennessee"');
-    expect(html).toContain('"url":"/cotiza/tiene-licencia"');
+    expect(html).toContain('"tiene-licencia":"/cotiza/tiene-licencia"');
     expect(unknownChildResponse.headers.get("Location")).toBe("/cotiza");
   });
 
@@ -203,7 +204,7 @@ describe("form registry", () => {
     const html = await response.text();
 
     expect(response.status).toBe(404);
-    expect(html).toContain("Página no encontrada");
+    expect(html).toContain("404");
     expect(html).toContain("Esta página no existe o ya no está disponible.");
     expect(html).toContain('href="/tn/custom"');
   });
@@ -855,7 +856,7 @@ describe("server routing", () => {
     const html = await response.text();
 
     expect(response.status).toBe(404);
-    expect(html).toContain("Página no encontrada");
+    expect(html).toContain("404");
     expect(html).toContain("Esta página no existe o ya no está disponible.");
     expect(html).toContain('href="/tn/custom"');
     expect(html).not.toContain("formulario de Tennessee");
@@ -1106,9 +1107,9 @@ describe("server routing", () => {
     const html = await response.text();
 
     expect(response.status).toBe(200);
-    expect(html).toContain('value="yes" checked');
     expect(html).toContain('value="Ana"');
     expect(html).toContain('data-step="7" data-step-kind="text" data-step-counted="true" aria-hidden="false"');
+    expect(html).not.toContain('name="belongs_to_state"');
   });
 
   it("accepts valid local submissions and logs the payload", async () => {
@@ -1153,8 +1154,42 @@ describe("server routing", () => {
 });
 
 describe("form rendering", () => {
-  it("renders the logo and brand theme tokens", () => {
-    const html = renderFormPage(getRequiredTennesseeForm());
+  it("keeps source inline assets in dev and serves built inline assets in production", async () => {
+    const form = getRequiredTennesseeForm();
+    const devHtml = await withNodeEnv("development", () => renderFormPage(form));
+    const productionHtml = await withNodeEnv("production", () => renderFormPage(form));
+    const productionTemplateHtml = await withNodeEnv("production", () =>
+      renderFormPage(form, { formConfigExpression: FORM_CONFIG_PLACEHOLDER_EXPRESSION }),
+    );
+
+    expect(getInlineAssetMode("development")).toBe("source");
+    expect(getInlineAssetMode("production")).toBe("built");
+    expect(buildInlineCss(":root { --brand-navy: #073b8e; color: var(--brand-navy); }")).toBe(
+      ":root{--a:#073b8e;color:var(--a)}",
+    );
+
+    expect(devHtml).toContain("--brand-navy: #073b8e");
+    expect(devHtml).toContain("\n      :root");
+    expect(productionHtml).toContain("<style>");
+    expect(productionHtml).toContain("--a:#073b8e");
+    expect(productionHtml).toContain("var(--a)");
+    expect(productionHtml).not.toContain("--brand-navy:");
+    expect(productionHtml).not.toContain("var(--brand-navy)");
+    expect(productionHtml).toContain("<script>window.__FORM_CONFIG__=");
+    expect(productionTemplateHtml).toContain('"__FORM_CONFIG_JSON__"');
+    expect(productionHtml).toContain("<script>");
+    expect(productionHtml).not.toContain('class="form-panel"');
+    expect(productionHtml).not.toContain('id="lead-form"');
+    expect(productionHtml).toContain('type="button"');
+    expect(productionHtml).not.toContain('type="p"');
+    expect(productionHtml).toContain("data-option");
+    expect(productionHtml).not.toContain("¿Usted tiene licencia");
+    expect(productionHtml).not.toContain('"autocompleteSources"');
+    expect(productionHtml).not.toContain("\n      (() => {");
+  });
+
+  it("renders the logo and brand theme tokens", async () => {
+    const html = await renderFormPage(getRequiredTennesseeForm());
 
     expect(html).toContain('src="/assets/logo.webp"');
     expect(html).not.toContain("Seguro para Latinos en Tennessee");
@@ -1164,8 +1199,8 @@ describe("form rendering", () => {
     expect(html).toContain("background: var(--accent)");
   });
 
-  it("uses larger desktop controls while preserving mobile sizing rules", () => {
-    const html = renderFormPage(getRequiredTennesseeForm());
+  it("uses larger desktop controls while preserving mobile sizing rules", async () => {
+    const html = await renderFormPage(getRequiredTennesseeForm());
 
     expect(html).toContain("max-width: 100%;");
     expect(html).toContain("font-size: clamp(2rem, 4vw, 2.75rem);");
@@ -1224,8 +1259,8 @@ describe("form rendering", () => {
     expect(html).not.toContain("field.focus()");
   });
 
-  it("wires choice answers to delayed auto-advance on click and number keys", () => {
-    const html = renderFormPage(getRequiredTennesseeForm());
+  it("wires choice answers to delayed auto-advance on click and number keys", async () => {
+    const html = await renderFormPage(getRequiredTennesseeForm());
 
     expect(html).toContain("function advanceAfterChoiceSelection(answer)");
     expect(html).toContain("async function saveCheckpoint(questionKey, answer)");
@@ -1248,8 +1283,11 @@ describe("form rendering", () => {
     expect(html).toContain("}, 180);");
   });
 
-  it("renders the branded matching step with one-time auto-continue wiring", () => {
-    const html = renderFormPage(getRequiredTennesseeForm());
+  it("renders the branded matching step with one-time auto-continue wiring", async () => {
+    const html = await renderFormPage(getRequiredTennesseeForm(), {
+      activeStepIndex: 6,
+      answers: preContactAnswers,
+    });
 
     expect(html).toContain('"kind":"interstitial"');
     expect(html).toContain('"slug":"buscando-oferta"');
@@ -1259,12 +1297,10 @@ describe("form rendering", () => {
     expect(html).toContain("Revisando sus respuestas");
     expect(html).toContain("Buscando agentes disponibles");
     expect(html).toContain("Priorizando atención en español");
-    expect(html).toContain("Preparando opciones en {{areaName}}");
+    expect(html).toContain("Preparando opciones en Tennessee");
     expect(html).toContain("Encontramos agentes listos para cotizarle.");
     expect(html).toContain("Descubra cuánto puede ahorrar.");
     expect(html).toContain('"successLines":[{"text":"Encontramos agentes listos para cotizarle.","color":"brand-navy"}');
-    expect(html).toContain("function getCoverageStateName()");
-    expect(html).toContain('answers.residence_state || config.areaCode');
     expect(html).toContain("function runMatchingStep()");
     expect(html).toContain("function showMatchingSuccess(question, elements, options = {})");
     expect(html).toContain('"countsAsStep":false');
@@ -1355,7 +1391,7 @@ describe("form rendering", () => {
     expect(html).toContain("!completedMatchingSteps.has(question.key)");
     expect(html).toContain('saveCheckpoint(question.key, question.completionAnswer)');
     expect(html).toContain('saveCheckpoint(question.key, question.seenAnswer)');
-    expect(html).toContain("replaceToUrl(nextUrl ?? config.steps[getNextVisibleStepIndex()].url)");
+    expect(html).toContain("replaceToUrl(nextUrl ?? config.nextUrl ?? config.steps[getNextVisibleStepIndex()].url)");
     expect(html).toContain('nextButton.textContent = "Siguiente"');
     expect(html).not.toContain("matching-loader");
     expect(html).not.toContain("data-matching-retry");
@@ -1363,14 +1399,25 @@ describe("form rendering", () => {
     expect(html).toContain("overflow: visible");
   });
 
-  it("wires a forgiving US phone mask without blocking browser autofill", () => {
-    const html = renderFormPage(getRequiredTennesseeForm());
+  it("wires a forgiving US phone mask without blocking browser autofill", async () => {
+    const firstNameHtml = await renderFormPage(getRequiredTennesseeForm(), {
+      activeStepIndex: 7,
+      answers: seenMatchingAnswers,
+    });
+    const lastNameHtml = await renderFormPage(getRequiredTennesseeForm(), {
+      activeStepIndex: 8,
+      answers: { ...seenMatchingAnswers, first_name: "Ana" },
+    });
+    const html = await renderFormPage(getRequiredTennesseeForm(), {
+      activeStepIndex: 9,
+      answers: { ...seenMatchingAnswers, first_name: "Ana", last_name: "Lopez" },
+    });
 
     expect(html).toContain("font-weight: 400;");
     expect(html).toContain("padding: 6px 0 6px;");
     expect(html).toContain(".text-input::placeholder");
-    expect(html).toContain('placeholder="Escriba su nombre aquí"');
-    expect(html).toContain('placeholder="Escriba su apellido aquí"');
+    expect(firstNameHtml).toContain('placeholder="Escriba su nombre aquí"');
+    expect(lastNameHtml).toContain('placeholder="Escriba su apellido aquí"');
     expect(html).toContain('placeholder="Escriba su telefono aquí"');
     expect(html).toContain('form.addEventListener("input"');
     expect(html).toContain('form.addEventListener("beforeinput"');
@@ -1387,8 +1434,8 @@ describe("form rendering", () => {
     expect(html).not.toContain("pattern=");
   });
 
-  it("renders a lightweight error modal instead of inline form errors", () => {
-    const html = renderFormPage(getRequiredTennesseeForm());
+  it("renders a lightweight error modal instead of inline form errors", async () => {
+    const html = await renderFormPage(getRequiredTennesseeForm());
 
     expect(html).not.toContain('id="form-error"');
     expect(html).not.toContain('<p class="error"');
@@ -1410,8 +1457,11 @@ describe("form rendering", () => {
     expect(html).toContain('checkpointError instanceof Error ? checkpointError.message : "No pudimos guardar esta respuesta."');
   });
 
-  it("synthetically submits focused text fields on mobile blur", () => {
-    const html = renderFormPage(getRequiredTennesseeForm());
+  it("synthetically submits focused text fields on mobile blur", async () => {
+    const html = await renderFormPage(getRequiredTennesseeForm(), {
+      activeStepIndex: 7,
+      answers: seenMatchingAnswers,
+    });
 
     expect(html).toContain("function isMobileViewport()");
     expect(html).toContain('window.matchMedia("(max-width: 560px)").matches');
@@ -1435,41 +1485,50 @@ describe("form rendering", () => {
     expect(html).toContain('actions.addEventListener("pointerdown"');
   });
 
-  it("includes step URLs and browser history handling", () => {
-    const html = renderFormPage(getRequiredTennesseeForm());
+  it("includes step URLs and browser history handling", async () => {
+    const html = await renderFormPage(getRequiredTennesseeForm());
 
     expect(html).toContain('"activeStepIndex":0');
     expect(html).toContain('"initialAnswers":{}');
     expect(html).toContain('"areaCode":"tn"');
     expect(html).not.toContain('"stateCode"');
     expect(html).toContain('"slug":"vive-en-tennessee"');
-    expect(html).toContain('"slug":"estado-donde-vive"');
-    expect(html).toContain('"slug":"buscando-oferta"');
+    expect(html).not.toContain('"slug":"estado-donde-vive"');
+    expect(html).not.toContain('"slug":"buscando-oferta"');
     expect(html).toContain('"url":"/tn/vive-en-tennessee"');
-    expect(html).toContain('"url":"/tn/estado-donde-vive"');
-    expect(html).toContain('"url":"/tn/buscando-oferta"');
-    expect(html).toContain('"showWhen":{"questionKey":"belongs_to_state","answer":"no"}');
-    expect(html).toContain("window.history.pushState");
+    expect(html).not.toContain('"url":"/tn/estado-donde-vive"');
+    expect(html).not.toContain('"url":"/tn/buscando-oferta"');
+    expect(html).toContain('"stepUrlsBySlug":{"vive-en-tennessee":"/tn/vive-en-tennessee"');
+    expect(html).toContain('"estado-donde-vive":"/tn/estado-donde-vive"');
+    expect(html).toContain('"buscando-oferta":"/tn/buscando-oferta"');
+    expect(html).not.toContain('"showWhen":{"questionKey":"belongs_to_state","answer":"no"}');
+    expect(html).not.toContain('"autocompleteSources"');
     expect(html).toContain("window.history.replaceState");
     expect(html).toContain('window.addEventListener("popstate"');
     expect(html).toContain("getStepIndexForPath(window.location.pathname)");
     expect(html).toContain("currentQuestion.url !== window.location.pathname");
   });
 
-  it("renders the requested active step and saved answers", () => {
-    const html = renderFormPage(getRequiredTennesseeForm(), {
+  it("renders the requested active step and saved answers", async () => {
+    const html = await renderFormPage(getRequiredTennesseeForm(), {
       activeStepIndex: 1,
-      answers: { belongs_to_state: "yes" },
+      answers: { belongs_to_state: "no", residence_state: "TX" },
     });
 
-    expect(html).toContain('data-step="0" data-step-kind="choice" data-step-counted="true" aria-hidden="true"');
     expect(html).toContain('data-step="1" data-step-kind="autocomplete" data-step-counted="true" aria-hidden="false"');
-    expect(html).toContain('value="yes" checked');
-    expect(html).toContain('"initialAnswers":{"belongs_to_state":"yes"}');
+    expect((html.match(/<article class="step"/g) ?? []).length).toBe(1);
+    expect(html).not.toContain('data-step="0" data-step-kind="choice"');
+    expect(html).toContain('value="TX"');
+    expect(html).toContain('"initialAnswers":{"belongs_to_state":"no","residence_state":"TX"}');
+    expect(html).toContain('"showWhen":{"questionKey":"belongs_to_state","answer":"no"}');
+    expect(html).toContain('"autocompleteSources"');
   });
 
-  it("renders the mobile-friendly state autocomplete wiring", () => {
-    const html = renderFormPage(getRequiredTennesseeForm());
+  it("renders the mobile-friendly state autocomplete wiring", async () => {
+    const html = await renderFormPage(getRequiredTennesseeForm(), {
+      activeStepIndex: 1,
+      answers: { belongs_to_state: "no" },
+    });
 
     expect(html).toContain('data-autocomplete-input="true"');
     expect(html).toContain('placeholder="Escriba su estado aquí"');
@@ -1522,4 +1581,24 @@ function getRequiredTennesseeForm() {
 
 function createCheckpointCookie(answers: Record<string, string>): string {
   return `${getCheckpointCookieName("tn")}=${encodeCheckpointAnswers(answers)}`;
+}
+
+async function withNodeEnv<T>(nodeEnv: string | undefined, callback: () => T | Promise<T>): Promise<T> {
+  const previousNodeEnv = process.env.NODE_ENV;
+
+  if (nodeEnv === undefined) {
+    delete process.env.NODE_ENV;
+  } else {
+    process.env.NODE_ENV = nodeEnv;
+  }
+
+  try {
+    return await callback();
+  } finally {
+    if (previousNodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = previousNodeEnv;
+    }
+  }
 }

@@ -14,7 +14,13 @@ import {
   type FormStep,
   type InstantForm,
 } from "../flow";
-import { renderFormPage, renderUnavailablePage, type UnavailablePageContent } from "../rendering";
+import {
+  readPrebuiltFormPage,
+  readPrebuiltUnavailablePage,
+  renderFormPage,
+  renderUnavailablePage,
+  type UnavailablePageContent,
+} from "../rendering";
 
 const RESERVED_PREVIEW_FOLDER = "__preview";
 const FORM_ROUTE_FOLDER_PATTERN = /^[a-z0-9][a-z0-9-]*$/u;
@@ -65,6 +71,11 @@ export type FormRoutes = {
   notFound: UnavailableRouteAction;
 };
 
+export type FormRouteBuildEntry = {
+  routeSegments: readonly string[];
+  form: InstantForm;
+};
+
 export function redirectTo(to: string): RedirectRouteAction {
   return { type: "redirect", to };
 }
@@ -96,8 +107,22 @@ export function registerFormRoutePages(app: Hono, routes: FormRoutes): void {
   }
 }
 
-export function renderFormRouteNotFound(c: Context, routes: FormRoutes): Response {
-  return executeRouteAction(c, routes.notFound);
+export function getFormRouteBuildEntries(routes: FormRoutes): FormRouteBuildEntry[] {
+  return Object.entries(routes.folders).flatMap(([folder, node]) => getFormRouteNodeBuildEntries([folder], node));
+}
+
+export function renderFormRouteNotFound(c: Context, routes: FormRoutes): Promise<Response> {
+  return executeRouteAction(c, routes.notFound, undefined, true);
+}
+
+function getFormRouteNodeBuildEntries(routeSegments: readonly string[], node: FormRouteNode): FormRouteBuildEntry[] {
+  if (node.type === "flow") {
+    return [{ routeSegments, form: node.form }];
+  }
+
+  return Object.entries(node.children).flatMap(([childSegment, childNode]) =>
+    getFormRouteNodeBuildEntries([...routeSegments, childSegment], childNode),
+  );
 }
 
 function registerPublicRouteNode(
@@ -133,7 +158,7 @@ function registerPublicFormFolder(app: Hono, routeSegments: readonly string[], f
     return redirectNoStore(c, getPublicStepUrl(routeSegments, resumeStep));
   });
 
-  app.get(`${folderRoot}/:stepSlug`, (c) => {
+  app.get(`${folderRoot}/:stepSlug`, async (c) => {
     const stepSlug = c.req.param("stepSlug");
     const stepIndex = getStepIndexBySlug(form, stepSlug);
 
@@ -173,12 +198,21 @@ function registerPublicFormFolder(app: Hono, routeSegments: readonly string[], f
       return redirectNoStore(c, getPublicStepUrl(routeSegments, nextStep));
     }
 
+    const renderOptions = {
+      activeStepIndex: stepIndex,
+      answers,
+      stepUrlOverrides: createStepUrlOverrides(routeSegments, form),
+    };
+    const prebuiltHtml = await readPrebuiltFormPage(form, {
+      ...renderOptions,
+      routeSegments,
+    });
+
     return htmlResponse(
-      renderFormPage(form, {
-        activeStepIndex: stepIndex,
-        answers,
-        stepUrlOverrides: createStepUrlOverrides(routeSegments, form),
-      }),
+      prebuiltHtml ??
+        (await renderFormPage(form, {
+          ...renderOptions,
+        })),
       200,
       "no-store",
     );
@@ -219,7 +253,7 @@ function registerPreviewFormFolder(app: Hono, routeSegments: readonly string[], 
     return redirectNoStore(c, getPreviewStepUrl(routeSegments, firstStep));
   });
 
-  app.get(`${previewFolderRoot}/:stepSlug`, (c) => {
+  app.get(`${previewFolderRoot}/:stepSlug`, async (c) => {
     const stepSlug = c.req.param("stepSlug");
     const stepIndex = getStepIndexBySlug(form, stepSlug);
 
@@ -235,7 +269,7 @@ function registerPreviewFormFolder(app: Hono, routeSegments: readonly string[], 
     const previewUrl = getPreviewStepUrl(routeSegments, requestedStep);
 
     return htmlResponse(
-      renderFormPage(previewForm, {
+      await renderFormPage(previewForm, {
         activeStepIndex: 0,
         answers: {},
         previewMode: true,
@@ -251,16 +285,23 @@ function registerPreviewFormFolder(app: Hono, routeSegments: readonly string[], 
   app.get(`${previewFolderRoot}/*`, () => renderUnavailableResponse(getPreviewUnavailableAction(routeSegments)));
 }
 
-function executeRouteAction(c: Context, action: FormRouteAction, redirectPrefix?: string): Response {
+async function executeRouteAction(
+  c: Context,
+  action: FormRouteAction,
+  redirectPrefix?: string,
+  preferPrebuiltUnavailable = false,
+): Promise<Response> {
   if (action.type === "redirect") {
     return redirectNoStore(c, getRedirectTarget(action.to, redirectPrefix));
   }
 
-  return renderUnavailableResponse(action);
+  return renderUnavailableResponse(action, preferPrebuiltUnavailable);
 }
 
-function renderUnavailableResponse(action: UnavailableRouteAction): Response {
-  return htmlResponse(renderUnavailablePage(getUnavailablePageContent(action)), action.status);
+async function renderUnavailableResponse(action: UnavailableRouteAction, preferPrebuilt = false): Promise<Response> {
+  const prebuiltHtml = preferPrebuilt ? await readPrebuiltUnavailablePage() : undefined;
+
+  return htmlResponse(prebuiltHtml ?? (await renderUnavailablePage(getUnavailablePageContent(action))), action.status);
 }
 
 function getUnavailablePageContent(action: UnavailableRouteAction): UnavailablePageContent {

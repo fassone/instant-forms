@@ -9,12 +9,17 @@ import type {
   TextStep,
 } from "../flow";
 import { createClientFormConfig } from "./client/config";
+import { prepareInlineAssetHtml } from "./inline-assets";
+
+export const FORM_CONFIG_JSON_PLACEHOLDER = "__FORM_CONFIG_JSON__";
+export const FORM_CONFIG_PLACEHOLDER_EXPRESSION = JSON.stringify(FORM_CONFIG_JSON_PLACEHOLDER);
 
 export type RenderFormPageOptions = {
   activeStepIndex?: number;
   answers?: Record<string, string>;
   previewMode?: boolean;
   stepUrlOverrides?: Record<string, string>;
+  formConfigExpression?: string;
 };
 
 export type UnavailablePageContent = {
@@ -26,7 +31,7 @@ export type UnavailablePageContent = {
   };
 };
 
-export function renderFormPage(form: InstantForm, options: RenderFormPageOptions = {}): string {
+export async function renderFormPage(form: InstantForm, options: RenderFormPageOptions = {}): Promise<string> {
   const lastStepIndex = Math.max(0, form.steps.length - 1);
   const activeStepIndex = Math.max(0, Math.min(options.activeStepIndex ?? 0, lastStepIndex));
   const initialAnswers = options.answers ?? {};
@@ -44,8 +49,9 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
     options.previewMode ?? false,
     getClientStepUrl,
   );
+  const formConfigExpression = options.formConfigExpression ?? serializeForScript(clientConfig);
 
-  return `<!doctype html>
+  const html = `<!doctype html>
 <html lang="es">
   <head>
     <meta charset="utf-8">
@@ -753,9 +759,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           </div>
         </div>
         <section id="steps">
-          ${form.steps
-            .map((question, index) => renderQuestion(question, index, activeStepIndex, initialAnswers))
-            .join("")}
+          ${activeStep ? renderQuestion(activeStep, activeStepIndex, activeStepIndex, initialAnswers) : ""}
         </section>
         <footer>
           <div class="actions">
@@ -785,7 +789,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
       </div>
     </main>
     <script>
-      window.__FORM_CONFIG__ = ${serializeForScript(clientConfig)};
+      window.__FORM_CONFIG__ = ${formConfigExpression};
     </script>
     <script>
       (() => {
@@ -848,14 +852,11 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           clearAutoAdvance();
           clearMatchingTimers();
           focusedTextInput = undefined;
-          const visibleStepIndexes = getVisibleStepIndexes();
-          const fallbackStep = getResumeVisibleStepIndex();
           const requestedStep = Math.max(0, Math.min(nextStep, steps.length - 1));
-          currentStep = visibleStepIndexes.includes(requestedStep) ? requestedStep : fallbackStep;
+          currentStep = requestedStep;
           const question = getQuestion();
-          const currentVisiblePosition = getCurrentVisiblePosition();
-          const countedStepNumber = getCurrentCountedStepNumber();
-          const countedStepCount = getCountedStepCount();
+          const countedStepNumber = config.countedStepNumber;
+          const countedStepCount = config.countedStepCount;
 
           steps.forEach((step, index) => {
             step.setAttribute("aria-hidden", String(index !== currentStep));
@@ -868,8 +869,8 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           }
 
           progressBar.style.width = (countedStepNumber / countedStepCount) * 100 + "%";
-          backButton.disabled = currentVisiblePosition === 0 || isSubmitting;
-          nextButton.textContent = isCurrentStepFinal() ? "Enviar" : "Siguiente";
+          backButton.disabled = !config.previousUrl || isSubmitting;
+          nextButton.textContent = config.isFinalStep ? "Enviar" : "Siguiente";
           nextButton.disabled =
             isSubmitting ||
             (question.kind === "interstitial" &&
@@ -877,6 +878,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
               answers[question.key] !== question.seenAnswer &&
               !completedMatchingSteps.has(question.key));
           hideErrorModal();
+          hydrateCurrentStepAnswer(question);
 
           if (question.kind === "interstitial") {
             runMatchingStep();
@@ -966,9 +968,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         }
 
         function isCurrentStepFinal() {
-          const visibleStepIndexes = getVisibleStepIndexes();
-
-          return getCurrentVisiblePosition() === visibleStepIndexes.length - 1;
+          return config.isFinalStep;
         }
 
         function getPreviousVisibleStepIndex() {
@@ -1016,22 +1016,24 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           const safeStep = Math.max(0, Math.min(nextStep, steps.length - 1));
           const nextQuestion = config.steps[safeStep];
 
-          showStep(safeStep);
-
-          if (nextQuestion && window.location.pathname !== nextQuestion.url) {
-            window.history.pushState({ step: safeStep }, "", nextQuestion.url);
+          if (safeStep !== currentStep && nextQuestion) {
+            window.location.href = nextQuestion.url;
+            return;
           }
+
+          showStep(safeStep);
         }
 
         function replaceToStep(nextStep) {
           const safeStep = Math.max(0, Math.min(nextStep, steps.length - 1));
           const nextQuestion = config.steps[safeStep];
 
-          showStep(safeStep);
-
-          if (nextQuestion && window.location.pathname !== nextQuestion.url) {
-            window.history.replaceState({ step: safeStep }, "", nextQuestion.url);
+          if (safeStep !== currentStep && nextQuestion) {
+            window.location.replace(nextQuestion.url);
+            return;
           }
+
+          showStep(safeStep);
         }
 
         function navigateToUrl(url) {
@@ -1080,6 +1082,43 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           const input = steps[currentStep].querySelector(".text-input");
 
           return input instanceof HTMLInputElement ? input : undefined;
+        }
+
+        function hydrateCurrentStepAnswer(question) {
+          const answer = answers[question.key];
+
+          if (!answer || question.kind === "interstitial") {
+            return;
+          }
+
+          const step = steps[currentStep];
+
+          if (question.kind === "choice") {
+            Array.from(step.querySelectorAll("input[type='radio']")).forEach((input) => {
+              if (input instanceof HTMLInputElement) {
+                input.checked = input.value === answer;
+              }
+            });
+            return;
+          }
+
+          const input = step.querySelector("input");
+
+          if (!(input instanceof HTMLInputElement) || input.value) {
+            return;
+          }
+
+          if (question.kind === "phone") {
+            input.value = formatUsPhoneForDisplay(answer);
+            return;
+          }
+
+          if (question.kind === "autocomplete") {
+            input.value = getAutocompleteDisplayValue(question, answer);
+            return;
+          }
+
+          input.value = answer;
         }
 
         function showErrorModal(message, options = {}) {
@@ -1208,9 +1247,9 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
 
           const nextPathSegments = nextPath.split("/").filter(Boolean);
           const nextSlug = nextPathSegments[nextPathSegments.length - 1];
-          const matchingStep = config.steps.find((question) => question.slug === nextSlug);
+          const matchingStepUrl = nextSlug ? config.stepUrlsBySlug[nextSlug] : undefined;
 
-          return matchingStep ? matchingStep.url : nextUrl;
+          return matchingStepUrl ?? nextUrl;
         }
 
         function getPathname(url) {
@@ -1229,10 +1268,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         }
 
         function getCoverageStateName() {
-          const areaCode = String(answers.residence_state || config.areaCode).toUpperCase();
-          const state = config.usStates.find((candidate) => candidate.code === areaCode);
-
-          return state ? state.name : areaCode;
+          return config.coverageStateName || String(answers.residence_state || config.areaCode).toUpperCase();
         }
 
         function formatMatchingBenefit(benefit) {
@@ -1405,7 +1441,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
                 return;
               }
 
-              replaceToStep(getNextVisibleStepIndex());
+              replaceToUrl(config.nextUrl ?? question.url);
             }, 300);
             return;
           }
@@ -1473,13 +1509,13 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           }
 
           const upperValue = trimmedValue.toUpperCase().replace(/\\./g, "");
-          const stateByCode = config.usStates.find((state) => state.code === upperValue);
+          const stateByCode = (config.usStates ?? []).find((state) => state.code === upperValue);
           if (stateByCode) {
             return stateByCode.code;
           }
 
           const normalizedValue = normalizeStateText(trimmedValue);
-          const stateByName = config.usStates.find((state) => normalizeStateText(state.name) === normalizedValue);
+          const stateByName = (config.usStates ?? []).find((state) => normalizeStateText(state.name) === normalizedValue);
           if (stateByName) {
             return stateByName.code;
           }
@@ -1512,7 +1548,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         function getAutocompleteConfig(question) {
           if (question.kind === "autocomplete" && question.source === "usStates") {
             return {
-              items: config.autocompleteSources.usStates,
+              items: config.autocompleteSources?.usStates ?? [],
               getValue: (item) => item.value,
               getLabel: (item) => item.label,
               getSearchTerms: (item) => item.searchTerms,
@@ -1521,6 +1557,21 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           }
 
           return undefined;
+        }
+
+        function getAutocompleteDisplayValue(question, answer) {
+          const autocompleteConfig = getAutocompleteConfig(question);
+
+          if (!autocompleteConfig) {
+            return answer;
+          }
+
+          const normalizedAnswer = normalizeAutocompleteText(answer);
+          const matchedItem = autocompleteConfig.items.find(
+            (item) => normalizeAutocompleteText(autocompleteConfig.getValue(item)) === normalizedAnswer,
+          );
+
+          return matchedItem ? autocompleteConfig.getLabel(matchedItem) : answer;
         }
 
         function getAutocompleteMatchScore(item, autocompleteConfig, normalizedQuery) {
@@ -1855,7 +1906,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
                   return;
                 }
 
-                navigateToUrl(nextUrl ?? config.steps[getNextVisibleStepIndex()].url);
+                navigateToUrl(nextUrl ?? config.nextUrl ?? config.steps[getNextVisibleStepIndex()].url);
               } catch (checkpointError) {
                 showErrorModal(
                   checkpointError instanceof Error ? checkpointError.message : "No pudimos guardar esta respuesta.",
@@ -1983,7 +2034,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
             try {
               const nextUrl = await saveCheckpoint(question.key, question.seenAnswer);
 
-              replaceToUrl(nextUrl ?? config.steps[getNextVisibleStepIndex()].url);
+              replaceToUrl(nextUrl ?? config.nextUrl ?? config.steps[getNextVisibleStepIndex()].url);
             } catch (checkpointError) {
               showErrorModal(
                 checkpointError instanceof Error ? checkpointError.message : "No pudimos guardar este paso.",
@@ -2004,7 +2055,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
               return;
             }
 
-            navigateToUrl(nextUrl ?? config.steps[getNextVisibleStepIndex()].url);
+            navigateToUrl(nextUrl ?? config.nextUrl ?? config.steps[getNextVisibleStepIndex()].url);
           } catch (checkpointError) {
             showErrorModal(
               checkpointError instanceof Error ? checkpointError.message : "No pudimos guardar esta respuesta.",
@@ -2018,7 +2069,9 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
 
         backButton.addEventListener("click", () => {
           clearAutoAdvance();
-          navigateToStep(getPreviousVisibleStepIndex());
+          if (config.previousUrl) {
+            window.location.href = config.previousUrl;
+          }
         });
 
         if (errorModal && errorModalClose) {
@@ -2226,14 +2279,16 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
     </script>
   </body>
 </html>`;
+
+  return prepareInlineAssetHtml(html);
 }
 
-export function renderUnavailablePage(content: UnavailablePageContent): string {
+export async function renderUnavailablePage(content: UnavailablePageContent): Promise<string> {
   const cta = content.cta
     ? `<p class="unavailable-action"><a href="${escapeHtml(content.cta.href)}">${escapeHtml(content.cta.label)}</a></p>`
     : "";
 
-  return `<!doctype html>
+  const html = `<!doctype html>
 <html lang="es">
   <head>
     <meta charset="utf-8">
@@ -2305,6 +2360,8 @@ export function renderUnavailablePage(content: UnavailablePageContent): string {
     </main>
   </body>
 </html>`;
+
+  return prepareInlineAssetHtml(html);
 }
 
 function getVisibleStepIndexesForAnswers(form: InstantForm, answers: Record<string, string>): number[] {
@@ -2402,7 +2459,7 @@ function renderOptions(stepDefinition: ChoiceStep, answers: Record<string, strin
   return `<div class="options">
     ${stepDefinition.options
       .map(
-        (option, index) => `<label class="option">
+        (option, index) => `<label class="option" data-option>
           <input type="radio" name="${escapeHtml(stepDefinition.key)}" value="${escapeHtml(option.key)}"${
             currentAnswer === option.key ? " checked" : ""
           }>
@@ -2491,7 +2548,7 @@ function getInputPlaceholder(stepDefinition: TextStep | PhoneStep | Autocomplete
   return "Escriba aquí";
 }
 
-function serializeForScript(value: unknown): string {
+export function serializeForScript(value: unknown): string {
   return JSON.stringify(value).replace(/[<>&]/g, (character) => {
     if (character === "<") {
       return "\\u003c";

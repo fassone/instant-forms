@@ -4,6 +4,7 @@
   "type": "module",
   "private": true,
   "scripts": {
+    "build:forms": "NODE_ENV=production bun run scripts/build-forms.ts",
     "dev": "bun run index.ts",
     "start": "bun run index.ts",
     "test": "bun test",
@@ -13,7 +14,8 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "html-minifier-terser": "^7.2.0"
   },
   "peerDependencies": {
     "typescript": "^5"

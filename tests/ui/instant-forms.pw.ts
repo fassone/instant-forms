@@ -3,7 +3,8 @@ import { expect, test, type Page } from "@playwright/test";
 import { encodeCheckpointAnswers, getCheckpointCookieName } from "../../src/platform/persistence/checkpoints";
 
 const areaCode = "tn";
-const appUrl = "http://127.0.0.1:51234";
+const appPort = Number(process.env.PLAYWRIGHT_PORT ?? 51234);
+const appUrl = `http://127.0.0.1:${appPort}`;
 const preContactAnswers = {
   belongs_to_state: "yes",
   has_license: "yes",
@@ -96,7 +97,7 @@ test.describe("instant routed form UI", () => {
     if (await page.evaluate("window.matchMedia('(max-width: 560px)').matches")) {
       await phoneInput.evaluate((input) => input.blur());
     } else {
-      await page.locator("#next-button").click();
+      await page.getByRole("button", { name: "Enviar" }).click();
     }
     await expect((await submissionResponse).status()).toBe(201);
     await expect(page.getByRole("heading", { name: "Gracias." })).toBeVisible();
@@ -127,11 +128,11 @@ test.describe("instant routed form UI", () => {
 });
 
 function activeStep(page: Page) {
-  return page.locator('.step[aria-hidden="false"]');
+  return page.locator('[data-step][aria-hidden="false"]');
 }
 
 async function clickActiveOption(page: Page, label: string): Promise<void> {
-  await activeStep(page).locator(".option", { hasText: label }).first().click();
+  await activeStep(page).locator("[data-option]", { hasText: label }).first().click();
 }
 
 async function seedCheckpoint(page: Page, answers: Record<string, string>): Promise<void> {
