@@ -1,3 +1,4 @@
+import { createStateAutocompleteItems } from "./autocomplete";
 import { getQuestionSlug, getStepUrl, isCountedStep, isQuestionVisible as isServerQuestionVisible } from "./forms";
 import type { ChoiceQuestion, FormQuestion, InstantForm, InterstitialQuestion, StateQuestion, TextQuestion } from "./forms";
 import { US_STATES } from "./us-states";
@@ -27,6 +28,7 @@ type ClientQuestion =
   | (ClientQuestionBase & {
       kind: "state";
       type: StateQuestion["type"];
+      suggestionSource: StateQuestion["suggestionSource"];
     })
   | (ClientQuestionBase & {
       kind: "interstitial";
@@ -45,6 +47,9 @@ type ClientFormConfig = {
   previewMode: boolean;
   questions: readonly ClientQuestion[];
   usStates: typeof US_STATES;
+  autocompleteSources: {
+    usStates: ReturnType<typeof createStateAutocompleteItems>;
+  };
 };
 
 export type RenderFormPageOptions = {
@@ -68,6 +73,9 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
     initialAnswers,
     previewMode: options.previewMode ?? false,
     usStates: US_STATES,
+    autocompleteSources: {
+      usStates: createStateAutocompleteItems(US_STATES),
+    },
     questions: form.questions.map((question) => {
       if (question.kind === "choice") {
         return {
@@ -90,6 +98,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           countsAsStep: isCountedStep(question),
           showWhen: question.showWhen,
           type: question.type,
+          suggestionSource: question.suggestionSource,
         };
       }
 
@@ -1421,57 +1430,87 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
             .trim();
         }
 
-        function getStateSuggestionRank(state, normalizedValue, upperValue) {
-          const normalizedName = normalizeStateText(state.name);
-          const stateWords = normalizedName.split(" ");
+        function normalizeAutocompleteText(value) {
+          return value
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9\\s]/g, " ")
+            .replace(/\\s+/g, " ")
+            .trim();
+        }
 
-          if (state.code === upperValue) {
+        function getAutocompleteConfig(question) {
+          if (question.kind === "state" && question.suggestionSource === "us_states") {
+            return {
+              items: config.autocompleteSources.usStates,
+              getValue: (item) => item.value,
+              getLabel: (item) => item.label,
+              getSearchTerms: (item) => item.searchTerms,
+              normalize: normalizeAutocompleteText,
+            };
+          }
+
+          return undefined;
+        }
+
+        function getAutocompleteMatchScore(item, autocompleteConfig, normalizedQuery) {
+          const normalize = autocompleteConfig.normalize ?? normalizeAutocompleteText;
+          const normalizedValue = normalize(autocompleteConfig.getValue(item));
+          const normalizedLabel = normalize(autocompleteConfig.getLabel(item));
+          const normalizedTerms = autocompleteConfig.getSearchTerms(item).map((term) => normalize(term)).filter(Boolean);
+
+          if (normalizedValue === normalizedQuery) {
             return 0;
           }
 
-          if (upperValue && state.code.startsWith(upperValue)) {
+          if (normalizedLabel === normalizedQuery) {
             return 1;
           }
 
-          if (normalizedName === normalizedValue) {
+          if (normalizedTerms.some((term) => term === normalizedQuery)) {
             return 2;
           }
 
-          if (normalizedName.startsWith(normalizedValue)) {
+          if (normalizedLabel.startsWith(normalizedQuery)) {
             return 3;
           }
 
-          if (stateWords.some((word) => word.startsWith(normalizedValue))) {
+          if (normalizedValue.startsWith(normalizedQuery)) {
             return 4;
           }
 
-          if (normalizedName.includes(normalizedValue)) {
+          if (normalizedTerms.some((term) => term.startsWith(normalizedQuery))) {
             return 5;
+          }
+
+          if (normalizedLabel.includes(normalizedQuery) || normalizedTerms.some((term) => term.includes(normalizedQuery))) {
+            return 6;
           }
 
           return Number.POSITIVE_INFINITY;
         }
 
-        function getStateSuggestions(value) {
-          const trimmedValue = value.trim();
+        function getAutocompleteSuggestions(value, autocompleteConfig) {
+          const normalizedQuery = (autocompleteConfig.normalize ?? normalizeAutocompleteText)(value);
 
-          if (!trimmedValue) {
+          if (!normalizedQuery) {
             return [];
           }
 
-          const normalizedValue = normalizeStateText(trimmedValue);
-          const upperValue = trimmedValue.toUpperCase().replace(/\\./g, "");
-
-          return config.usStates
-            .map((state) => {
+          return autocompleteConfig.items
+            .map((item) => {
               return {
-                state,
-                rank: getStateSuggestionRank(state, normalizedValue, upperValue),
+                item,
+                score: getAutocompleteMatchScore(item, autocompleteConfig, normalizedQuery),
               };
             })
-            .filter((result) => Number.isFinite(result.rank))
-            .sort((left, right) => left.rank - right.rank || left.state.name.localeCompare(right.state.name))
-            .map((result) => result.state);
+            .filter((result) => Number.isFinite(result.score))
+            .sort(
+              (left, right) =>
+                left.score - right.score ||
+                autocompleteConfig.getLabel(left.item).localeCompare(autocompleteConfig.getLabel(right.item)),
+            )
+            .map((result) => result.item);
         }
 
         function updateStateSuggestionScrollHints(suggestions) {
@@ -1506,30 +1545,32 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           const step = input.closest("[data-step]");
           const shell = step ? step.querySelector("[data-state-suggestions-shell]") : undefined;
           const suggestions = step ? step.querySelector("[data-state-suggestions]") : undefined;
+          const question = getQuestion();
+          const autocompleteConfig = getAutocompleteConfig(question);
 
-          if (!(shell instanceof HTMLElement) || !(suggestions instanceof HTMLElement)) {
+          if (!(shell instanceof HTMLElement) || !(suggestions instanceof HTMLElement) || !autocompleteConfig) {
             return;
           }
 
-          const suggestedStates = getStateSuggestions(input.value);
+          const suggestedItems = getAutocompleteSuggestions(input.value, autocompleteConfig);
           suggestions.replaceChildren(
-            ...suggestedStates.map((state) => {
+            ...suggestedItems.map((item) => {
               const button = document.createElement("button");
               button.className = "state-suggestion";
               button.type = "button";
-              button.dataset.stateSuggestion = state.code;
-              button.dataset.stateName = state.name;
+              button.dataset.stateSuggestion = autocompleteConfig.getValue(item);
+              button.dataset.stateName = autocompleteConfig.getLabel(item);
               button.innerHTML =
                 "<span>" +
-                state.name +
+                autocompleteConfig.getLabel(item) +
                 "</span><span class=\\"state-suggestion-code\\">" +
-                state.code +
+                autocompleteConfig.getValue(item) +
                 "</span>";
 
               return button;
             }),
           );
-          updateStateSuggestionPanel(shell, suggestions, suggestedStates.length === 0);
+          updateStateSuggestionPanel(shell, suggestions, suggestedItems.length === 0);
         }
 
         function normalizeUsPhoneNumber(value) {

@@ -39,6 +39,7 @@ export type StateQuestion = BaseQuestion & {
   type: "STATE";
   autocomplete: string;
   inputMode: "text";
+  suggestionSource: "us_states";
 };
 
 export type InterstitialQuestion = BaseQuestion & {
@@ -97,6 +98,7 @@ export const formsByState = {
         id: "residence_state",
         autocomplete: "address-level1",
         inputMode: "text",
+        suggestionSource: "us_states",
         showWhen: {
           questionKey: "belongs_to_state",
           answer: "no",

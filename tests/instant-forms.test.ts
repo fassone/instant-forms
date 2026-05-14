@@ -1,9 +1,10 @@
 import { describe, expect, it } from "bun:test";
+import { createStateAutocompleteItems, rankAutocompleteItems } from "../src/autocomplete";
 import { encodeCheckpointAnswers, getCheckpointCookieName } from "../src/checkpoints";
 import { getFormByStateCode, getQuestionSlug, isCountedStep } from "../src/forms";
 import { renderFormPage } from "../src/render";
 import { createFetchHandler } from "../src/server";
-import { normalizeUsState } from "../src/us-states";
+import { US_STATES, normalizeUsState } from "../src/us-states";
 import { normalizeUsPhoneNumber, validateSubmission } from "../src/validation";
 
 const preContactAnswers = {
@@ -196,6 +197,34 @@ describe("US state normalization", () => {
 
   it.each(["", "Not a state", "Ontario"])("rejects %s", (input) => {
     expect(normalizeUsState(input)).toBeUndefined();
+  });
+});
+
+describe("autocomplete ranking", () => {
+  const stateItems = createStateAutocompleteItems(US_STATES);
+
+  it("returns no suggestions for an empty query", () => {
+    expect(rankAutocompleteItems(stateItems, "")).toEqual([]);
+  });
+
+  it("ranks direct state names and codes ahead of state-name word matches", () => {
+    const rankedValues = rankAutocompleteItems(stateItems, "C").map((item) => item.value);
+
+    expect(rankedValues).toContain("CA");
+    expect(rankedValues).toContain("CO");
+    expect(rankedValues).toContain("CT");
+    expect(rankedValues).toContain("DC");
+    expect(rankedValues).toContain("NC");
+    expect(rankedValues).toContain("SC");
+    expect(rankedValues.slice(0, 3)).toEqual(["CA", "CO", "CT"]);
+    expect(rankedValues.indexOf("CT")).toBeLessThan(rankedValues.indexOf("DC"));
+    expect(rankedValues.indexOf("CT")).toBeLessThan(rankedValues.indexOf("NC"));
+    expect(rankedValues.indexOf("CT")).toBeLessThan(rankedValues.indexOf("SC"));
+  });
+
+  it("ranks exact state code aliases highest", () => {
+    expect(rankAutocompleteItems(stateItems, "DC")[0]?.value).toBe("DC");
+    expect(rankAutocompleteItems(stateItems, "D.C.")[0]?.value).toBe("DC");
   });
 });
 
@@ -1101,10 +1130,14 @@ describe("form rendering", () => {
     expect(html).toContain("function normalizeUsState(value)");
     expect(html).toContain("class=\"state-suggestions-shell\"");
     expect(html).toContain("data-state-suggestions-shell");
-    expect(html).toContain("function getStateSuggestions(value)");
-    expect(html).toContain("function getStateSuggestionRank(state, normalizedValue, upperValue)");
+    expect(html).toContain('"suggestionSource":"us_states"');
+    expect(html).toContain('"autocompleteSources"');
+    expect(html).toContain('"washington d c"');
+    expect(html).toContain("function getAutocompleteConfig(question)");
+    expect(html).toContain("function getAutocompleteSuggestions(value, autocompleteConfig)");
+    expect(html).toContain("function getAutocompleteMatchScore(item, autocompleteConfig, normalizedQuery)");
     expect(html).toContain("Number.POSITIVE_INFINITY");
-    expect(html).toContain(".sort((left, right) => left.rank - right.rank || left.state.name.localeCompare(right.state.name))");
+    expect(html).toContain("autocompleteConfig.getLabel(left.item).localeCompare(autocompleteConfig.getLabel(right.item))");
     expect(html).not.toContain(".slice(0, 3);");
     expect(html).toContain("height: 220px;");
     expect(html).toContain("height: 180px;");
