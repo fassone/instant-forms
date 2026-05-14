@@ -445,14 +445,53 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         position: relative;
       }
 
-      .state-suggestions {
-        display: grid;
-        gap: 8px;
+      .state-suggestions-shell {
+        position: relative;
+        height: 220px;
         margin-top: 12px;
       }
 
-      .state-suggestions[hidden] {
-        display: none;
+      .state-suggestions-shell[data-state-empty="true"] {
+        pointer-events: none;
+        visibility: hidden;
+      }
+
+      .state-suggestions {
+        display: grid;
+        height: 100%;
+        align-content: start;
+        gap: 8px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        padding: 2px 4px 2px 0;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-gutter: stable;
+      }
+
+      .state-scroll-fade {
+        position: absolute;
+        right: 0;
+        left: 0;
+        z-index: 2;
+        height: 32px;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 140ms ease;
+      }
+
+      .state-scroll-fade-top {
+        top: 0;
+        background: linear-gradient(180deg, var(--surface), rgba(255, 253, 244, 0));
+      }
+
+      .state-scroll-fade-bottom {
+        bottom: 0;
+        background: linear-gradient(0deg, var(--surface), rgba(255, 253, 244, 0));
+      }
+
+      .state-suggestions-shell[data-can-scroll-up="true"] .state-scroll-fade-top,
+      .state-suggestions-shell[data-can-scroll-down="true"] .state-scroll-fade-bottom {
+        opacity: 1;
       }
 
       .state-suggestion {
@@ -669,6 +708,10 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
 
         .question-title {
           max-width: 100%;
+        }
+
+        .state-suggestions-shell {
+          height: 180px;
         }
 
         #steps {
@@ -1378,6 +1421,37 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
             .trim();
         }
 
+        function getStateSuggestionRank(state, normalizedValue, upperValue) {
+          const normalizedName = normalizeStateText(state.name);
+          const stateWords = normalizedName.split(" ");
+
+          if (state.code === upperValue) {
+            return 0;
+          }
+
+          if (upperValue && state.code.startsWith(upperValue)) {
+            return 1;
+          }
+
+          if (normalizedName === normalizedValue) {
+            return 2;
+          }
+
+          if (normalizedName.startsWith(normalizedValue)) {
+            return 3;
+          }
+
+          if (stateWords.some((word) => word.startsWith(normalizedValue))) {
+            return 4;
+          }
+
+          if (normalizedName.includes(normalizedValue)) {
+            return 5;
+          }
+
+          return Number.POSITIVE_INFINITY;
+        }
+
         function getStateSuggestions(value) {
           const trimmedValue = value.trim();
 
@@ -1389,21 +1463,51 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           const upperValue = trimmedValue.toUpperCase().replace(/\\./g, "");
 
           return config.usStates
-            .filter((state) => {
-              return (
-                state.code.startsWith(upperValue) ||
-                normalizeStateText(state.name).startsWith(normalizedValue) ||
-                normalizeStateText(state.name).includes(" " + normalizedValue)
-              );
+            .map((state) => {
+              return {
+                state,
+                rank: getStateSuggestionRank(state, normalizedValue, upperValue),
+              };
             })
-            .slice(0, 3);
+            .filter((result) => Number.isFinite(result.rank))
+            .sort((left, right) => left.rank - right.rank || left.state.name.localeCompare(right.state.name))
+            .map((result) => result.state);
+        }
+
+        function updateStateSuggestionScrollHints(suggestions) {
+          const shell = suggestions.closest("[data-state-suggestions-shell]");
+          if (!(shell instanceof HTMLElement)) {
+            return;
+          }
+
+          const canScrollUp = suggestions.scrollTop > 1;
+          const canScrollDown = suggestions.scrollTop + suggestions.clientHeight < suggestions.scrollHeight - 1;
+          shell.dataset.canScrollUp = String(canScrollUp);
+          shell.dataset.canScrollDown = String(canScrollDown);
+        }
+
+        function updateStateSuggestionPanel(shell, suggestions, isEmpty) {
+          shell.dataset.stateEmpty = String(isEmpty);
+          shell.setAttribute("aria-hidden", String(isEmpty));
+
+          if (isEmpty) {
+            shell.dataset.canScrollUp = "false";
+            shell.dataset.canScrollDown = "false";
+            return;
+          }
+
+          suggestions.scrollTop = 0;
+          window.requestAnimationFrame(() => {
+            updateStateSuggestionScrollHints(suggestions);
+          });
         }
 
         function updateStateSuggestions(input) {
           const step = input.closest("[data-step]");
+          const shell = step ? step.querySelector("[data-state-suggestions-shell]") : undefined;
           const suggestions = step ? step.querySelector("[data-state-suggestions]") : undefined;
 
-          if (!suggestions) {
+          if (!(shell instanceof HTMLElement) || !(suggestions instanceof HTMLElement)) {
             return;
           }
 
@@ -1425,7 +1529,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
               return button;
             }),
           );
-          suggestions.hidden = suggestedStates.length === 0;
+          updateStateSuggestionPanel(shell, suggestions, suggestedStates.length === 0);
         }
 
         function normalizeUsPhoneNumber(value) {
@@ -1607,7 +1711,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
             target !== activeElement &&
             !target.closest(".text-input") &&
             !target.closest(".actions") &&
-            !target.closest("[data-state-suggestions]")
+            !target.closest("[data-state-suggestions-shell]")
           );
         }
 
@@ -1811,7 +1915,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
 
         form.addEventListener("pointerdown", (event) => {
           const target = event.target;
-          if (target instanceof HTMLElement && target.closest("[data-state-suggestion]")) {
+          if (target instanceof HTMLElement && target.closest("[data-state-suggestions-shell]")) {
             isStateSuggestionPointerDown = true;
           }
         });
@@ -1848,13 +1952,27 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           }
 
           input.value = suggestion.dataset.stateName ?? suggestion.dataset.stateSuggestion ?? "";
-          const suggestions = step?.querySelector("[data-state-suggestions]");
-          if (suggestions instanceof HTMLElement) {
-            suggestions.hidden = true;
+          const suggestionsShell = step?.querySelector("[data-state-suggestions-shell]");
+          if (suggestionsShell instanceof HTMLElement) {
+            suggestionsShell.dataset.stateEmpty = "true";
+            suggestionsShell.dataset.canScrollUp = "false";
+            suggestionsShell.dataset.canScrollDown = "false";
+            suggestionsShell.setAttribute("aria-hidden", "true");
           }
 
           nextButton.click();
         });
+
+        form.addEventListener(
+          "scroll",
+          (event) => {
+            const target = event.target;
+            if (target instanceof HTMLElement && target.matches("[data-state-suggestions]")) {
+              updateStateSuggestionScrollHints(target);
+            }
+          },
+          true,
+        );
 
         form.addEventListener("click", (event) => {
           advanceAfterChoiceClick(event);
@@ -2173,7 +2291,18 @@ function renderStateInput(question: StateQuestion, answers: Record<string, strin
       value="${escapeHtml(value)}"
       data-state-input="true"
     >
-    <div class="state-suggestions" data-state-suggestions hidden></div>
+    <div
+      class="state-suggestions-shell"
+      data-state-suggestions-shell
+      data-state-empty="true"
+      data-can-scroll-up="false"
+      data-can-scroll-down="false"
+      aria-hidden="true"
+    >
+      <div class="state-scroll-fade state-scroll-fade-top" aria-hidden="true"></div>
+      <div class="state-suggestions" data-state-suggestions></div>
+      <div class="state-scroll-fade state-scroll-fade-bottom" aria-hidden="true"></div>
+    </div>
   </div>`;
 }
 
