@@ -248,6 +248,22 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         display: block;
       }
 
+      #steps {
+        min-height: 0;
+      }
+
+      #steps:has(.step[data-step-kind="interstitial"][aria-hidden="false"]) {
+        display: grid;
+      }
+
+      .step[data-step-kind="interstitial"][aria-hidden="false"] {
+        display: grid;
+        grid-template-rows: auto auto minmax(0, 1fr);
+        height: 100%;
+        min-height: 0;
+        align-self: stretch;
+      }
+
       .step-count {
         margin: 0 0 12px;
         color: var(--brand-navy);
@@ -269,9 +285,16 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         display: grid;
         min-height: 300px;
         place-items: center;
+        align-content: center;
+        justify-content: center;
         gap: 16px;
-        overflow: hidden;
+        overflow: visible;
         text-align: center;
+      }
+
+      .step[data-step-kind="interstitial"] .matching-content {
+        height: 100%;
+        min-height: 0;
       }
 
       .matching-status {
@@ -287,6 +310,8 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         min-height: 1.4em;
         margin: 0;
         color: var(--accent);
+        width: min(100%, 620px);
+        justify-self: center;
         font-size: clamp(1.45rem, 4vw, 2.2rem);
         font-weight: 800;
         line-height: 1.1;
@@ -306,25 +331,36 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         animation: matching-benefit-fade-out 300ms ease forwards;
       }
 
+      .matching-benefit.is-success {
+        z-index: 5;
+        max-width: 100%;
+        font-size: clamp(1.35rem, 3vw, 1.65rem);
+        line-height: 1.18;
+        letter-spacing: 0;
+        text-wrap: balance;
+        -webkit-text-stroke: 0.025em rgba(255, 253, 244, 0.9);
+        paint-order: stroke fill;
+        white-space: pre-line;
+        text-shadow:
+          0 0.025em 0 rgba(255, 253, 244, 0.74),
+          0 0.1em 0.22em rgba(7, 59, 142, 0.14);
+        filter: drop-shadow(0 12px 24px rgba(7, 59, 142, 0.1));
+      }
+
+      .matching-success-line {
+        display: block;
+      }
+
+      .matching-success-line:first-child {
+        color: var(--brand-navy);
+      }
+
+      .matching-success-line:last-child {
+        color: var(--accent);
+      }
+
       .matching-status:empty {
         display: none;
-      }
-
-      .confetti {
-        position: absolute;
-        inset: 0;
-        z-index: 3;
-        overflow: visible;
-        pointer-events: none;
-      }
-
-      .confetti-canvas {
-        position: absolute;
-        display: block;
-        inset: 0;
-        z-index: 1;
-        width: 100%;
-        height: 100%;
       }
 
       .options {
@@ -705,17 +741,15 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         const answers = { ...config.initialAnswers };
         const matchingBenefitFadeOutMs = 300;
         const matchingBenefitFadeInMs = 420;
-        const matchingBenefitDisplayMs = 1000;
-        const matchingBenefitMinCount = 2;
-        const matchingBenefitMaxCount = 3;
+        const matchingBenefitDisplayMs = 950;
+        const matchingBenefitMinCount = 3;
+        const matchingBenefitMaxCount = 4;
         let currentStep = config.activeStepIndex;
         let isSubmitting = false;
         let autoAdvanceTimer;
         let matchingTimers = [];
         let activeMatchingRunId = 0;
         let matchingTextTransitionId = 0;
-        let confettiAnimationFrame;
-        let activeConfettiRunId = 0;
         const completedMatchingSteps = new Set();
         let isActionPointerDown = false;
         let isStateSuggestionPointerDown = false;
@@ -731,7 +765,6 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         function clearMatchingTimers() {
           activeMatchingRunId += 1;
           matchingTextTransitionId += 1;
-          clearCanvasConfetti();
           matchingTimers.forEach((timer) => {
             window.clearTimeout(timer);
           });
@@ -745,22 +778,6 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           }, delay);
 
           matchingTimers.push(timer);
-        }
-
-        function clearCanvasConfetti() {
-          activeConfettiRunId += 1;
-
-          if (confettiAnimationFrame) {
-            window.cancelAnimationFrame(confettiAnimationFrame);
-            confettiAnimationFrame = undefined;
-          }
-
-          document.querySelectorAll("[data-confetti-canvas]").forEach((canvas) => {
-            const context = canvas.getContext ? canvas.getContext("2d") : undefined;
-            if (context) {
-              context.clearRect(0, 0, canvas.width, canvas.height);
-            }
-          });
         }
 
         function showStep(nextStep) {
@@ -777,7 +794,6 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
 
           steps.forEach((step, index) => {
             step.setAttribute("aria-hidden", String(index !== currentStep));
-            step.classList.remove("is-matching-success");
           });
 
           form.dataset.activeKind = question.kind;
@@ -876,8 +892,31 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           return nextStep ?? currentStep;
         }
 
+        function getNextVisibleStepIndexAfter(stepIndex) {
+          const visibleStepIndexes = getVisibleStepIndexes();
+          const nextStep = visibleStepIndexes.find((visibleStepIndex) => visibleStepIndex > stepIndex);
+
+          return nextStep ?? getResumeVisibleStepIndex();
+        }
+
+        function shouldHideMatchingStep(question) {
+          return !config.previewMode && question.kind === "interstitial" && answers[question.key] === question.seenAnswer;
+        }
+
         function getStepIndexForPath(pathname) {
           return config.questions.findIndex((question) => question.url === pathname);
+        }
+
+        function replaceHiddenMatchingRouteIfNeeded() {
+          const stepIndex = getStepIndexForPath(window.location.pathname);
+          const question = config.questions[stepIndex];
+
+          if (!question || !shouldHideMatchingStep(question)) {
+            return false;
+          }
+
+          replaceToStep(getNextVisibleStepIndexAfter(stepIndex));
+          return true;
         }
 
         function navigateToStep(nextStep) {
@@ -1064,6 +1103,25 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           return shuffledBenefits.slice(0, getRandomMatchingBenefitCount(shuffledBenefits.length));
         }
 
+        function getMatchingBenefitTimeline(benefits) {
+          let startsAt = 0;
+
+          return getMatchingBenefitSequence(benefits).map((text) => {
+            const benefitTiming = {
+              text,
+              duration: matchingBenefitDisplayMs,
+              startsAt,
+            };
+
+            startsAt += matchingBenefitDisplayMs;
+            return benefitTiming;
+          });
+        }
+
+        function getMatchingBenefitTimelineDuration(benefitTimeline) {
+          return benefitTimeline.reduce((totalDuration, benefitTiming) => totalDuration + benefitTiming.duration, 0);
+        }
+
         function getMatchingElements() {
           const step = steps[currentStep];
 
@@ -1071,186 +1129,15 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
             step,
             status: step.querySelector("[data-matching-status]"),
             benefit: step.querySelector("[data-matching-benefit]"),
-            confettiCanvas: step.querySelector("[data-confetti-canvas]"),
           };
         }
 
-        function triggerMatchingConfetti(step) {
-          step.classList.remove("is-matching-success");
-          void step.offsetWidth;
-          step.classList.add("is-matching-success");
-          runCanvasConfetti(step.querySelector("[data-confetti-canvas]"));
-        }
-
-        function runCanvasConfetti(canvas) {
-          if (!(canvas instanceof HTMLCanvasElement)) {
-            return;
-          }
-
-          const context = canvas.getContext("2d");
-          const bounds = canvas.getBoundingClientRect();
-
-          if (!context || bounds.width === 0 || bounds.height === 0) {
-            return;
-          }
-
-          const runId = (activeConfettiRunId += 1);
-          const devicePixelRatioValue = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
-          canvas.width = Math.round(bounds.width * devicePixelRatioValue);
-          canvas.height = Math.round(bounds.height * devicePixelRatioValue);
-          context.setTransform(devicePixelRatioValue, 0, 0, devicePixelRatioValue, 0, 0);
-
-          const centerX = bounds.width / 2;
-          const centerY = bounds.height / 2;
-          const confettiPieces = createCanvasConfettiPieces(bounds.width, bounds.height);
-          const duration = 820;
-          const keepWiggling = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-          const startTime = window.performance.now();
-
-          drawCanvasConfettiFrame(context, confettiPieces, centerX, centerY, bounds.width, bounds.height, 1, 0, 1);
-
-          function draw(timestamp) {
-            if (runId !== activeConfettiRunId) {
-              return;
-            }
-
-            const elapsed = timestamp - startTime;
-            const burstProgress = Math.min(elapsed / duration, 1);
-            const wiggleProgress = Math.max(0, elapsed - duration);
-            drawCanvasConfettiFrame(
-              context,
-              confettiPieces,
-              centerX,
-              centerY,
-              bounds.width,
-              bounds.height,
-              burstProgress,
-              wiggleProgress,
-              keepWiggling ? 0.35 : 0,
-            );
-
-            if (keepWiggling || burstProgress < 1) {
-              confettiAnimationFrame = window.requestAnimationFrame(draw);
-            }
-          }
-
-          confettiAnimationFrame = window.requestAnimationFrame(draw);
-        }
-
-        function drawCanvasConfettiFrame(
-          context,
-          confettiPieces,
-          centerX,
-          centerY,
-          width,
-          height,
-          burstProgress,
-          wiggleProgress,
-          wiggleScale,
-        ) {
-          const easedProgress = 1 - Math.pow(1 - burstProgress, 3);
-          context.clearRect(0, 0, width, height);
-
-          confettiPieces.forEach((piece) => {
-            const wiggle = Math.sin((wiggleProgress / piece.wiggleDuration + piece.phase) * Math.PI * 2) * wiggleScale;
-            const x = centerX + piece.x * easedProgress + piece.driftX * wiggle;
-            const y = centerY + piece.y * easedProgress + piece.driftY * wiggle;
-            const rotation = piece.rotation * easedProgress + wiggle * 0.12;
-            const opacity = Math.min(burstProgress * 4, 1);
-
-            drawCanvasConfettiPiece(context, piece, x, y, rotation, opacity);
-          });
-        }
-
-        function createCanvasConfettiPieces(width, height) {
-          const colors = ["#064df6", "#f80057", "#073b8e", "#fff7df"];
-          const shapes = ["slash", "dot", "diamond"];
-          const pieces = [
-            [-170, -110],
-            [-130, -56],
-            [-92, -132],
-            [-54, -78],
-            [-18, -122],
-            [18, -92],
-            [54, -142],
-            [92, -68],
-            [130, -118],
-            [170, -48],
-            [-154, 16],
-            [-108, 86],
-            [-62, 42],
-            [-22, 118],
-            [24, 48],
-            [68, 104],
-            [116, 32],
-            [158, 88],
-          ];
-
-          return pieces.map(([x, y], index) => {
-            const size = index % 5 === 0 ? 1.18 : 1;
-
-            return {
-              color: colors[index % colors.length],
-              shape: shapes[index % shapes.length],
-              width: (index % 3 === 0 ? 18 : index % 3 === 1 ? 9 : 10) * size,
-              height: (index % 3 === 0 ? 6 : index % 3 === 1 ? 9 : 10) * size,
-              x,
-              y,
-              driftX: (Math.random() - 0.5) * 6,
-              driftY: (Math.random() - 0.5) * 6,
-              rotation: ((index % 2 === 0 ? 1 : -1) * (160 + index * 24) * Math.PI) / 180,
-              phase: Math.random(),
-              wiggleDuration: 1900 + Math.random() * 1200,
-            };
-          });
-        }
-
-        function drawCanvasConfettiPiece(context, piece, x, y, rotation, opacity) {
-          context.save();
-          context.globalAlpha = opacity;
-          context.fillStyle = piece.color;
-          context.translate(x, y);
-          context.rotate(rotation);
-
-          if (piece.shape === "dot") {
-            context.beginPath();
-            context.arc(0, 0, Math.max(piece.width, piece.height) / 2, 0, Math.PI * 2);
-            context.fill();
-          } else if (piece.shape === "diamond") {
-            context.rotate(Math.PI / 4);
-            context.fillRect(-piece.width / 2, -piece.height / 2, piece.width, piece.height);
-          } else {
-            drawRoundedCanvasRect(context, -piece.width / 2, -piece.height / 2, piece.width, piece.height, piece.height / 2);
-          }
-
-          context.restore();
-        }
-
-        function drawRoundedCanvasRect(context, x, y, width, height, radius) {
-          const safeRadius = Math.min(radius, width / 2, height / 2);
-          context.beginPath();
-          context.moveTo(x + safeRadius, y);
-          context.lineTo(x + width - safeRadius, y);
-          context.quadraticCurveTo(x + width, y, x + width, y + safeRadius);
-          context.lineTo(x + width, y + height - safeRadius);
-          context.quadraticCurveTo(x + width, y + height, x + width - safeRadius, y + height);
-          context.lineTo(x + safeRadius, y + height);
-          context.quadraticCurveTo(x, y + height, x, y + height - safeRadius);
-          context.lineTo(x, y + safeRadius);
-          context.quadraticCurveTo(x, y, x + safeRadius, y);
-          context.fill();
-        }
-
-        function applyMatchingBenefitText(elements, text, className, onTextShown) {
+        function applyMatchingBenefitText(elements, text, className) {
           elements.benefit.classList.remove("is-fading-in", "is-fading-out", "is-visible", "is-success");
-          elements.benefit.textContent = text;
+          renderMatchingBenefitContent(elements.benefit, text, className);
 
           if (className) {
             elements.benefit.classList.add(className);
-          }
-
-          if (onTextShown) {
-            onTextShown();
           }
         }
 
@@ -1270,16 +1157,15 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
 
         function setMatchingBenefitText(elements, text, className, options = {}) {
           const transitionId = (matchingTextTransitionId += 1);
-          const onTextShown = typeof options.onTextShown === "function" ? options.onTextShown : undefined;
 
           if (options.immediate) {
-            applyMatchingBenefitText(elements, text, className, onTextShown);
+            applyMatchingBenefitText(elements, text, className);
             elements.benefit.classList.add("is-visible");
             return;
           }
 
           if (options.initial) {
-            applyMatchingBenefitText(elements, text, className, onTextShown);
+            applyMatchingBenefitText(elements, text, className);
             fadeMatchingBenefitIn(elements, transitionId);
             return;
           }
@@ -1293,27 +1179,37 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
             }
 
             elements.benefit.classList.remove("is-fading-out", "is-success");
-            elements.benefit.textContent = text;
+            renderMatchingBenefitContent(elements.benefit, text, className);
 
             if (className) {
               elements.benefit.classList.add(className);
             }
 
             fadeMatchingBenefitIn(elements, transitionId);
-
-            if (onTextShown) {
-              onTextShown();
-            }
           }, matchingBenefitFadeOutMs);
+        }
+
+        function renderMatchingBenefitContent(element, text, className) {
+          element.replaceChildren();
+
+          if (className !== "is-success") {
+            element.textContent = text;
+            return;
+          }
+
+          const successLines = text.split("\\n").filter((line) => line.trim());
+
+          successLines.forEach((line) => {
+            const lineElement = document.createElement("span");
+            lineElement.className = "matching-success-line";
+            lineElement.textContent = line;
+            element.appendChild(lineElement);
+          });
         }
 
         function showMatchingSuccess(question, elements) {
           elements.status.textContent = "";
-          setMatchingBenefitText(elements, question.successLabel, "is-success", {
-            onTextShown: () => {
-              triggerMatchingConfetti(elements.step);
-            },
-          });
+          setMatchingBenefitText(elements, question.successLabel, "is-success");
         }
 
         function runMatchingStep() {
@@ -1330,10 +1226,9 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
             return;
           }
 
-          const benefitTexts = getMatchingBenefitSequence(question.benefits.map(formatMatchingBenefit));
-          elements.step.classList.remove("is-matching-success");
+          const benefitTimeline = getMatchingBenefitTimeline(question.benefits.map(formatMatchingBenefit));
           elements.status.textContent = question.loadingLabel;
-          setMatchingBenefitText(elements, benefitTexts[0] ?? "", "", { initial: true });
+          setMatchingBenefitText(elements, benefitTimeline[0]?.text ?? "", "", { initial: true });
 
           if (answers[question.key] === question.seenAnswer) {
             showMatchingSuccess(question, elements);
@@ -1352,17 +1247,17 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
             return;
           }
 
-          benefitTexts.slice(1).forEach((benefit, index) => {
+          benefitTimeline.slice(1).forEach((benefitTiming) => {
             scheduleMatchingTimer(() => {
               if (runId !== activeMatchingRunId) {
                 return;
               }
 
-              setMatchingBenefitText(elements, benefit, "");
-            }, (index + 1) * matchingBenefitDisplayMs);
+              setMatchingBenefitText(elements, benefitTiming.text, "");
+            }, benefitTiming.startsAt);
           });
 
-          const successDelay = Math.max(1, benefitTexts.length) * matchingBenefitDisplayMs;
+          const successDelay = getMatchingBenefitTimelineDuration(benefitTimeline) || matchingBenefitDisplayMs;
 
           scheduleMatchingTimer(() => {
             if (runId !== activeMatchingRunId) {
@@ -1920,6 +1815,10 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         });
 
         window.addEventListener("popstate", () => {
+          if (replaceHiddenMatchingRouteIfNeeded()) {
+            return;
+          }
+
           const stepIndex = getStepIndexForPath(window.location.pathname);
 
           if (stepIndex !== -1) {
@@ -1932,10 +1831,28 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           }
         });
 
+        window.addEventListener("pageshow", (event) => {
+          if (config.previewMode || !event.persisted) {
+            return;
+          }
+
+          const stepIndex = getStepIndexForPath(window.location.pathname);
+          const question = config.questions[stepIndex];
+
+          if (question && question.kind === "interstitial") {
+            window.location.reload();
+            return;
+          }
+
+          replaceHiddenMatchingRouteIfNeeded();
+        });
+
         showStep(config.activeStepIndex);
-        const currentQuestion = config.questions[currentStep];
-        if (currentQuestion) {
-          window.history.replaceState({ step: currentStep }, "", currentQuestion.url);
+        if (!replaceHiddenMatchingRouteIfNeeded()) {
+          const currentQuestion = config.questions[currentStep];
+          if (currentQuestion) {
+            window.history.replaceState({ step: currentStep }, "", currentQuestion.url);
+          }
         }
       })();
     </script>
@@ -2041,9 +1958,6 @@ function renderInterstitial(question: InterstitialQuestion): string {
   return `<div class="matching-content">
     <p class="matching-status" data-matching-status></p>
     <p class="matching-benefit" data-matching-benefit>${escapeHtml(question.benefits[0] ?? "")}</p>
-    <div class="confetti" aria-hidden="true">
-      <canvas class="confetti-canvas" data-confetti-canvas></canvas>
-    </div>
   </div>`;
 }
 

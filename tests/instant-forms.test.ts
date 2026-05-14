@@ -207,6 +207,7 @@ describe("server routing", () => {
 
     expect(response.status).toBe(302);
     expect(response.headers.get("Location")).toBe("/tn");
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
   });
 
   it("redirects Tennessee to the first unanswered step without a checkpoint", async () => {
@@ -215,6 +216,7 @@ describe("server routing", () => {
 
     expect(response.status).toBe(302);
     expect(response.headers.get("Location")).toBe("/tn/vive-en-tennessee");
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
   });
 
   it("redirects Tennessee to the next unanswered step from a checkpoint", async () => {
@@ -336,6 +338,21 @@ describe("server routing", () => {
 
     expect(response.status).toBe(302);
     expect(response.headers.get("Location")).toBe("/tn/nombre");
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+  });
+
+  it("serves checkpoint-dependent form pages without browser caching", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(
+      new Request("http://localhost/tn/buscando-oferta", {
+        headers: {
+          Cookie: createCheckpointCookie(completedMatchingAnswers),
+        },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
   });
 
   it("sanitizes invalid checkpoint cookie answers before resuming", async () => {
@@ -448,7 +465,8 @@ describe("server routing", () => {
     expect(html).toContain('"url":"/__preview/tn/buscando-oferta"');
     expect(html).toContain(".matching-status:empty");
     expect(html).toContain('data-matching-status></p>');
-    expect(html).toContain("Encontramos una oferta para ti.");
+    expect(html).toContain("Encontramos agentes listos para cotizarle.");
+    expect(html).toContain("Descubra cuánto puede ahorrar.");
     expect(html).toContain('data-step="0" data-step-kind="interstitial" aria-hidden="false"');
     expect(html).not.toContain("¿Usted vive en Tennessee?");
     expect(html).not.toContain('"slug":"nombre"');
@@ -771,8 +789,19 @@ describe("form rendering", () => {
     expect(html).toContain("max-width: 100%;");
     expect(html).toContain("font-size: clamp(2rem, 4vw, 2.75rem);");
     expect(html).toContain("text-wrap: balance;");
+    expect(html).toContain("#steps {\n        min-height: 0;");
+    expect(html).toContain('#steps:has(.step[data-step-kind="interstitial"][aria-hidden="false"])');
+    expect(html).toContain('.step[data-step-kind="interstitial"][aria-hidden="false"]');
+    expect(html).toContain("grid-template-rows: auto auto minmax(0, 1fr);");
+    expect(html).toContain("height: 100%;");
+    expect(html).toContain("align-content: center;");
+    expect(html).toContain("justify-content: center;");
+    expect(html).toContain("width: min(100%, 620px);");
+    expect(html).toContain("justify-self: center;");
     expect(html).toContain("@media (min-width: 561px)");
     expect(html).toContain("height: 724px;");
+    expect(html).toContain('.step[data-step-kind="interstitial"] .matching-content');
+    expect(html).not.toContain(".matching-content {\n          height: 156px;");
     expect(html).toContain("min-height: 78px;");
     expect(html).toContain("min-height: 70px;");
     expect(html).toContain("min-width: 190px;");
@@ -820,79 +849,91 @@ describe("form rendering", () => {
     expect(html).toContain('"slug":"buscando-oferta"');
     expect(html).toContain('"url":"/tn/buscando-oferta"');
     expect(html).not.toContain("Buscando opciones para ti...");
-    expect(html).toContain("Precio barato");
-    expect(html).toContain("Fácil, rápido y confiable");
-    expect(html).toContain("Atención en español");
-    expect(html).toContain("Cobertura en {{stateName}}");
-    expect(html).toContain("Encontramos una oferta para ti.");
+    expect(html).toContain("Estamos buscando su seguro ideal");
+    expect(html).toContain("Revisando sus respuestas");
+    expect(html).toContain("Buscando agentes disponibles");
+    expect(html).toContain("Priorizando atención en español");
+    expect(html).toContain("Preparando opciones en {{stateName}}");
+    expect(html).toContain("Encontramos agentes listos para cotizarle.");
+    expect(html).toContain("Descubra cuánto puede ahorrar.");
+    expect(html).toContain("Encontramos agentes listos para cotizarle.\\nDescubra cuánto puede ahorrar.");
     expect(html).toContain("function getCoverageStateName()");
     expect(html).toContain('answers.residence_state || config.stateCode');
     expect(html).toContain("function runMatchingStep()");
     expect(html).toContain("function showMatchingSuccess(question, elements)");
     expect(html).toContain("let matchingTextTransitionId = 0;");
     expect(html).toContain("matchingTextTransitionId += 1;");
-    expect(html).toContain("function applyMatchingBenefitText(elements, text, className, onTextShown)");
+    expect(html).toContain("function applyMatchingBenefitText(elements, text, className)");
     expect(html).toContain("function fadeMatchingBenefitIn(elements, transitionId)");
     expect(html).toContain("function setMatchingBenefitText(elements, text, className, options = {})");
-    expect(html).toContain('setMatchingBenefitText(elements, question.successLabel, "is-success", {');
+    expect(html).toContain('setMatchingBenefitText(elements, question.successLabel, "is-success")');
     expect(html).toContain('elements.benefit.classList.add(className)');
     expect(html).toContain("matchingBenefitFadeOutMs = 300");
     expect(html).toContain("matchingBenefitFadeInMs = 420");
-    expect(html).toContain("matchingBenefitDisplayMs = 1000");
-    expect(html).toContain("matchingBenefitMinCount = 2");
-    expect(html).toContain("matchingBenefitMaxCount = 3");
+    expect(html).toContain("matchingBenefitDisplayMs = 950");
+    expect(html).toContain("matchingBenefitMinCount = 3");
+    expect(html).toContain("matchingBenefitMaxCount = 4");
     expect(html).toContain("function shuffleMatchingBenefits(benefits)");
     expect(html).toContain("Math.floor(Math.random() * (index + 1))");
     expect(html).toContain("function getRandomMatchingBenefitCount(availableBenefitCount)");
     expect(html).toContain("Math.random() * (maxBenefitCount - minBenefitCount + 1)");
     expect(html).toContain("function getMatchingBenefitSequence(benefits)");
     expect(html).toContain("return shuffledBenefits.slice(0, getRandomMatchingBenefitCount(shuffledBenefits.length))");
-    expect(html).toContain("const benefitTexts = getMatchingBenefitSequence(question.benefits.map(formatMatchingBenefit))");
-    expect(html).toContain("(index + 1) * matchingBenefitDisplayMs");
-    expect(html).toContain("const successDelay = Math.max(1, benefitTexts.length) * matchingBenefitDisplayMs");
+    expect(html).toContain("function getMatchingBenefitTimeline(benefits)");
+    expect(html).toContain("function getMatchingBenefitTimelineDuration(benefitTimeline)");
+    expect(html).toContain("const benefitTimeline = getMatchingBenefitTimeline(question.benefits.map(formatMatchingBenefit))");
+    expect(html).toContain("duration: matchingBenefitDisplayMs");
+    expect(html).toContain("startsAt += matchingBenefitDisplayMs");
+    expect(html).toContain("benefitTiming.startsAt");
+    expect(html).toContain("const successDelay = getMatchingBenefitTimelineDuration(benefitTimeline) || matchingBenefitDisplayMs");
     expect(html).toContain("is-fading-out");
     expect(html).toContain("is-fading-in");
     expect(html).toContain("is-visible");
+    expect(html).toContain(".matching-benefit.is-success");
+    expect(html).toContain("font-size: clamp(1.35rem, 3vw, 1.65rem)");
+    expect(html).toContain("line-height: 1.18");
+    expect(html).toContain("-webkit-text-stroke: 0.025em rgba(255, 253, 244, 0.9)");
+    expect(html).toContain("paint-order: stroke fill");
+    expect(html).toContain("white-space: pre-line");
+    expect(html).toContain(".matching-success-line");
+    expect(html).toContain(".matching-success-line:first-child");
+    expect(html).toContain("color: var(--brand-navy)");
+    expect(html).toContain(".matching-success-line:last-child");
+    expect(html).toContain("color: var(--accent)");
+    expect(html).toContain("0 0.025em 0 rgba(255, 253, 244, 0.74)");
+    expect(html).toContain("0 0.1em 0.22em rgba(7, 59, 142, 0.14)");
+    expect(html).toContain("filter: drop-shadow(0 12px 24px rgba(7, 59, 142, 0.1))");
+    expect(html).not.toContain("0 14px 32px rgba(248, 0, 87, 0.16)");
     expect(html).toContain("matching-benefit-fade-out 300ms ease forwards");
     expect(html).toContain("matching-benefit-fade-in 420ms ease forwards");
     expect(html).toContain("@keyframes matching-benefit-fade-out");
     expect(html).toContain("@keyframes matching-benefit-fade-in");
     expect(html).toContain("scheduleMatchingTimer(() =>");
     expect(html).toContain("if (transitionId !== matchingTextTransitionId)");
-    expect(html).toContain("applyMatchingBenefitText(elements, text, className, onTextShown)");
-    expect(html).toContain("setMatchingBenefitText(elements, benefitTexts[0] ?? \"\", \"\", { initial: true })");
-    expect(html).toContain("onTextShown: () =>");
-    expect(html).toContain("triggerMatchingConfetti(elements.step)");
-    expect(html).toContain("runCanvasConfetti(step.querySelector(\"[data-confetti-canvas]\"))");
-    expect(html).toContain("let confettiAnimationFrame;");
-    expect(html).toContain("let activeConfettiRunId = 0;");
-    expect(html).toContain("function clearCanvasConfetti()");
-    expect(html).toContain("window.cancelAnimationFrame(confettiAnimationFrame)");
-    expect(html).toContain("function runCanvasConfetti(canvas)");
-    expect(html).toContain('canvas.getContext("2d")');
-    expect(html).toContain("window.requestAnimationFrame(draw)");
-    expect(html).toContain("drawCanvasConfettiFrame(context, confettiPieces, centerX, centerY, bounds.width, bounds.height, 1, 0, 1)");
-    expect(html).toContain("function drawCanvasConfettiFrame(");
-    expect(html).toContain("function createCanvasConfettiPieces(width, height)");
-    expect(html).toContain("function drawCanvasConfettiPiece(context, piece, x, y, rotation, opacity)");
-    expect(html).toContain("function drawRoundedCanvasRect(context, x, y, width, height, radius)");
-    expect(html).toContain("context.fillRect");
-    expect(html).toContain("context.arc");
-    expect(html).toContain("const opacity = Math.min(burstProgress * 4, 1)");
-    expect(html).toContain("[-170, -110]");
-    expect(html).toContain("[158, 88]");
-    expect(html).toContain("keepWiggling ? 0.35 : 0");
-    expect(html).toContain("driftX: (Math.random() - 0.5) * 6");
-    expect(html).toContain("driftY: (Math.random() - 0.5) * 6");
-    expect(html).toContain("wiggleDuration: 1900 + Math.random() * 1200");
-    expect(html).toContain("drawRoundedCanvasRect(context");
-    expect(html).toContain("Math.sin((wiggleProgress / piece.wiggleDuration + piece.phase) * Math.PI * 2)");
-    expect(html).not.toContain("confetti-pop");
-    expect(html).not.toContain("confetti-float");
-    expect(html).not.toContain("confetti-piece-burst");
-    expect(html).not.toContain("confetti-chip-wiggle");
+    expect(html).toContain("applyMatchingBenefitText(elements, text, className)");
+    expect(html).toContain("function renderMatchingBenefitContent(element, text, className)");
+    expect(html).toContain("element.replaceChildren()");
+    expect(html).toContain('if (className !== "is-success")');
+    expect(html).toContain('text.split("\\n").filter((line) => line.trim())');
+    expect(html).toContain('lineElement.className = "matching-success-line"');
+    expect(html).toContain("setMatchingBenefitText(elements, benefitTimeline[0]?.text ?? \"\", \"\", { initial: true })");
+    expect(html).not.toContain("onTextShown");
+    expect(html).not.toContain("getContext");
+    expect(html).not.toContain("requestAnimationFrame");
+    expect(html).not.toContain("cancelAnimationFrame");
+    expect(html).not.toContain("HTMLCanvasElement");
+    expect(html).not.toContain("drawCanvas");
+    expect(html).not.toContain("drawRoundedCanvasRect");
+    expect(html).not.toContain("<canvas");
+    expect(html).not.toContain("is-matching-success");
     expect(html).toContain('elements.status.textContent = ""');
     expect(html).toContain('question.kind === "interstitial" && answers[question.key] === question.seenAnswer');
+    expect(html).toContain("function shouldHideMatchingStep(question)");
+    expect(html).toContain("function replaceHiddenMatchingRouteIfNeeded()");
+    expect(html).toContain("function getNextVisibleStepIndexAfter(stepIndex)");
+    expect(html).toContain('window.addEventListener("pageshow"');
+    expect(html).toContain("event.persisted");
+    expect(html).toContain("window.location.reload()");
     expect(html).toContain("function isStepAnswered(question)");
     expect(html).toContain("const completedMatchingSteps = new Set();");
     expect(html).toContain("function completeMatchingStep(question, runId)");
@@ -902,14 +943,11 @@ describe("form rendering", () => {
     expect(html).toContain('saveCheckpoint(question.key, question.completionAnswer)');
     expect(html).toContain('saveCheckpoint(question.key, question.seenAnswer)');
     expect(html).toContain("replaceToUrl(nextUrl ?? config.questions[getNextVisibleStepIndex()].url)");
-    expect(html).not.toContain(".confetti-canvas {\n          display: none;");
     expect(html).toContain('nextButton.textContent = "Siguiente"');
     expect(html).not.toContain("matching-loader");
     expect(html).not.toContain("data-matching-retry");
     expect(html).not.toContain('.form-panel[data-active-kind="interstitial"] footer');
     expect(html).toContain("overflow: visible");
-    expect(html).toContain(".confetti-canvas");
-    expect(html).toContain('<canvas class="confetti-canvas" data-confetti-canvas></canvas>');
   });
 
   it("wires a forgiving US phone mask without blocking browser autofill", () => {

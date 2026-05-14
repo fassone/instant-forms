@@ -45,7 +45,7 @@ export function createApp(options: AppOptions = {}) {
   const logger = options.logger ?? (() => undefined);
   const app = new Hono();
 
-  app.get("/", (c) => c.redirect("/tn", 302));
+  app.get("/", (c) => redirectNoStore(c, "/tn"));
 
   app.get("/assets/logo.webp", () => assetResponse(Bun.file(logoAssetUrl), "image/webp"));
 
@@ -196,7 +196,7 @@ export function createApp(options: AppOptions = {}) {
     const answers = readCheckpointAnswers(c, form);
     const resumeStep = getQuestionAt(form, getResumeStepIndex(form, answers));
 
-    return c.redirect(getStepUrl(form, resumeStep), 302);
+    return redirectNoStore(c, getStepUrl(form, resumeStep));
   });
 
   app.get("/:stateCode/:stepSlug", (c) => {
@@ -219,15 +219,15 @@ export function createApp(options: AppOptions = {}) {
         if (!canAccessStep(form, legacyStepIndex, answers)) {
           const resumeStep = getQuestionAt(form, getResumeStepIndex(form, answers));
 
-          return c.redirect(getStepUrl(form, resumeStep), 302);
+          return redirectNoStore(c, getStepUrl(form, resumeStep));
         }
 
         const legacyStep = getQuestionAt(form, legacyStepIndex);
 
-        return c.redirect(getStepUrl(form, legacyStep), 302);
+        return redirectNoStore(c, getStepUrl(form, legacyStep));
       }
 
-      return c.redirect(`/${form.stateCode}`, 302);
+      return redirectNoStore(c, `/${form.stateCode}`);
     }
 
     const answers = readCheckpointAnswers(c, form);
@@ -235,7 +235,7 @@ export function createApp(options: AppOptions = {}) {
     if (!canAccessStep(form, stepIndex, answers)) {
       const resumeStep = getQuestionAt(form, getResumeStepIndex(form, answers));
 
-      return c.redirect(getStepUrl(form, resumeStep), 302);
+      return redirectNoStore(c, getStepUrl(form, resumeStep));
     }
 
     const requestedStep = getQuestionAt(form, stepIndex);
@@ -243,7 +243,7 @@ export function createApp(options: AppOptions = {}) {
     if (requestedStep.kind === "interstitial" && answers[requestedStep.key] === requestedStep.seenAnswer) {
       const nextStep = getQuestionAt(form, getNextStepIndex(form, stepIndex, answers));
 
-      return c.redirect(getStepUrl(form, nextStep), 302);
+      return redirectNoStore(c, getStepUrl(form, nextStep));
     }
 
     return htmlResponse(
@@ -251,6 +251,8 @@ export function createApp(options: AppOptions = {}) {
         activeStepIndex: stepIndex,
         answers,
       }),
+      200,
+      "no-store",
     );
   });
 
@@ -262,7 +264,7 @@ export function createApp(options: AppOptions = {}) {
       return htmlResponse(renderUnavailablePage(stateCode), 404);
     }
 
-    return c.redirect(`/${form.stateCode}`, 302);
+    return redirectNoStore(c, `/${form.stateCode}`);
   });
 
   app.notFound(() => htmlResponse(renderUnavailablePage("esta ruta"), 404));
@@ -337,6 +339,12 @@ function htmlResponse(body: string, status = 200, cacheControl = "public, max-ag
       "Cache-Control": cacheControl,
     },
   });
+}
+
+function redirectNoStore(c: Context, url: string): Response {
+  c.header("Cache-Control", "no-store");
+
+  return c.redirect(url, 302);
 }
 
 function jsonResponse(c: Context, body: unknown, status: ContentfulStatusCode): Response {
