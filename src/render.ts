@@ -426,9 +426,15 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         background: transparent;
         color: var(--text);
         font-size: clamp(1.5rem, 5vw, 3rem);
-        font-weight: 800;
+        font-weight: 400;
         outline: 0;
-        padding: 6px 0 14px;
+        padding: 6px 0 6px;
+      }
+
+      .text-input::placeholder {
+        color: rgba(21, 24, 43, 0.34);
+        font-weight: 400;
+        opacity: 1;
       }
 
       .text-input:focus {
@@ -2126,6 +2132,7 @@ function renderOptions(question: ChoiceQuestion, answers: Record<string, string>
 function renderTextInput(question: TextQuestion, answers: Record<string, string>): string {
   const inputType = question.type === "PHONE" ? "tel" : "text";
   const value = answers[question.key] ?? "";
+  const placeholder = getInputPlaceholder(question);
 
   return `<input
     class="text-input"
@@ -2133,12 +2140,14 @@ function renderTextInput(question: TextQuestion, answers: Record<string, string>
     name="${escapeHtml(question.key)}"
     autocomplete="${escapeHtml(question.autocomplete)}"
     inputmode="${escapeHtml(question.inputMode)}"
+    placeholder="${escapeHtml(placeholder)}"
     value="${escapeHtml(value)}"
   >`;
 }
 
 function renderStateInput(question: StateQuestion, answers: Record<string, string>): string {
   const value = answers[question.key] ?? "";
+  const placeholder = getInputPlaceholder(question);
 
   return `<div class="state-field">
     <input
@@ -2147,11 +2156,32 @@ function renderStateInput(question: StateQuestion, answers: Record<string, strin
       name="${escapeHtml(question.key)}"
       autocomplete="${escapeHtml(question.autocomplete)}"
       inputmode="${escapeHtml(question.inputMode)}"
+      placeholder="${escapeHtml(placeholder)}"
       value="${escapeHtml(value)}"
       data-state-input="true"
     >
     <div class="state-suggestions" data-state-suggestions hidden></div>
   </div>`;
+}
+
+function getInputPlaceholder(question: TextQuestion | StateQuestion): string {
+  if (question.kind === "state") {
+    return "Escriba su estado aquí";
+  }
+
+  if (question.type === "FIRST_NAME") {
+    return "Escriba su nombre aquí";
+  }
+
+  if (question.type === "LAST_NAME") {
+    return "Escriba su apellido aquí";
+  }
+
+  if (question.type === "PHONE") {
+    return "Escriba su telefono aquí";
+  }
+
+  return "Escriba aquí";
 }
 
 function serializeForScript(value: unknown): string {

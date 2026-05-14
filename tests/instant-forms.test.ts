@@ -1020,6 +1020,12 @@ describe("form rendering", () => {
   it("wires a forgiving US phone mask without blocking browser autofill", () => {
     const html = renderFormPage(getRequiredTennesseeForm());
 
+    expect(html).toContain("font-weight: 400;");
+    expect(html).toContain("padding: 6px 0 6px;");
+    expect(html).toContain(".text-input::placeholder");
+    expect(html).toContain('placeholder="Escriba su nombre aquí"');
+    expect(html).toContain('placeholder="Escriba su apellido aquí"');
+    expect(html).toContain('placeholder="Escriba su telefono aquí"');
     expect(html).toContain('form.addEventListener("input"');
     expect(html).toContain('form.addEventListener("beforeinput"');
     expect(html).toContain("function parseUsPhoneInput(value)");
@@ -1086,6 +1092,7 @@ describe("form rendering", () => {
     const html = renderFormPage(getRequiredTennesseeForm());
 
     expect(html).toContain('data-state-input="true"');
+    expect(html).toContain('placeholder="Escriba su estado aquí"');
     expect(html).toContain("data-state-suggestions");
     expect(html).toContain("function normalizeUsState(value)");
     expect(html).toContain("function getStateSuggestions(value)");
