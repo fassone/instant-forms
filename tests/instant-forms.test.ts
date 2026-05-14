@@ -1182,8 +1182,14 @@ describe("form rendering", () => {
     expect(html).toContain("Number.POSITIVE_INFINITY");
     expect(html).toContain("autocompleteConfig.getLabel(left.item).localeCompare(autocompleteConfig.getLabel(right.item))");
     expect(html).not.toContain(".slice(0, 3);");
-    expect(html).toContain("height: 220px;");
-    expect(html).toContain("height: 180px;");
+    expect(html).toContain('#steps:has(.step[data-step-kind="state"][aria-hidden="false"])');
+    expect(html).toContain('.step[data-step-kind="state"][aria-hidden="false"]');
+    expect(html).toContain(".step[data-step-kind=\"state\"][aria-hidden=\"false\"] .state-field");
+    expect(html).toContain("grid-template-rows: auto minmax(0, 1fr);");
+    expect(html).toContain("align-self: stretch;");
+    expect(html).toContain("height: auto;");
+    expect(html).not.toContain("height: 220px;");
+    expect(html).not.toContain("height: 180px;");
     expect(html).toContain("overflow-y: auto;");
     expect(html).toContain("overscroll-behavior: contain;");
     expect(html).toContain("state-scroll-fade-top");

@@ -278,7 +278,19 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         display: grid;
       }
 
+      #steps:has(.step[data-step-kind="state"][aria-hidden="false"]) {
+        display: grid;
+      }
+
       .step[data-step-kind="interstitial"][aria-hidden="false"] {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        height: 100%;
+        min-height: 0;
+        align-self: stretch;
+      }
+
+      .step[data-step-kind="state"][aria-hidden="false"] {
         display: grid;
         grid-template-rows: auto minmax(0, 1fr);
         height: 100%;
@@ -468,13 +480,24 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
       }
 
       .state-field {
+        min-height: 0;
         position: relative;
+      }
+
+      .step[data-step-kind="state"][aria-hidden="false"] .state-field {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
       }
 
       .state-suggestions-shell {
         position: relative;
-        height: 220px;
+        min-height: 0;
         margin-top: 12px;
+      }
+
+      .step[data-step-kind="state"][aria-hidden="false"] .state-suggestions-shell {
+        align-self: stretch;
+        height: auto;
       }
 
       .state-suggestions-shell[data-state-empty="true"] {
@@ -770,10 +793,6 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
 
         .question-title {
           max-width: 100%;
-        }
-
-        .state-suggestions-shell {
-          height: 180px;
         }
 
         #steps {
