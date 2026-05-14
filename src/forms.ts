@@ -17,6 +17,7 @@ type BaseQuestion = {
   slug: string;
   label: string;
   id: string;
+  countsAsStep?: boolean;
   showWhen?: QuestionCondition;
 };
 
@@ -235,6 +236,10 @@ export function isQuestionVisible(question: FormQuestion, answers: Record<string
 
 export function getVisibleQuestions(form: InstantForm, answers: Record<string, string>): readonly FormQuestion[] {
   return form.questions.filter((question) => isQuestionVisible(question, answers));
+}
+
+export function isCountedStep(question: FormQuestion): boolean {
+  return question.countsAsStep ?? question.kind !== "interstitial";
 }
 
 export function getQuestionIndexBySlug(form: InstantForm, slug: string): number {

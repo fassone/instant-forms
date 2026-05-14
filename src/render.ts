@@ -1,4 +1,4 @@
-import { getQuestionSlug, getStepUrl } from "./forms";
+import { getQuestionSlug, getStepUrl, isCountedStep, isQuestionVisible as isServerQuestionVisible } from "./forms";
 import type { ChoiceQuestion, FormQuestion, InstantForm, InterstitialQuestion, StateQuestion, TextQuestion } from "./forms";
 import { US_STATES } from "./us-states";
 
@@ -7,44 +7,36 @@ type ClientQuestionCondition = {
   answer: string;
 };
 
+type ClientQuestionBase = {
+  key: string;
+  slug: string;
+  url: string;
+  countsAsStep: boolean;
+  showWhen?: ClientQuestionCondition;
+};
+
 type ClientQuestion =
-  | {
+  | (ClientQuestionBase & {
       kind: "choice";
-      key: string;
-      slug: string;
-      url: string;
-      showWhen?: ClientQuestionCondition;
       options: readonly string[];
-    }
-  | {
+    })
+  | (ClientQuestionBase & {
       kind: "text";
-      key: string;
-      slug: string;
-      url: string;
-      showWhen?: ClientQuestionCondition;
       type: TextQuestion["type"];
-    }
-  | {
+    })
+  | (ClientQuestionBase & {
       kind: "state";
-      key: string;
-      slug: string;
-      url: string;
-      showWhen?: ClientQuestionCondition;
       type: StateQuestion["type"];
-    }
-  | {
+    })
+  | (ClientQuestionBase & {
       kind: "interstitial";
-      key: string;
-      slug: string;
-      url: string;
-      showWhen?: ClientQuestionCondition;
       type: InterstitialQuestion["type"];
       loadingLabel: string;
       successLabel: string;
       completionAnswer: InterstitialQuestion["completionAnswer"];
       seenAnswer: InterstitialQuestion["seenAnswer"];
       benefits: readonly string[];
-    };
+    });
 
 type ClientFormConfig = {
   stateCode: string;
@@ -68,6 +60,8 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
   const initialAnswers = options.answers ?? {};
   const stepUrlOverrides = options.stepUrlOverrides ?? {};
   const getClientStepUrl = (question: FormQuestion) => stepUrlOverrides[question.key] ?? getStepUrl(form, question);
+  const initialStepCountLabels = form.questions.map((_, index) => getStepCountLabel(form, index, initialAnswers));
+  const initialProgressPercent = getStepProgressPercent(form, activeStepIndex, initialAnswers);
   const clientConfig: ClientFormConfig = {
     stateCode: form.stateCode,
     activeStepIndex,
@@ -81,6 +75,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           key: question.key,
           slug: getQuestionSlug(question),
           url: getClientStepUrl(question),
+          countsAsStep: isCountedStep(question),
           showWhen: question.showWhen,
           options: question.options.map((option) => option.key),
         };
@@ -92,6 +87,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           key: question.key,
           slug: getQuestionSlug(question),
           url: getClientStepUrl(question),
+          countsAsStep: isCountedStep(question),
           showWhen: question.showWhen,
           type: question.type,
         };
@@ -103,6 +99,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           key: question.key,
           slug: getQuestionSlug(question),
           url: getClientStepUrl(question),
+          countsAsStep: isCountedStep(question),
           showWhen: question.showWhen,
           type: question.type,
           loadingLabel: question.loadingLabel,
@@ -118,6 +115,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         key: question.key,
         slug: getQuestionSlug(question),
         url: getClientStepUrl(question),
+        countsAsStep: isCountedStep(question),
         showWhen: question.showWhen,
         type: question.type,
       };
@@ -232,7 +230,6 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
       }
 
       .progress-bar {
-        width: 12.5%;
         height: 100%;
         border-radius: inherit;
         background: linear-gradient(90deg, var(--brand-blue), var(--brand-pink));
@@ -269,6 +266,10 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         color: var(--brand-navy);
         font-size: 0.95rem;
         font-weight: 700;
+      }
+
+      .step[data-step-counted="false"] .step-count {
+        visibility: hidden;
       }
 
       .question-title {
@@ -704,11 +705,13 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           <span class="state-pill">${escapeHtml(form.stateCode)}</span>
         </header>
         <div class="progress-shell" aria-hidden="true">
-          <div class="progress-bar" id="progress-bar"></div>
+          <div class="progress-bar" id="progress-bar" style="width: ${initialProgressPercent}%"></div>
         </div>
         <section id="steps">
           ${form.questions
-            .map((question, index) => renderQuestion(question, index, form.questions.length, activeStepIndex, initialAnswers))
+            .map((question, index) =>
+              renderQuestion(question, index, initialStepCountLabels[index] ?? "Paso 1 de 1", activeStepIndex, initialAnswers),
+            )
             .join("")}
         </section>
         <footer>
@@ -790,7 +793,8 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           currentStep = visibleStepIndexes.includes(requestedStep) ? requestedStep : fallbackStep;
           const question = getQuestion();
           const currentVisiblePosition = getCurrentVisiblePosition();
-          const visibleStepCount = Math.max(visibleStepIndexes.length, 1);
+          const countedStepNumber = getCurrentCountedStepNumber();
+          const countedStepCount = getCountedStepCount();
 
           steps.forEach((step, index) => {
             step.setAttribute("aria-hidden", String(index !== currentStep));
@@ -799,10 +803,10 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           form.dataset.activeKind = question.kind;
           const stepCount = steps[currentStep].querySelector("[data-step-count]");
           if (stepCount) {
-            stepCount.textContent = "Paso " + (currentVisiblePosition + 1) + " de " + visibleStepCount;
+            stepCount.textContent = "Paso " + countedStepNumber + " de " + countedStepCount;
           }
 
-          progressBar.style.width = ((currentVisiblePosition + 1) / visibleStepCount) * 100 + "%";
+          progressBar.style.width = (countedStepNumber / countedStepCount) * 100 + "%";
           backButton.disabled = currentVisiblePosition === 0 || isSubmitting;
           nextButton.textContent = isCurrentStepFinal() ? "Enviar" : "Siguiente";
           nextButton.disabled =
@@ -838,6 +842,34 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           return config.questions
             .map((question, index) => (isQuestionVisible(question) ? index : -1))
             .filter((index) => index !== -1);
+        }
+
+        function isCountedStep(question) {
+          return question.countsAsStep !== false;
+        }
+
+        function getCountedVisibleStepIndexes() {
+          return getVisibleStepIndexes().filter((stepIndex) => {
+            const question = config.questions[stepIndex];
+
+            return question && isCountedStep(question);
+          });
+        }
+
+        function getCountedStepCount() {
+          return Math.max(getCountedVisibleStepIndexes().length, 1);
+        }
+
+        function getCurrentCountedStepNumber() {
+          const countedStepIndexes = getCountedVisibleStepIndexes();
+
+          if (countedStepIndexes.length === 0) {
+            return 1;
+          }
+
+          const countedStepsThroughCurrent = countedStepIndexes.filter((stepIndex) => stepIndex <= currentStep).length;
+
+          return Math.max(countedStepsThroughCurrent, 1);
         }
 
         function getCurrentVisiblePosition() {
@@ -1207,9 +1239,9 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           });
         }
 
-        function showMatchingSuccess(question, elements) {
+        function showMatchingSuccess(question, elements, options = {}) {
           elements.status.textContent = "";
-          setMatchingBenefitText(elements, question.successLabel, "is-success");
+          setMatchingBenefitText(elements, question.successLabel, "is-success", options);
         }
 
         function runMatchingStep() {
@@ -1226,12 +1258,8 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
             return;
           }
 
-          const benefitTimeline = getMatchingBenefitTimeline(question.benefits.map(formatMatchingBenefit));
-          elements.status.textContent = question.loadingLabel;
-          setMatchingBenefitText(elements, benefitTimeline[0]?.text ?? "", "", { initial: true });
-
           if (answers[question.key] === question.seenAnswer) {
-            showMatchingSuccess(question, elements);
+            showMatchingSuccess(question, elements, { immediate: true });
             scheduleMatchingTimer(() => {
               if (runId !== activeMatchingRunId) {
                 return;
@@ -1243,9 +1271,13 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           }
 
           if (answers[question.key] === question.completionAnswer || completedMatchingSteps.has(question.key)) {
-            showMatchingSuccess(question, elements);
+            showMatchingSuccess(question, elements, { immediate: true });
             return;
           }
+
+          const benefitTimeline = getMatchingBenefitTimeline(question.benefits.map(formatMatchingBenefit));
+          elements.status.textContent = question.loadingLabel;
+          setMatchingBenefitText(elements, benefitTimeline[0]?.text ?? "", "", { initial: true });
 
           benefitTimeline.slice(1).forEach((benefitTiming) => {
             scheduleMatchingTimer(() => {
@@ -1956,17 +1988,59 @@ export function renderUnavailablePage(stateCode: string): string {
 </html>`;
 }
 
+function getVisibleStepIndexesForAnswers(form: InstantForm, answers: Record<string, string>): number[] {
+  return form.questions
+    .map((question, index) => (isServerQuestionVisible(question, answers) ? index : -1))
+    .filter((index) => index !== -1);
+}
+
+function getCountedVisibleStepIndexesForAnswers(form: InstantForm, answers: Record<string, string>): number[] {
+  return getVisibleStepIndexesForAnswers(form, answers).filter((index) => {
+    const question = form.questions[index];
+
+    return question ? isCountedStep(question) : false;
+  });
+}
+
+function getCountedStepNumberForIndex(countedStepIndexes: readonly number[], stepIndex: number): number {
+  if (countedStepIndexes.length === 0) {
+    return 1;
+  }
+
+  const countedStepsThroughStep = countedStepIndexes.filter((countedStepIndex) => countedStepIndex <= stepIndex).length;
+
+  return Math.max(countedStepsThroughStep, 1);
+}
+
+function getStepCountLabel(form: InstantForm, stepIndex: number, answers: Record<string, string>): string {
+  const countedStepIndexes = getCountedVisibleStepIndexesForAnswers(form, answers);
+  const countedStepNumber = getCountedStepNumberForIndex(countedStepIndexes, stepIndex);
+  const countedStepCount = Math.max(countedStepIndexes.length, 1);
+
+  return `Paso ${countedStepNumber} de ${countedStepCount}`;
+}
+
+function getStepProgressPercent(form: InstantForm, stepIndex: number, answers: Record<string, string>): number {
+  const countedStepIndexes = getCountedVisibleStepIndexesForAnswers(form, answers);
+  const countedStepNumber = getCountedStepNumberForIndex(countedStepIndexes, stepIndex);
+  const countedStepCount = Math.max(countedStepIndexes.length, 1);
+
+  return (countedStepNumber / countedStepCount) * 100;
+}
+
 function renderQuestion(
   question: FormQuestion,
   index: number,
-  totalQuestions: number,
+  stepCountLabel: string,
   activeStepIndex: number,
   answers: Record<string, string>,
 ): string {
   const isCurrent = index === activeStepIndex;
+  const countsAsStep = isCountedStep(question);
+  const stepCountAriaHidden = countsAsStep ? "" : ' aria-hidden="true"';
 
-  return `<article class="step" data-step="${index}" data-step-kind="${escapeHtml(question.kind)}" aria-hidden="${String(!isCurrent)}">
-    <p class="step-count" data-step-count>Paso ${index + 1} de ${totalQuestions}</p>
+  return `<article class="step" data-step="${index}" data-step-kind="${escapeHtml(question.kind)}" data-step-counted="${String(countsAsStep)}" aria-hidden="${String(!isCurrent)}">
+    <p class="step-count" data-step-count${stepCountAriaHidden}>${escapeHtml(stepCountLabel)}</p>
     <h1 class="question-title">${escapeHtml(question.label)}</h1>
     ${
       question.kind === "choice"
@@ -1974,16 +2048,27 @@ function renderQuestion(
         : question.kind === "state"
           ? renderStateInput(question, answers)
           : question.kind === "interstitial"
-            ? renderInterstitial(question)
+            ? renderInterstitial(question, answers)
             : renderTextInput(question, answers)
     }
   </article>`;
 }
 
-function renderInterstitial(question: InterstitialQuestion): string {
+function renderInterstitial(question: InterstitialQuestion, answers: Record<string, string>): string {
+  const answer = answers[question.key];
+  const isComplete = answer === question.completionAnswer || answer === question.seenAnswer;
+  const benefitClass = isComplete ? "matching-benefit is-success is-visible" : "matching-benefit";
+  const benefitContent = isComplete
+    ? question.successLabel
+        .split("\n")
+        .filter((line) => line.trim())
+        .map((line) => `<span class="matching-success-line">${escapeHtml(line)}</span>`)
+        .join("")
+    : escapeHtml(question.benefits[0] ?? "");
+
   return `<div class="matching-content">
     <p class="matching-status" data-matching-status></p>
-    <p class="matching-benefit" data-matching-benefit>${escapeHtml(question.benefits[0] ?? "")}</p>
+    <p class="${benefitClass}" data-matching-benefit>${benefitContent}</p>
   </div>`;
 }
 

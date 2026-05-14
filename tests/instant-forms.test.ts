@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { encodeCheckpointAnswers, getCheckpointCookieName } from "../src/checkpoints";
-import { getFormByStateCode, getQuestionSlug } from "../src/forms";
+import { getFormByStateCode, getQuestionSlug, isCountedStep } from "../src/forms";
 import { renderFormPage } from "../src/render";
 import { createFetchHandler } from "../src/server";
 import { normalizeUsState } from "../src/us-states";
@@ -14,6 +14,12 @@ const preContactAnswers = {
   number_of_registered_cars: "1",
 };
 
+const outOfStatePreContactAnswers = {
+  ...preContactAnswers,
+  belongs_to_state: "no",
+  residence_state: "TX",
+};
+
 const seenMatchingAnswers = {
   ...preContactAnswers,
   matching_offer: "seen",
@@ -21,6 +27,11 @@ const seenMatchingAnswers = {
 
 const completedMatchingAnswers = {
   ...preContactAnswers,
+  matching_offer: "completed",
+};
+
+const completedOutOfStateMatchingAnswers = {
+  ...outOfStatePreContactAnswers,
   matching_offer: "completed",
 };
 
@@ -64,6 +75,17 @@ describe("form registry", () => {
       "apellido",
       "telefono",
     ]);
+  });
+
+  it("uses reusable counted-step semantics", () => {
+    const form = getRequiredTennesseeForm();
+    const firstQuestion = form.questions[0];
+    const matchingQuestion = form.questions.find((question) => question.kind === "interstitial");
+
+    expect(firstQuestion ? isCountedStep(firstQuestion) : undefined).toBe(true);
+    expect(matchingQuestion ? isCountedStep(matchingQuestion) : undefined).toBe(false);
+    expect(firstQuestion ? isCountedStep({ ...firstQuestion, countsAsStep: false }) : undefined).toBe(false);
+    expect(matchingQuestion ? isCountedStep({ ...matchingQuestion, countsAsStep: true }) : undefined).toBe(true);
   });
 });
 
@@ -309,7 +331,30 @@ describe("server routing", () => {
     expect(contactResponse.status).toBe(302);
     expect(contactResponse.headers.get("Location")).toBe("/tn/buscando-oferta");
     expect(matchingResponse.status).toBe(200);
-    await expect(matchingResponse.text()).resolves.toContain('"matching_offer":"completed"');
+    const matchingHtml = await matchingResponse.text();
+    expect(matchingHtml).toContain('"matching_offer":"completed"');
+    expect(matchingHtml).toContain('<p class="step-count" data-step-count aria-hidden="true">Paso 5 de 8</p>');
+    expect(matchingHtml).toContain('class="matching-benefit is-success is-visible"');
+    expect(matchingHtml).toContain(
+      '<span class="matching-success-line">Encontramos agentes listos para cotizarle.</span>',
+    );
+    expect(matchingHtml).toContain('<span class="matching-success-line">Descubra cuánto puede ahorrar.</span>');
+  });
+
+  it("excludes matching from step count on the out-of-state path", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(
+      new Request("http://localhost/tn/buscando-oferta", {
+        headers: {
+          Cookie: createCheckpointCookie(completedOutOfStateMatchingAnswers),
+        },
+      }),
+    );
+    const html = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(html).toContain('"matching_offer":"completed"');
+    expect(html).toContain('<p class="step-count" data-step-count aria-hidden="true">Paso 6 de 9</p>');
   });
 
   it("allows contact steps after the matching checkpoint has been seen", async () => {
@@ -323,7 +368,9 @@ describe("server routing", () => {
     );
 
     expect(response.status).toBe(200);
-    await expect(response.text()).resolves.toContain('data-step="7" data-step-kind="text" aria-hidden="false"');
+    const html = await response.text();
+    expect(html).toContain('data-step="7" data-step-kind="text" data-step-counted="true" aria-hidden="false"');
+    expect(html).toContain('<p class="step-count" data-step-count>Paso 6 de 8</p>');
   });
 
   it("redirects an already-seen matching step to the next contact step", async () => {
@@ -467,7 +514,7 @@ describe("server routing", () => {
     expect(html).toContain('data-matching-status></p>');
     expect(html).toContain("Encontramos agentes listos para cotizarle.");
     expect(html).toContain("Descubra cuánto puede ahorrar.");
-    expect(html).toContain('data-step="0" data-step-kind="interstitial" aria-hidden="false"');
+    expect(html).toContain('data-step="0" data-step-kind="interstitial" data-step-counted="false" aria-hidden="false"');
     expect(html).not.toContain("¿Usted vive en Tennessee?");
     expect(html).not.toContain('"slug":"nombre"');
   });
@@ -727,7 +774,7 @@ describe("server routing", () => {
     expect(response.status).toBe(200);
     expect(html).toContain('value="yes" checked');
     expect(html).toContain('value="Ana"');
-    expect(html).toContain('data-step="7" data-step-kind="text" aria-hidden="false"');
+    expect(html).toContain('data-step="7" data-step-kind="text" data-step-counted="true" aria-hidden="false"');
   });
 
   it("accepts valid local submissions and logs the payload", async () => {
@@ -790,6 +837,8 @@ describe("form rendering", () => {
     expect(html).toContain("font-size: clamp(2rem, 4vw, 2.75rem);");
     expect(html).toContain("text-wrap: balance;");
     expect(html).toContain("#steps {\n        min-height: 0;");
+    expect(html).toContain('.step[data-step-counted="false"] .step-count');
+    expect(html).toContain("visibility: hidden;");
     expect(html).toContain('#steps:has(.step[data-step-kind="interstitial"][aria-hidden="false"])');
     expect(html).toContain('.step[data-step-kind="interstitial"][aria-hidden="false"]');
     expect(html).toContain("grid-template-rows: auto auto minmax(0, 1fr);");
@@ -866,13 +915,20 @@ describe("form rendering", () => {
     expect(html).toContain("function getCoverageStateName()");
     expect(html).toContain('answers.residence_state || config.stateCode');
     expect(html).toContain("function runMatchingStep()");
-    expect(html).toContain("function showMatchingSuccess(question, elements)");
+    expect(html).toContain("function showMatchingSuccess(question, elements, options = {})");
+    expect(html).toContain('"countsAsStep":false');
+    expect(html).toContain("function isCountedStep(question)");
+    expect(html).toContain("return question.countsAsStep !== false");
+    expect(html).toContain("function getCountedVisibleStepIndexes()");
+    expect(html).toContain("function getCurrentCountedStepNumber()");
+    expect(html).toContain("progressBar.style.width = (countedStepNumber / countedStepCount) * 100 + \"%\"");
     expect(html).toContain("let matchingTextTransitionId = 0;");
     expect(html).toContain("matchingTextTransitionId += 1;");
     expect(html).toContain("function applyMatchingBenefitText(elements, text, className)");
     expect(html).toContain("function fadeMatchingBenefitIn(elements, transitionId)");
     expect(html).toContain("function setMatchingBenefitText(elements, text, className, options = {})");
-    expect(html).toContain('setMatchingBenefitText(elements, question.successLabel, "is-success")');
+    expect(html).toContain('setMatchingBenefitText(elements, question.successLabel, "is-success", options)');
+    expect(html).toContain("showMatchingSuccess(question, elements, { immediate: true })");
     expect(html).toContain('elements.benefit.classList.add(className)');
     expect(html).toContain("matchingBenefitFadeOutMs = 300");
     expect(html).toContain("matchingBenefitFadeInMs = 420");
@@ -1015,8 +1071,8 @@ describe("form rendering", () => {
       answers: { belongs_to_state: "yes" },
     });
 
-    expect(html).toContain('data-step="0" data-step-kind="choice" aria-hidden="true"');
-    expect(html).toContain('data-step="1" data-step-kind="state" aria-hidden="false"');
+    expect(html).toContain('data-step="0" data-step-kind="choice" data-step-counted="true" aria-hidden="true"');
+    expect(html).toContain('data-step="1" data-step-kind="state" data-step-counted="true" aria-hidden="false"');
     expect(html).toContain('value="yes" checked');
     expect(html).toContain('"initialAnswers":{"belongs_to_state":"yes"}');
   });
