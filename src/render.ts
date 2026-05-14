@@ -718,7 +718,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           padding: calc(40px + env(safe-area-inset-top)) 24px calc(32px + env(safe-area-inset-bottom));
         }
 
-        .form-panel:has(.step[aria-hidden="false"][data-step-kind="text"] .text-input) {
+        .form-panel:has(.step[aria-hidden="false"][data-step-kind="text"] .text-input:focus) {
           grid-template-rows: auto auto auto auto;
           align-content: start;
           overflow: hidden;
@@ -1102,7 +1102,8 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           }, 0);
         }
 
-        function validateCurrentStep() {
+        function validateCurrentStep(options = {}) {
+          const shouldFocusInvalid = options.focusInvalid !== false;
           const question = getQuestion();
           const answer = getCurrentAnswer();
 
@@ -1112,7 +1113,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
 
           if (!answer) {
             error.textContent = "Esta respuesta es requerida.";
-            if (question.kind !== "choice") {
+            if (shouldFocusInvalid && question.kind !== "choice") {
               focusCurrentTextInput();
             }
             return false;
@@ -1123,7 +1124,9 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
 
             if (!normalizedState) {
               error.textContent = "Ingrese un estado válido de Estados Unidos.";
-              focusCurrentTextInput();
+              if (shouldFocusInvalid) {
+                focusCurrentTextInput();
+              }
               return false;
             }
 
@@ -1137,7 +1140,9 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
 
             if (!normalizedPhone) {
               error.textContent = "Ingrese un número de teléfono válido de Estados Unidos.";
-              focusCurrentTextInput();
+              if (shouldFocusInvalid) {
+                focusCurrentTextInput();
+              }
               return false;
             }
 
@@ -1900,10 +1905,11 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           }
         }
 
-        async function handleNext() {
+        async function handleNext(options = {}) {
           clearAutoAdvance();
 
           const question = getQuestion();
+          const shouldFocusInvalid = options.focusInvalid ?? !isMobileViewport();
 
           if (question.kind === "interstitial" && answers[question.key] === question.seenAnswer) {
             navigateToStep(getNextVisibleStepIndex());
@@ -1933,7 +1939,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
             return;
           }
 
-          if (!validateCurrentStep()) {
+          if (!validateCurrentStep({ focusInvalid: shouldFocusInvalid })) {
             return;
           }
 
@@ -1992,7 +1998,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
 
         document.addEventListener("pointerdown", (event) => {
           if (shouldSubmitTextInputOnMobileOutsidePointer(event)) {
-            nextButton.click();
+            void handleNext({ focusInvalid: false });
           }
         });
 
@@ -2075,7 +2081,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
 
         form.addEventListener("focusout", (event) => {
           if (shouldSubmitTextInputOnMobileBlur(event)) {
-            nextButton.click();
+            void handleNext({ focusInvalid: false });
           }
 
           if (event.target === focusedTextInput) {
