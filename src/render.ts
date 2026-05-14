@@ -480,11 +480,12 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
       }
 
       .error {
-        min-height: 24px;
+        min-height: 2.6em;
         margin: 0;
         color: red;
         font-size: 0.95rem;
         font-weight: 700;
+        line-height: 1.3;
       }
 
       .actions {
@@ -652,14 +653,10 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           padding: calc(40px + env(safe-area-inset-top)) 24px calc(32px + env(safe-area-inset-bottom));
         }
 
-        .form-panel:has(.step[aria-hidden="false"] .text-input) {
+        .form-panel:has(.step[aria-hidden="false"][data-step-kind="text"] .text-input) {
           grid-template-rows: auto auto auto auto;
           align-content: start;
           overflow: hidden;
-        }
-
-        .form-panel:has(.step[aria-hidden="false"] .text-input) .error:empty {
-          min-height: 0;
         }
 
         .brand {
