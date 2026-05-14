@@ -1,14 +1,14 @@
 import { describe, expect, it } from "bun:test";
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { createFetchHandler } from "../../src/app/server";
-import { US_STATES, normalizeUsState } from "../../src/data/us-states";
-import { autocompleteSource, defineFormFlow, getFormByAreaCode, getStepSlug, isCountedStep, step } from "../../src/flows";
-import { encodeCheckpointAnswers, getCheckpointCookieName } from "../../src/persistence/checkpoints";
-import { renderFormPage } from "../../src/rendering";
-import { createStateAutocompleteItems, rankAutocompleteItems } from "../../src/steps/autocomplete/ranking";
-import { normalizeUsPhoneNumber } from "../../src/steps/phone/us-phone";
-import { validateSubmission } from "../../src/submissions/validation";
+import { createFetchHandler } from "../../src/platform/app/server";
+import { autocompleteSource, defineFormFlow, getFormByAreaCode, getStepSlug, isCountedStep, step } from "../../src/platform/flow";
+import { encodeCheckpointAnswers, getCheckpointCookieName } from "../../src/platform/persistence/checkpoints";
+import { renderFormPage } from "../../src/platform/rendering";
+import { createStateAutocompleteItems, rankAutocompleteItems } from "../../src/platform/steps/autocomplete/ranking";
+import { normalizeUsPhoneNumber } from "../../src/platform/steps/phone/us-phone";
+import { validateSubmission } from "../../src/platform/submissions/validation";
+import { US_STATES, normalizeUsState } from "../../src/shared/data/us-states";
 
 const preContactAnswers = {
   belongs_to_state: "yes",
@@ -166,23 +166,27 @@ describe("repository structure", () => {
   const requiredReadmes = [
     "README.md",
     "src/README.md",
-    "src/app/README.md",
-    "src/app/http/README.md",
-    "src/app/routes/README.md",
-    "src/assets/README.md",
-    "src/data/README.md",
-    "src/flows/README.md",
-    "src/flows/dsl/README.md",
-    "src/flows/tn/README.md",
-    "src/persistence/README.md",
-    "src/rendering/README.md",
-    "src/rendering/client/README.md",
-    "src/rendering/templates/README.md",
-    "src/steps/README.md",
-    "src/steps/adapters/README.md",
-    "src/steps/autocomplete/README.md",
-    "src/steps/phone/README.md",
-    "src/submissions/README.md",
+    "src/authoring/README.md",
+    "src/authoring/flows/README.md",
+    "src/authoring/flows/tn/README.md",
+    "src/platform/README.md",
+    "src/platform/app/README.md",
+    "src/platform/app/http/README.md",
+    "src/platform/app/routes/README.md",
+    "src/platform/flow/README.md",
+    "src/platform/flow/dsl/README.md",
+    "src/platform/persistence/README.md",
+    "src/platform/rendering/README.md",
+    "src/platform/rendering/client/README.md",
+    "src/platform/rendering/templates/README.md",
+    "src/platform/steps/README.md",
+    "src/platform/steps/adapters/README.md",
+    "src/platform/steps/autocomplete/README.md",
+    "src/platform/steps/phone/README.md",
+    "src/platform/submissions/README.md",
+    "src/shared/README.md",
+    "src/shared/assets/README.md",
+    "src/shared/data/README.md",
     "tests/README.md",
     "tests/unit/README.md",
     "tests/ui/README.md",
@@ -193,6 +197,14 @@ describe("repository structure", () => {
     const looseSourceFiles = readdirSync(join(repoRoot, "src")).filter((entry) => entry.endsWith(".ts"));
 
     expect(looseSourceFiles).toEqual([]);
+  });
+
+  it("keeps only the authoring, platform, and shared source buckets at the top level", () => {
+    const topLevelSourceEntries = readdirSync(join(repoRoot, "src"))
+      .filter((entry) => !entry.startsWith("."))
+      .sort();
+
+    expect(topLevelSourceEntries).toEqual(["README.md", "authoring", "platform", "shared"]);
   });
 
   it("keeps README documentation at each source and test folder boundary", () => {

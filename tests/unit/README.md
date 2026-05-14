@@ -2,16 +2,7 @@
 
 ## Purpose
 
-`tests/unit/` contains fast Bun tests for route behavior, flow compilation, validation, checkpointing, and render contracts.
-
-```mermaid
-flowchart TD
-  Test["instant-forms.test.ts"] --> App["src/app"]
-  Test --> Flows["src/flows"]
-  Test --> Persistence["src/persistence"]
-  Test --> Rendering["src/rendering"]
-  Test --> Steps["src/steps"]
-```
+`tests/unit/` contains fast Bun tests for route behavior, flow compilation, validation, checkpointing, rendering contracts, and source structure.
 
 ## Belongs Here
 

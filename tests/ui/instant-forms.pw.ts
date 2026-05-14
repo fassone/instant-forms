@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { encodeCheckpointAnswers, getCheckpointCookieName } from "../../src/persistence/checkpoints";
+import { encodeCheckpointAnswers, getCheckpointCookieName } from "../../src/platform/persistence/checkpoints";
 
 const areaCode = "tn";
 const appUrl = "http://127.0.0.1:51234";

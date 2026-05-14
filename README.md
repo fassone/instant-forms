@@ -9,13 +9,13 @@ This repository owns the full local runtime for routed, checkpointed, conversion
 ```mermaid
 flowchart LR
   Browser["Browser / Visitor"] --> Hono["Hono App"]
-  Hono --> Routes["Area + Step Routes"]
-  Routes --> Flow["Form Flow Registry"]
-  Flow --> Rendering["SSR Form Renderer"]
-  Browser --> Checkpoints["Checkpoint API"]
-  Checkpoints --> Cookie["HttpOnly Cookie"]
-  Browser --> Submissions["Submission API"]
-  Submissions --> Logger["Console Logger"]
+  Hono --> Platform["src/platform"]
+  Platform --> Authoring["src/authoring flows"]
+  Shared["src/shared data/assets"] --> Platform
+  Shared --> Authoring
+  Platform --> Rendering["SSR Form Renderer"]
+  Platform --> Checkpoints["Checkpoint API + Cookie"]
+  Platform --> Submissions["Submission API + Logger"]
 ```
 
 ## Belongs Here
@@ -70,20 +70,15 @@ Open `http://localhost:3000/tn`.
 ├── package.json
 ├── playwright.config.ts
 ├── src
-│   ├── app
-│   ├── assets
-│   ├── data
-│   ├── flows
-│   ├── persistence
-│   ├── rendering
-│   ├── steps
-│   └── submissions
+│   ├── authoring
+│   ├── platform
+│   └── shared
 └── tests
     ├── unit
     └── ui
 ```
 
-Every source and test folder has its own `README.md` describing ownership, safe-change rules, and a Mermaid diagram.
+Every source and test folder has its own `README.md` describing ownership and safe-change rules. Diagrams are included only where they clarify architecture or flow.
 
 ## Routes
 
@@ -99,7 +94,7 @@ Every source and test folder has its own `README.md` describing ownership, safe-
 
 ## Form Flow
 
-The Tennessee flow lives in `src/flows/tn/flow.ts` and is built with the typed DSL in `src/flows/dsl/`. Supported step kinds are `choice`, `text`, `phone`, `autocomplete`, and `interstitial`.
+The Tennessee flow lives in `src/authoring/flows/tn/flow.ts` and is built with the typed DSL in `src/platform/flow/dsl/`. Supported step kinds are `choice`, `text`, `phone`, `autocomplete`, and `interstitial`.
 
 Current visible order:
 

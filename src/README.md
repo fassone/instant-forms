@@ -2,30 +2,28 @@
 
 ## Purpose
 
-`src/` contains all runtime TypeScript and static assets for the Instant Forms app.
+`src/` is organized by change intent: authoring surfaces, platform code, and shared runtime resources.
 
 ```mermaid
-flowchart TD
-  App["app: Hono routes"] --> Flows["flows: DSL + registry"]
-  App --> Persistence["persistence: checkpoint cookies"]
-  App --> Rendering["rendering: SSR HTML"]
-  Rendering --> Steps["steps: behavior helpers"]
-  Submissions["submissions: final validation"] --> Steps
-  Flows --> Data["data: shared catalogs"]
+flowchart LR
+  Authoring["authoring: forms people edit"] --> Platform["platform: app engine"]
+  Shared["shared: data/assets"] --> Authoring
+  Shared --> Platform
+  Platform --> Browser["Routed form experience"]
 ```
 
 ## Belongs Here
 
-- Runtime modules used by the Bun server.
-- Source-owned static assets.
-- Domain code grouped by app, flow, rendering, persistence, steps, submissions, and data.
+- `authoring/` for market/form content.
+- `platform/` for reusable routing, rendering, validation, persistence, and step behavior.
+- `shared/` for neutral data and assets consumed across boundaries.
 
 ## Does Not Belong Here
 
-- Tests, snapshots, build output, or generated docs.
-- Runtime secrets or environment-specific files.
-- Broad cross-domain utility modules without a clear owner.
+- Loose `.ts` files directly under `src`.
+- Tests, snapshots, generated output, or secrets.
+- New peer folders unless they represent a new top-level change-intent category.
 
 ## Change Safely
 
-Keep imports flowing through domain entrypoints when possible. If a change crosses folders, update the nearest README and run `bun run typecheck` plus the relevant tests.
+If a change is mostly copy, questions, or market setup, start in `authoring`. If it changes app capability, start in `platform`. If it is neutral reference data or an asset, use `shared`.

@@ -4,13 +4,6 @@
 
 `tests/ui/` contains Playwright coverage for real browser behavior and stable visual states.
 
-```mermaid
-flowchart LR
-  Playwright["instant-forms.pw.ts"] --> Server["webServer: bun run dev"]
-  Playwright --> Browser["Chromium desktop/mobile"]
-  Browser --> Snapshots["snapshots/*.png"]
-```
-
 ## Belongs Here
 
 - Browser Back/Forward tests.
