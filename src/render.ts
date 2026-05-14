@@ -544,15 +544,6 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         margin-left: 6px;
       }
 
-      .error {
-        min-height: 2.6em;
-        margin: 0;
-        color: red;
-        font-size: 0.95rem;
-        font-weight: 700;
-        line-height: 1.3;
-      }
-
       .actions {
         display: flex;
         align-items: center;
@@ -587,6 +578,51 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
 
       .button-primary:hover {
         background: #d9004d;
+      }
+
+      .error-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 20;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        background: rgba(255, 253, 244, 0.72);
+      }
+
+      .error-modal[hidden] {
+        display: none;
+      }
+
+      .error-modal-panel {
+        width: min(100%, 380px);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--surface);
+        box-shadow: 0 22px 60px rgba(1, 28, 76, 0.24);
+        padding: 24px;
+      }
+
+      .error-modal-title {
+        margin: 0 0 10px;
+        color: var(--brand-navy);
+        font-size: 1.25rem;
+        line-height: 1.2;
+      }
+
+      .error-modal-message {
+        margin: 0 0 20px;
+        color: var(--text);
+        font-size: 1rem;
+        line-height: 1.45;
+      }
+
+      .error-modal-close {
+        width: 100%;
+        min-height: 48px;
+        min-width: 0;
+        padding: 0 20px;
+        font-size: 1rem;
       }
 
       .thanks,
@@ -790,7 +826,6 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
             .join("")}
         </section>
         <footer>
-          <p class="error" id="form-error" role="alert"></p>
           <div class="actions">
             <button class="button button-secondary" id="back-button" type="button">Atrás</button>
             <button class="button button-primary" id="next-button" type="button">Siguiente</button>
@@ -801,6 +836,21 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         <h1>Gracias.</h1>
         <p>Recibimos su información. Un agente se pondrá en contacto con usted pronto.</p>
       </section>
+      <div
+        class="error-modal"
+        id="error-modal"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="error-modal-title"
+        aria-describedby="error-modal-message"
+        hidden
+      >
+        <div class="error-modal-panel">
+          <h2 class="error-modal-title" id="error-modal-title">Revise esta respuesta</h2>
+          <p class="error-modal-message" id="error-modal-message"></p>
+          <button class="button button-primary error-modal-close" id="error-modal-close" type="button">Entendido</button>
+        </div>
+      </div>
     </main>
     <script>
       window.__FORM_CONFIG__ = ${serializeForScript(clientConfig)};
@@ -816,7 +866,9 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         const backButton = document.getElementById("back-button");
         const nextButton = document.getElementById("next-button");
         const actions = document.querySelector(".actions");
-        const error = document.getElementById("form-error");
+        const errorModal = document.getElementById("error-modal");
+        const errorModalMessage = document.getElementById("error-modal-message");
+        const errorModalClose = document.getElementById("error-modal-close");
         const answers = { ...config.initialAnswers };
         const matchingBenefitFadeOutMs = 300;
         const matchingBenefitFadeInMs = 420;
@@ -833,6 +885,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         let isActionPointerDown = false;
         let isStateSuggestionPointerDown = false;
         let focusedTextInput;
+        let errorModalReturnFocusTarget;
 
         function clearAutoAdvance() {
           if (autoAdvanceTimer) {
@@ -891,7 +944,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
               answers[question.key] !== question.completionAnswer &&
               answers[question.key] !== question.seenAnswer &&
               !completedMatchingSteps.has(question.key));
-          error.textContent = "";
+          hideErrorModal();
 
           if (question.kind === "interstitial") {
             runMatchingStep();
@@ -1091,15 +1144,48 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           return input ? input.value.trim() : "";
         }
 
-        function focusCurrentTextInput() {
+        function getCurrentTextInput() {
           const input = steps[currentStep].querySelector(".text-input");
-          if (!(input instanceof HTMLInputElement)) {
+
+          return input instanceof HTMLInputElement ? input : undefined;
+        }
+
+        function showErrorModal(message, options = {}) {
+          if (!errorModal || !errorModalMessage || !errorModalClose) {
             return;
           }
 
+          const returnFocusTarget = options.returnFocusTarget;
+          errorModalReturnFocusTarget = returnFocusTarget instanceof HTMLElement ? returnFocusTarget : nextButton;
+          errorModalMessage.textContent = message;
+          errorModal.hidden = false;
+
           window.setTimeout(() => {
-            input.focus({ preventScroll: true });
+            errorModalClose.focus({ preventScroll: true });
           }, 0);
+        }
+
+        function hideErrorModal() {
+          if (!errorModal || !errorModalMessage || errorModal.hidden) {
+            return;
+          }
+
+          errorModal.hidden = true;
+          errorModalMessage.textContent = "";
+
+          const returnFocusTarget =
+            errorModalReturnFocusTarget instanceof HTMLElement ? errorModalReturnFocusTarget : nextButton;
+          errorModalReturnFocusTarget = undefined;
+
+          window.setTimeout(() => {
+            if (document.body.contains(returnFocusTarget)) {
+              returnFocusTarget.focus({ preventScroll: true });
+            }
+          }, 0);
+        }
+
+        function getValidationErrorReturnFocusTarget(shouldFocusInvalid) {
+          return shouldFocusInvalid ? getCurrentTextInput() : nextButton;
         }
 
         function validateCurrentStep(options = {}) {
@@ -1112,10 +1198,9 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           }
 
           if (!answer) {
-            error.textContent = "Esta respuesta es requerida.";
-            if (shouldFocusInvalid && question.kind !== "choice") {
-              focusCurrentTextInput();
-            }
+            showErrorModal("Esta respuesta es requerida.", {
+              returnFocusTarget: question.kind !== "choice" ? getValidationErrorReturnFocusTarget(shouldFocusInvalid) : nextButton,
+            });
             return false;
           }
 
@@ -1123,15 +1208,14 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
             const normalizedState = normalizeUsState(answer);
 
             if (!normalizedState) {
-              error.textContent = "Ingrese un estado válido de Estados Unidos.";
-              if (shouldFocusInvalid) {
-                focusCurrentTextInput();
-              }
+              showErrorModal("Ingrese un estado válido de Estados Unidos.", {
+                returnFocusTarget: getValidationErrorReturnFocusTarget(shouldFocusInvalid),
+              });
               return false;
             }
 
             answers[question.key] = normalizedState;
-            error.textContent = "";
+            hideErrorModal();
             return true;
           }
 
@@ -1139,20 +1223,19 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
             const normalizedPhone = normalizeUsPhoneNumber(answer);
 
             if (!normalizedPhone) {
-              error.textContent = "Ingrese un número de teléfono válido de Estados Unidos.";
-              if (shouldFocusInvalid) {
-                focusCurrentTextInput();
-              }
+              showErrorModal("Ingrese un número de teléfono válido de Estados Unidos.", {
+                returnFocusTarget: getValidationErrorReturnFocusTarget(shouldFocusInvalid),
+              });
               return false;
             }
 
             answers[question.key] = normalizedPhone;
-            error.textContent = "";
+            hideErrorModal();
             return true;
           }
 
           answers[question.key] = answer;
-          error.textContent = "";
+          hideErrorModal();
           return true;
         }
 
@@ -1409,8 +1492,9 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           try {
             await saveCheckpoint(question.key, question.completionAnswer);
           } catch (checkpointError) {
-            error.textContent =
-              checkpointError instanceof Error ? checkpointError.message : "No pudimos guardar este paso.";
+            showErrorModal(
+              checkpointError instanceof Error ? checkpointError.message : "No pudimos guardar este paso.",
+            );
           }
 
           if (runId !== activeMatchingRunId) {
@@ -1790,7 +1874,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
 
           clearAutoAdvance();
           answers[question.key] = answer;
-          error.textContent = "";
+          hideErrorModal();
           const selectedStep = currentStep;
 
           autoAdvanceTimer = window.setTimeout(() => {
@@ -1811,8 +1895,9 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
 
                 navigateToUrl(nextUrl ?? config.questions[getNextVisibleStepIndex()].url);
               } catch (checkpointError) {
-                error.textContent =
-                  checkpointError instanceof Error ? checkpointError.message : "No pudimos guardar esta respuesta.";
+                showErrorModal(
+                  checkpointError instanceof Error ? checkpointError.message : "No pudimos guardar esta respuesta.",
+                );
               }
             })();
           }, 180);
@@ -1879,6 +1964,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         async function submitForm() {
           clearAutoAdvance();
           isSubmitting = true;
+          let submitErrorMessage;
           showStep(currentStep);
 
           try {
@@ -1898,10 +1984,14 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
             thanks.hidden = false;
             thanks.focus();
           } catch (submitError) {
-            error.textContent = submitError instanceof Error ? submitError.message : "No pudimos enviar el formulario.";
+            submitErrorMessage = submitError instanceof Error ? submitError.message : "No pudimos enviar el formulario.";
           } finally {
             isSubmitting = false;
             showStep(currentStep);
+          }
+
+          if (submitErrorMessage) {
+            showErrorModal(submitErrorMessage);
           }
         }
 
@@ -1933,8 +2023,9 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
 
               replaceToUrl(nextUrl ?? config.questions[getNextVisibleStepIndex()].url);
             } catch (checkpointError) {
-              error.textContent =
-                checkpointError instanceof Error ? checkpointError.message : "No pudimos guardar este paso.";
+              showErrorModal(
+                checkpointError instanceof Error ? checkpointError.message : "No pudimos guardar este paso.",
+              );
             }
             return;
           }
@@ -1953,8 +2044,9 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
 
             navigateToUrl(nextUrl ?? config.questions[getNextVisibleStepIndex()].url);
           } catch (checkpointError) {
-            error.textContent =
-              checkpointError instanceof Error ? checkpointError.message : "No pudimos guardar esta respuesta.";
+            showErrorModal(
+              checkpointError instanceof Error ? checkpointError.message : "No pudimos guardar esta respuesta.",
+            );
           }
         }
 
@@ -1966,6 +2058,18 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           clearAutoAdvance();
           navigateToStep(getPreviousVisibleStepIndex());
         });
+
+        if (errorModal && errorModalClose) {
+          errorModalClose.addEventListener("click", () => {
+            hideErrorModal();
+          });
+
+          errorModal.addEventListener("click", (event) => {
+            if (event.target === errorModal) {
+              hideErrorModal();
+            }
+          });
+        }
 
         if (actions) {
           actions.addEventListener("pointerdown", () => {
@@ -2107,6 +2211,12 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
         });
 
         document.addEventListener("keydown", (event) => {
+          if (event.key === "Escape" && errorModal && !errorModal.hidden) {
+            event.preventDefault();
+            hideErrorModal();
+            return;
+          }
+
           selectChoiceByNumberKey(event);
         });
 

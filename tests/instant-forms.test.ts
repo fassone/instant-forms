@@ -902,13 +902,14 @@ describe("form rendering", () => {
     expect(html).toContain("background: var(--surface);");
     expect(html).toContain("height: 100dvh;");
     expect(html).toContain("calc(40px + env(safe-area-inset-top)) 24px calc(32px + env(safe-area-inset-bottom))");
-    expect(html).toContain("min-height: 2.6em;");
-    expect(html).toContain("line-height: 1.3;");
     expect(html).toContain('.form-panel:has(.step[aria-hidden="false"][data-step-kind="text"] .text-input:focus)');
     expect(html).not.toContain('.form-panel:has(.step[aria-hidden="false"][data-step-kind="text"] .text-input) {');
     expect(html).not.toContain('.form-panel:has(.step[aria-hidden="false"] .text-input)');
     expect(html).toContain("grid-template-rows: auto auto auto auto;");
     expect(html).toContain("align-content: start;");
+    expect(html).not.toContain('id="form-error"');
+    expect(html).not.toContain('role="alert"');
+    expect(html).not.toContain(".error {\n");
     expect(html).not.toContain(".error:empty");
     expect(html).not.toContain(".form-panel:has(.text-input:focus)");
     expect(html).not.toContain(".form-panel:has(.text-input:focus) footer");
@@ -1084,6 +1085,29 @@ describe("form rendering", () => {
     expect(html).not.toContain("pattern=");
   });
 
+  it("renders a lightweight error modal instead of inline form errors", () => {
+    const html = renderFormPage(getRequiredTennesseeForm());
+
+    expect(html).not.toContain('id="form-error"');
+    expect(html).not.toContain('<p class="error"');
+    expect(html).not.toContain(".error {\n");
+    expect(html).toContain('class="error-modal"');
+    expect(html).toContain('role="alertdialog"');
+    expect(html).toContain('aria-modal="true"');
+    expect(html).toContain('id="error-modal-message"');
+    expect(html).toContain('id="error-modal-close"');
+    expect(html).toContain("Revise esta respuesta");
+    expect(html).toContain("Entendido");
+    expect(html).toContain("function showErrorModal(message, options = {})");
+    expect(html).toContain("function hideErrorModal()");
+    expect(html).toContain('errorModalClose.addEventListener("click"');
+    expect(html).toContain("event.target === errorModal");
+    expect(html).toContain('event.key === "Escape"');
+    expect(html).toContain('showErrorModal("Esta respuesta es requerida."');
+    expect(html).toContain("showErrorModal(submitErrorMessage)");
+    expect(html).toContain('checkpointError instanceof Error ? checkpointError.message : "No pudimos guardar esta respuesta."');
+  });
+
   it("synthetically submits focused text fields on mobile blur", () => {
     const html = renderFormPage(getRequiredTennesseeForm());
 
@@ -1093,13 +1117,13 @@ describe("form rendering", () => {
     expect(html).toContain("function shouldSubmitTextInputOnMobileOutsidePointer(event)");
     expect(html).toContain("function validateCurrentStep(options = {})");
     expect(html).toContain("const shouldFocusInvalid = options.focusInvalid !== false;");
-    expect(html).toContain("if (shouldFocusInvalid && question.kind !== \"choice\")");
     expect(html).toContain("async function handleNext(options = {})");
     expect(html).toContain("const shouldFocusInvalid = options.focusInvalid ?? !isMobileViewport();");
     expect(html).toContain("validateCurrentStep({ focusInvalid: shouldFocusInvalid })");
     expect(html).toContain("void handleNext({ focusInvalid: false });");
-    expect(html).toContain("function focusCurrentTextInput()");
-    expect(html).toContain("input.focus({ preventScroll: true });");
+    expect(html).toContain("function getCurrentTextInput()");
+    expect(html).toContain("function getValidationErrorReturnFocusTarget(shouldFocusInvalid)");
+    expect(html).toContain("returnFocusTarget: getValidationErrorReturnFocusTarget(shouldFocusInvalid)");
     expect(html).toContain("let focusedTextInput");
     expect(html).toContain('form.addEventListener("focusin"');
     expect(html).toContain('form.addEventListener("focusout"');
