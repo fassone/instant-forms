@@ -10,23 +10,18 @@ import {
 import {
   getFormByAreaCode,
   getStepByKey,
-  getStepIndexByLegacySlug,
-  getStepIndexBySlug,
   getStepUrl,
   isStepVisible,
   type FormStep,
   type InstantForm,
 } from "../../flow";
-import { renderFormPage, renderUnavailablePage } from "../../rendering";
 import { validateSubmission, type SubmissionPayload } from "../../submissions/validation";
 import { clearCheckpointAnswers, readCheckpointAnswers, setCheckpointAnswers } from "../http/cookies";
-import { htmlResponse, jsonResponse, redirectNoStore } from "../http/responses";
+import { jsonResponse } from "../http/responses";
 
 export type SubmissionLogger = (payload: SubmissionPayload) => void;
 
 export function registerFormRoutes(app: Hono, logger: SubmissionLogger): void {
-  app.get("/", (c) => redirectNoStore(c, "/tn"));
-
   app.post("/api/forms/:areaCode/checkpoints", async (c) => {
     const areaCode = c.req.param("areaCode");
     const form = getFormByAreaCode(areaCode);
@@ -131,88 +126,6 @@ export function registerFormRoutes(app: Hono, logger: SubmissionLogger): void {
     clearCheckpointAnswers(c, form);
 
     return jsonResponse(c, { ok: true, submittedAt: validation.payload.submittedAt }, 201);
-  });
-
-  app.get("/:areaCode", (c) => {
-    const areaCode = c.req.param("areaCode");
-    const form = getFormByAreaCode(areaCode);
-
-    if (!form) {
-      return htmlResponse(renderUnavailablePage(areaCode), 404);
-    }
-
-    const answers = readCheckpointAnswers(c, form);
-    const resumeStep = getStepAt(form, getResumeStepIndex(form, answers));
-
-    return redirectNoStore(c, getStepUrl(form, resumeStep));
-  });
-
-  app.get("/:areaCode/:stepSlug", (c) => {
-    const areaCode = c.req.param("areaCode");
-    const stepSlug = c.req.param("stepSlug");
-    const form = getFormByAreaCode(areaCode);
-
-    if (!form) {
-      return htmlResponse(renderUnavailablePage(areaCode), 404);
-    }
-
-    const stepIndex = getStepIndexBySlug(form, stepSlug);
-
-    if (stepIndex === -1) {
-      const legacyStepIndex = getStepIndexByLegacySlug(form, stepSlug);
-
-      if (legacyStepIndex !== -1) {
-        const answers = readCheckpointAnswers(c, form);
-
-        if (!canAccessStep(form, legacyStepIndex, answers)) {
-          const resumeStep = getStepAt(form, getResumeStepIndex(form, answers));
-
-          return redirectNoStore(c, getStepUrl(form, resumeStep));
-        }
-
-        const legacyStep = getStepAt(form, legacyStepIndex);
-
-        return redirectNoStore(c, getStepUrl(form, legacyStep));
-      }
-
-      return redirectNoStore(c, `/${form.areaCode}`);
-    }
-
-    const answers = readCheckpointAnswers(c, form);
-
-    if (!canAccessStep(form, stepIndex, answers)) {
-      const resumeStep = getStepAt(form, getResumeStepIndex(form, answers));
-
-      return redirectNoStore(c, getStepUrl(form, resumeStep));
-    }
-
-    const requestedStep = getStepAt(form, stepIndex);
-
-    if (requestedStep.kind === "interstitial" && answers[requestedStep.key] === requestedStep.seenAnswer) {
-      const nextStep = getStepAt(form, getNextStepIndex(form, stepIndex, answers));
-
-      return redirectNoStore(c, getStepUrl(form, nextStep));
-    }
-
-    return htmlResponse(
-      renderFormPage(form, {
-        activeStepIndex: stepIndex,
-        answers,
-      }),
-      200,
-      "no-store",
-    );
-  });
-
-  app.get("/:areaCode/*", (c) => {
-    const areaCode = c.req.param("areaCode");
-    const form = getFormByAreaCode(areaCode);
-
-    if (!form) {
-      return htmlResponse(renderUnavailablePage(areaCode), 404);
-    }
-
-    return redirectNoStore(c, `/${form.areaCode}`);
   });
 }
 

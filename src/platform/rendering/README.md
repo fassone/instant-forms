@@ -16,6 +16,7 @@ flowchart LR
 ## Belongs Here
 
 - `renderFormPage` and `renderUnavailablePage`.
+- Unavailable-page presentation for content supplied by routing.
 - Critical CSS and browser controller delivery.
 - Client config generated from the server DSL.
 - Template ownership files for each step kind.

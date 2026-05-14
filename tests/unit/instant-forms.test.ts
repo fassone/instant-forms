@@ -1,10 +1,13 @@
 import { describe, expect, it } from "bun:test";
+import { Hono } from "hono";
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { formRoutes } from "../../src/authoring/routes/registry";
 import { createFetchHandler } from "../../src/platform/app/server";
 import { autocompleteSource, defineFormFlow, getFormByAreaCode, getStepSlug, isCountedStep, step } from "../../src/platform/flow";
 import { encodeCheckpointAnswers, getCheckpointCookieName } from "../../src/platform/persistence/checkpoints";
 import { renderFormPage } from "../../src/platform/rendering";
+import { defineFormRoutes, redirectTo, registerFormRoutePages, unavailable } from "../../src/platform/routing";
 import { createStateAutocompleteItems, rankAutocompleteItems } from "../../src/platform/steps/autocomplete/ranking";
 import { normalizeUsPhoneNumber } from "../../src/platform/steps/phone/us-phone";
 import { validateSubmission } from "../../src/platform/submissions/validation";
@@ -46,6 +49,15 @@ const validAnswers = {
   phone_number: "(615) 555-1234",
 };
 
+const unavailableContent = {
+  title: "Página no encontrada",
+  message: "Esta página no existe o ya no está disponible.",
+  cta: {
+    label: "Ir al formulario",
+    href: "/tn/custom",
+  },
+};
+
 const repoRoot = join(import.meta.dir, "../..");
 
 describe("form registry", () => {
@@ -54,6 +66,146 @@ describe("form registry", () => {
 
     expect(form?.areaCode).toBe("tn");
     expect(form?.id).toBe("1011189481863371");
+  });
+
+  it("maps the public Tennessee route folder to the Tennessee flow", () => {
+    const form = getRequiredTennesseeForm();
+    const tnNode = formRoutes.folders.tn;
+
+    expect(formRoutes.index).toEqual({ type: "redirect", to: "/tn" });
+    expect(tnNode?.type).toBe("group");
+    if (tnNode?.type === "group") {
+      expect(tnNode.notFound).toEqual({ type: "redirect", to: "/tn/custom" });
+      expect(tnNode.children.custom).toEqual({ type: "flow", form });
+    }
+    expect(formRoutes.notFound).toEqual({ type: "unavailable", ...unavailableContent, status: 404 });
+  });
+
+  it("reserves the preview folder for platform-generated mirrors", () => {
+    const form = getRequiredTennesseeForm();
+
+    expect(() =>
+      defineFormRoutes({
+        index: redirectTo("/tn"),
+        folders: {
+          __preview: form,
+        },
+        notFound: unavailable(unavailableContent),
+      }),
+    ).toThrow("__preview");
+  });
+
+  it("rejects invalid route-group definitions", () => {
+    const form = getRequiredTennesseeForm();
+
+    expect(() =>
+      defineFormRoutes({
+        index: redirectTo("/tn"),
+        folders: {
+          Bad_Segment: form,
+        },
+        notFound: unavailable(unavailableContent),
+      }),
+    ).toThrow("lowercase static URL segment");
+
+    expect(() =>
+      defineFormRoutes({
+        index: redirectTo("/tn"),
+        folders: {
+          tn: {
+            notFound: form as never,
+          },
+        },
+        notFound: unavailable(unavailableContent),
+      }),
+    ).toThrow('route action for "notFound"');
+  });
+
+  it("uses the authored folder name for public form rendering", async () => {
+    const form = getRequiredTennesseeForm();
+    const app = new Hono();
+    registerFormRoutePages(
+      app,
+      defineFormRoutes({
+        index: redirectTo("/cotiza"),
+        folders: {
+          cotiza: form,
+        },
+        notFound: unavailable(unavailableContent),
+      }),
+    );
+
+    const folderResponse = await app.fetch(new Request("http://localhost/cotiza"));
+    const stepResponse = await app.fetch(new Request("http://localhost/cotiza/vive-en-tennessee"));
+    const unknownChildResponse = await app.fetch(new Request("http://localhost/cotiza/no-existe"));
+    const html = await stepResponse.text();
+
+    expect(folderResponse.headers.get("Location")).toBe("/cotiza/vive-en-tennessee");
+    expect(stepResponse.status).toBe(200);
+    expect(html).toContain('"url":"/cotiza/vive-en-tennessee"');
+    expect(html).toContain('"url":"/cotiza/tiene-licencia"');
+    expect(unknownChildResponse.headers.get("Location")).toBe("/cotiza");
+  });
+
+  it("supports nested public form route groups", async () => {
+    const form = getRequiredTennesseeForm();
+    const app = new Hono();
+    registerFormRoutePages(
+      app,
+      defineFormRoutes({
+        index: redirectTo("/tn"),
+        folders: {
+          tn: {
+            custom: form,
+            notFound: redirectTo("/tn/custom"),
+          },
+        },
+        notFound: unavailable(unavailableContent),
+      }),
+    );
+
+    const groupResponse = await app.fetch(new Request("http://localhost/tn"));
+    const folderResponse = await app.fetch(new Request("http://localhost/tn/custom"));
+    const stepResponse = await app.fetch(new Request("http://localhost/tn/custom/vive-en-tennessee"));
+    const unknownChildResponse = await app.fetch(new Request("http://localhost/tn/not-real"));
+    const previewGroupResponse = await app.fetch(new Request("http://localhost/__preview/tn"));
+    const previewResponse = await app.fetch(new Request("http://localhost/__preview/tn/custom/buscando-oferta"));
+    const html = await stepResponse.text();
+    const previewHtml = await previewResponse.text();
+
+    expect(groupResponse.headers.get("Location")).toBe("/tn/custom");
+    expect(folderResponse.headers.get("Location")).toBe("/tn/custom/vive-en-tennessee");
+    expect(stepResponse.status).toBe(200);
+    expect(html).toContain('"url":"/tn/custom/vive-en-tennessee"');
+    expect(unknownChildResponse.headers.get("Location")).toBe("/tn/custom");
+    expect(previewGroupResponse.headers.get("Location")).toBe("/__preview/tn/custom");
+    expect(previewResponse.status).toBe(200);
+    expect(previewHtml).toContain('"url":"/__preview/tn/custom/buscando-oferta"');
+  });
+
+  it("lets route groups inherit the nearest fallback", async () => {
+    const form = getRequiredTennesseeForm();
+    const app = new Hono();
+    registerFormRoutePages(
+      app,
+      defineFormRoutes({
+        index: redirectTo("/tn"),
+        folders: {
+          tn: {
+            custom: form,
+          },
+        },
+        notFound: unavailable(unavailableContent),
+      }),
+    );
+
+    const response = await app.fetch(new Request("http://localhost/tn"));
+    const html = await response.text();
+
+    expect(response.status).toBe(404);
+    expect(html).toContain("Página no encontrada");
+    expect(html).toContain("Esta página no existe o ya no está disponible.");
+    expect(html).toContain('href="/tn/custom"');
   });
 
   it("keeps contact fields at the end of the flow", () => {
@@ -169,6 +321,7 @@ describe("repository structure", () => {
     "src/authoring/README.md",
     "src/authoring/flows/README.md",
     "src/authoring/flows/tn/README.md",
+    "src/authoring/routes/README.md",
     "src/platform/README.md",
     "src/platform/app/README.md",
     "src/platform/app/http/README.md",
@@ -179,6 +332,7 @@ describe("repository structure", () => {
     "src/platform/rendering/README.md",
     "src/platform/rendering/client/README.md",
     "src/platform/rendering/templates/README.md",
+    "src/platform/routing/README.md",
     "src/platform/steps/README.md",
     "src/platform/steps/adapters/README.md",
     "src/platform/steps/autocomplete/README.md",
@@ -385,19 +539,28 @@ describe("server routing", () => {
     expect(response.headers.get("Cache-Control")).toBe("no-store");
   });
 
-  it("redirects Tennessee to the first unanswered step without a checkpoint", async () => {
+  it("redirects the Tennessee group route to its custom form route", async () => {
     const handler = createFetchHandler();
     const response = await handler(new Request("http://localhost/tn"));
 
     expect(response.status).toBe(302);
-    expect(response.headers.get("Location")).toBe("/tn/vive-en-tennessee");
+    expect(response.headers.get("Location")).toBe("/tn/custom");
     expect(response.headers.get("Cache-Control")).toBe("no-store");
   });
 
-  it("redirects Tennessee to the next unanswered step from a checkpoint", async () => {
+  it("redirects Tennessee custom to the first unanswered step without a checkpoint", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(new Request("http://localhost/tn/custom"));
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe("/tn/custom/vive-en-tennessee");
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+  });
+
+  it("redirects Tennessee custom to the next unanswered step from a checkpoint", async () => {
     const handler = createFetchHandler();
     const response = await handler(
-      new Request("http://localhost/tn", {
+      new Request("http://localhost/tn/custom", {
         headers: {
           Cookie: createCheckpointCookie({
             belongs_to_state: "yes",
@@ -408,13 +571,13 @@ describe("server routing", () => {
     );
 
     expect(response.status).toBe(302);
-    expect(response.headers.get("Location")).toBe("/tn/tiene-seguro");
+    expect(response.headers.get("Location")).toBe("/tn/custom/tiene-seguro");
   });
 
-  it("redirects Tennessee to the residence-state step after a no answer", async () => {
+  it("redirects Tennessee custom to the residence-state step after a no answer", async () => {
     const handler = createFetchHandler();
     const response = await handler(
-      new Request("http://localhost/tn", {
+      new Request("http://localhost/tn/custom", {
         headers: {
           Cookie: createCheckpointCookie({
             belongs_to_state: "no",
@@ -424,13 +587,13 @@ describe("server routing", () => {
     );
 
     expect(response.status).toBe(302);
-    expect(response.headers.get("Location")).toBe("/tn/estado-donde-vive");
+    expect(response.headers.get("Location")).toBe("/tn/custom/estado-donde-vive");
   });
 
   it("redirects pre-contact visitors to the matching step before contact information", async () => {
     const handler = createFetchHandler();
     const response = await handler(
-      new Request("http://localhost/tn", {
+      new Request("http://localhost/tn/custom", {
         headers: {
           Cookie: createCheckpointCookie(preContactAnswers),
         },
@@ -438,13 +601,13 @@ describe("server routing", () => {
     );
 
     expect(response.status).toBe(302);
-    expect(response.headers.get("Location")).toBe("/tn/buscando-oferta");
+    expect(response.headers.get("Location")).toBe("/tn/custom/buscando-oferta");
   });
 
   it("guards contact steps until the matching step has been seen", async () => {
     const handler = createFetchHandler();
     const response = await handler(
-      new Request("http://localhost/tn/nombre", {
+      new Request("http://localhost/tn/custom/nombre", {
         headers: {
           Cookie: createCheckpointCookie(preContactAnswers),
         },
@@ -452,27 +615,27 @@ describe("server routing", () => {
     );
 
     expect(response.status).toBe(302);
-    expect(response.headers.get("Location")).toBe("/tn/buscando-oferta");
+    expect(response.headers.get("Location")).toBe("/tn/custom/buscando-oferta");
   });
 
   it("keeps completed-but-not-seen matching visitors on the matching step", async () => {
     const handler = createFetchHandler();
     const resumeResponse = await handler(
-      new Request("http://localhost/tn", {
+      new Request("http://localhost/tn/custom", {
         headers: {
           Cookie: createCheckpointCookie(completedMatchingAnswers),
         },
       }),
     );
     const contactResponse = await handler(
-      new Request("http://localhost/tn/nombre", {
+      new Request("http://localhost/tn/custom/nombre", {
         headers: {
           Cookie: createCheckpointCookie(completedMatchingAnswers),
         },
       }),
     );
     const matchingResponse = await handler(
-      new Request("http://localhost/tn/buscando-oferta", {
+      new Request("http://localhost/tn/custom/buscando-oferta", {
         headers: {
           Cookie: createCheckpointCookie(completedMatchingAnswers),
         },
@@ -480,9 +643,9 @@ describe("server routing", () => {
     );
 
     expect(resumeResponse.status).toBe(302);
-    expect(resumeResponse.headers.get("Location")).toBe("/tn/buscando-oferta");
+    expect(resumeResponse.headers.get("Location")).toBe("/tn/custom/buscando-oferta");
     expect(contactResponse.status).toBe(302);
-    expect(contactResponse.headers.get("Location")).toBe("/tn/buscando-oferta");
+    expect(contactResponse.headers.get("Location")).toBe("/tn/custom/buscando-oferta");
     expect(matchingResponse.status).toBe(200);
     const matchingHtml = await matchingResponse.text();
     expect(matchingHtml).toContain('"matching_offer":"completed"');
@@ -501,7 +664,7 @@ describe("server routing", () => {
   it("excludes matching from step count on the out-of-state path", async () => {
     const handler = createFetchHandler();
     const response = await handler(
-      new Request("http://localhost/tn/buscando-oferta", {
+      new Request("http://localhost/tn/custom/buscando-oferta", {
         headers: {
           Cookie: createCheckpointCookie(completedOutOfStateMatchingAnswers),
         },
@@ -518,7 +681,7 @@ describe("server routing", () => {
   it("allows contact steps after the matching checkpoint has been seen", async () => {
     const handler = createFetchHandler();
     const response = await handler(
-      new Request("http://localhost/tn/nombre", {
+      new Request("http://localhost/tn/custom/nombre", {
         headers: {
           Cookie: createCheckpointCookie(seenMatchingAnswers),
         },
@@ -535,7 +698,7 @@ describe("server routing", () => {
   it("redirects an already-seen matching step to the next contact step", async () => {
     const handler = createFetchHandler();
     const response = await handler(
-      new Request("http://localhost/tn/buscando-oferta", {
+      new Request("http://localhost/tn/custom/buscando-oferta", {
         headers: {
           Cookie: createCheckpointCookie(seenMatchingAnswers),
         },
@@ -543,14 +706,14 @@ describe("server routing", () => {
     );
 
     expect(response.status).toBe(302);
-    expect(response.headers.get("Location")).toBe("/tn/nombre");
+    expect(response.headers.get("Location")).toBe("/tn/custom/nombre");
     expect(response.headers.get("Cache-Control")).toBe("no-store");
   });
 
   it("serves checkpoint-dependent form pages without browser caching", async () => {
     const handler = createFetchHandler();
     const response = await handler(
-      new Request("http://localhost/tn/buscando-oferta", {
+      new Request("http://localhost/tn/custom/buscando-oferta", {
         headers: {
           Cookie: createCheckpointCookie(completedMatchingAnswers),
         },
@@ -564,7 +727,7 @@ describe("server routing", () => {
   it("sanitizes invalid checkpoint cookie answers before resuming", async () => {
     const handler = createFetchHandler();
     const response = await handler(
-      new Request("http://localhost/tn", {
+      new Request("http://localhost/tn/custom", {
         headers: {
           Cookie: createCheckpointCookie({
             belongs_to_state: "maybe",
@@ -574,37 +737,37 @@ describe("server routing", () => {
     );
 
     expect(response.status).toBe(302);
-    expect(response.headers.get("Location")).toBe("/tn/vive-en-tennessee");
+    expect(response.headers.get("Location")).toBe("/tn/custom/vive-en-tennessee");
   });
 
   it("guards valid but too-forward step URLs", async () => {
     const handler = createFetchHandler();
-    const response = await handler(new Request("http://localhost/tn/tiene-licencia"));
+    const response = await handler(new Request("http://localhost/tn/custom/tiene-licencia"));
 
     expect(response.status).toBe(302);
-    expect(response.headers.get("Location")).toBe("/tn/vive-en-tennessee");
+    expect(response.headers.get("Location")).toBe("/tn/custom/vive-en-tennessee");
   });
 
   it("guards the matching step until prior questions are answered", async () => {
     const handler = createFetchHandler();
-    const response = await handler(new Request("http://localhost/tn/buscando-oferta"));
+    const response = await handler(new Request("http://localhost/tn/custom/buscando-oferta"));
 
     expect(response.status).toBe(302);
-    expect(response.headers.get("Location")).toBe("/tn/vive-en-tennessee");
+    expect(response.headers.get("Location")).toBe("/tn/custom/vive-en-tennessee");
   });
 
   it("guards the residence-state step until Tennessee has been answered no", async () => {
     const handler = createFetchHandler();
-    const noCookie = await handler(new Request("http://localhost/tn/estado-donde-vive"));
+    const noCookie = await handler(new Request("http://localhost/tn/custom/estado-donde-vive"));
     const yesCookie = await handler(
-      new Request("http://localhost/tn/estado-donde-vive", {
+      new Request("http://localhost/tn/custom/estado-donde-vive", {
         headers: {
           Cookie: createCheckpointCookie({ belongs_to_state: "yes" }),
         },
       }),
     );
     const noWithoutResidence = await handler(
-      new Request("http://localhost/tn/tiene-licencia", {
+      new Request("http://localhost/tn/custom/tiene-licencia", {
         headers: {
           Cookie: createCheckpointCookie({ belongs_to_state: "no" }),
         },
@@ -612,43 +775,51 @@ describe("server routing", () => {
     );
 
     expect(noCookie.status).toBe(302);
-    expect(noCookie.headers.get("Location")).toBe("/tn/vive-en-tennessee");
+    expect(noCookie.headers.get("Location")).toBe("/tn/custom/vive-en-tennessee");
     expect(yesCookie.status).toBe(302);
-    expect(yesCookie.headers.get("Location")).toBe("/tn/tiene-licencia");
+    expect(yesCookie.headers.get("Location")).toBe("/tn/custom/tiene-licencia");
     expect(noWithoutResidence.status).toBe(302);
-    expect(noWithoutResidence.headers.get("Location")).toBe("/tn/estado-donde-vive");
+    expect(noWithoutResidence.headers.get("Location")).toBe("/tn/custom/estado-donde-vive");
   });
 
   it("redirects legacy English step slugs to Spanish step URLs", async () => {
     const handler = createFetchHandler();
-    const response = await handler(new Request("http://localhost/tn/belongs-to-state"));
+    const response = await handler(new Request("http://localhost/tn/custom/belongs-to-state"));
 
     expect(response.status).toBe(302);
-    expect(response.headers.get("Location")).toBe("/tn/vive-en-tennessee");
+    expect(response.headers.get("Location")).toBe("/tn/custom/vive-en-tennessee");
   });
 
   it("guards too-forward legacy English step slugs", async () => {
     const handler = createFetchHandler();
-    const response = await handler(new Request("http://localhost/tn/has-license"));
+    const response = await handler(new Request("http://localhost/tn/custom/has-license"));
 
     expect(response.status).toBe(302);
-    expect(response.headers.get("Location")).toBe("/tn/vive-en-tennessee");
+    expect(response.headers.get("Location")).toBe("/tn/custom/vive-en-tennessee");
   });
 
-  it("redirects unknown step slugs under valid states back to the state root", async () => {
+  it("redirects unknown step slugs under valid route groups to the group fallback", async () => {
     const handler = createFetchHandler();
     const response = await handler(new Request("http://localhost/tn/not-real"));
 
     expect(response.status).toBe(302);
-    expect(response.headers.get("Location")).toBe("/tn");
+    expect(response.headers.get("Location")).toBe("/tn/custom");
   });
 
-  it("redirects deeper unknown paths under valid states back to the state root", async () => {
+  it("redirects deeper unknown paths under valid route groups to the group fallback", async () => {
     const handler = createFetchHandler();
     const response = await handler(new Request("http://localhost/tn/not-real/extra"));
 
     expect(response.status).toBe(302);
-    expect(response.headers.get("Location")).toBe("/tn");
+    expect(response.headers.get("Location")).toBe("/tn/custom");
+  });
+
+  it("redirects unknown step slugs under nested form routes to the form route root", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(new Request("http://localhost/tn/custom/not-real"));
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe("/tn/custom");
   });
 
   it("serves the cached WebP logo asset", async () => {
@@ -662,13 +833,13 @@ describe("server routing", () => {
 
   it("serves a no-store matching preview route without the full form flow", async () => {
     const handler = createFetchHandler();
-    const response = await handler(new Request("http://localhost/__preview/tn/buscando-oferta"));
+    const response = await handler(new Request("http://localhost/__preview/tn/custom/buscando-oferta"));
     const html = await response.text();
 
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(html).toContain('"previewMode":true');
-    expect(html).toContain('"url":"/__preview/tn/buscando-oferta"');
+    expect(html).toContain('"url":"/__preview/tn/custom/buscando-oferta"');
     expect(html).toContain(".matching-status:empty");
     expect(html).toContain('data-matching-status></p>');
     expect(html).toContain("Encontramos agentes listos para cotizarle.");
@@ -681,9 +852,13 @@ describe("server routing", () => {
   it("returns an unavailable page for unsupported area codes", async () => {
     const handler = createFetchHandler();
     const response = await handler(new Request("http://localhost/ga"));
+    const html = await response.text();
 
     expect(response.status).toBe(404);
-    await expect(response.text()).resolves.toContain("no está disponible");
+    expect(html).toContain("Página no encontrada");
+    expect(html).toContain("Esta página no existe o ya no está disponible.");
+    expect(html).toContain('href="/tn/custom"');
+    expect(html).not.toContain("formulario de Tennessee");
   });
 
   it("sets a checkpoint cookie for valid partial answers", async () => {
@@ -919,7 +1094,7 @@ describe("server routing", () => {
   it("prefills rendered fields from sanitized checkpoint cookies", async () => {
     const handler = createFetchHandler();
     const response = await handler(
-      new Request("http://localhost/tn/nombre", {
+      new Request("http://localhost/tn/custom/nombre", {
         headers: {
           Cookie: createCheckpointCookie({
             ...seenMatchingAnswers,

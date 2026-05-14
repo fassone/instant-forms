@@ -1,10 +1,9 @@
 import { Hono } from "hono";
 
-import { renderUnavailablePage } from "../rendering";
-import { htmlResponse } from "./http/responses";
+import { formRoutes } from "../../authoring/routes/registry";
+import { registerFormRoutePages, renderFormRouteNotFound } from "../routing";
 import { registerAssetRoutes } from "./routes/assets";
 import { registerFormRoutes, type SubmissionLogger } from "./routes/forms";
-import { registerPreviewRoutes } from "./routes/preview";
 
 export type { SubmissionLogger };
 
@@ -23,10 +22,10 @@ export function createApp(options: AppOptions = {}) {
   const app = new Hono();
 
   registerAssetRoutes(app);
-  registerPreviewRoutes(app);
+  registerFormRoutePages(app, formRoutes);
   registerFormRoutes(app, logger);
 
-  app.notFound(() => htmlResponse(renderUnavailablePage("esta ruta"), 404));
+  app.notFound((c) => renderFormRouteNotFound(c, formRoutes));
 
   return app;
 }

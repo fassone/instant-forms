@@ -1,1 +1,6 @@
-export { renderFormPage, renderUnavailablePage, type RenderFormPageOptions } from "./render-form-page";
+export {
+  renderFormPage,
+  renderUnavailablePage,
+  type RenderFormPageOptions,
+  type UnavailablePageContent,
+} from "./render-form-page";

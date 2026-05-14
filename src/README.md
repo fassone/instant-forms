@@ -14,7 +14,7 @@ flowchart LR
 
 ## Belongs Here
 
-- `authoring/` for market/form content.
+- `authoring/` for market/form content and public route placement.
 - `platform/` for reusable routing, rendering, validation, persistence, and step behavior.
 - `shared/` for neutral data and assets consumed across boundaries.
 

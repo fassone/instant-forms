@@ -1,6 +1,6 @@
 # instant-forms
 
-Ultra-fast Bun + Hono + TypeScript progressive lead forms. The first flow is a Spanish Tennessee auto-insurance form for Seguros Aseguranza, selected by area code at `/tn`.
+Ultra-fast Bun + Hono + TypeScript progressive lead forms. The first flow is a Spanish Tennessee auto-insurance form for Seguros Aseguranza, rendered from the authored public route folder `/tn`.
 
 ## Purpose
 
@@ -10,7 +10,7 @@ This repository owns the full local runtime for routed, checkpointed, conversion
 flowchart LR
   Browser["Browser / Visitor"] --> Hono["Hono App"]
   Hono --> Platform["src/platform"]
-  Platform --> Authoring["src/authoring flows"]
+  Platform --> Authoring["src/authoring flows + routes"]
   Shared["src/shared data/assets"] --> Platform
   Shared --> Authoring
   Platform --> Rendering["SSR Form Renderer"]
@@ -85,16 +85,19 @@ Every source and test folder has its own `README.md` describing ownership and sa
 | Route | Purpose |
 |---|---|
 | `GET /` | Redirects to `/tn`. |
-| `GET /tn` | Redirects to the next unanswered Tennessee step. |
-| `GET /tn/:stepSlug` | Renders a guarded routed step, for example `/tn/vive-en-tennessee`. |
-| `GET /tn/*` | Redirects unknown Tennessee paths back to `/tn`. |
-| `GET /__preview/tn/buscando-oferta` | No-store preview for matching-step visual iteration. |
+| `GET /tn` | Redirects to the authored Tennessee form route at `/tn/custom`. |
+| `GET /tn/custom` | Redirects to the next unanswered Tennessee step. |
+| `GET /tn/custom/:stepSlug` | Renders a guarded routed step, for example `/tn/custom/vive-en-tennessee`. |
+| `GET /tn/*` | Redirects unknown Tennessee group paths back to `/tn/custom`. |
+| `GET /__preview/tn/custom/:stepSlug` | No-store preview mirror for public form step visual iteration. |
 | `POST /api/forms/:areaCode/checkpoints` | Validates one answer, writes the checkpoint cookie, and returns the next URL. |
 | `POST /api/forms/:areaCode/submissions` | Validates and logs completed submissions. |
 
+Unavailable public routes use author-controlled title, message, CTA, and status from `src/authoring/routes/registry.ts`.
+
 ## Form Flow
 
-The Tennessee flow lives in `src/authoring/flows/tn/flow.ts` and is built with the typed DSL in `src/platform/flow/dsl/`. Supported step kinds are `choice`, `text`, `phone`, `autocomplete`, and `interstitial`.
+The Tennessee flow lives in `src/authoring/flows/tn/flow.ts` and is built with the typed DSL in `src/platform/flow/dsl/`. Public route placement lives in `src/authoring/routes/registry.ts`, where `/tn/custom` is mapped to the Tennessee flow and `/tn` is a small route group. Supported step kinds are `choice`, `text`, `phone`, `autocomplete`, and `interstitial`.
 
 Current visible order:
 

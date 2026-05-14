@@ -6,10 +6,12 @@
 
 ```mermaid
 flowchart LR
-  App["app"] --> Flow["flow"]
+  App["app"] --> Routing["routing"]
+  Routing --> Flow["flow"]
   App --> Persistence["persistence"]
   App --> Rendering["rendering"]
   App --> Submissions["submissions"]
+  Routing --> AuthoringRoutes["authoring/routes registry"]
   Flow --> Authoring["authoring/flows registry"]
   Rendering --> Steps["steps"]
   Submissions --> Steps
@@ -18,6 +20,7 @@ flowchart LR
 ## Belongs Here
 
 - Core features that change how the app works.
+- Public form route compilation and defaults.
 - Reusable step kinds and behavior helpers.
 - Server-rendered page shell and client controller.
 

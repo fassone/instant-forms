@@ -8,6 +8,7 @@
 
 - Area-specific form definitions.
 - Area-to-flow registration.
+- Public route-folder placement for authored flows.
 - Market copy, slugs, order, and authored conditional flow choices.
 
 ## Does Not Belong Here
@@ -18,4 +19,4 @@
 
 ## Change Safely
 
-Adding a market should normally touch this folder, tests, and documentation. Import DSL builders from `src/platform/flow/dsl`; do not reach into platform app internals.
+Adding a market should normally touch this folder, tests, and documentation. Import DSL builders from `src/platform/flow/dsl` and public route helpers from `src/platform/routing`; do not reach into platform app internals.

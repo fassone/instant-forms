@@ -19,20 +19,20 @@ const seenMatchingAnswers = {
 test.describe("instant routed form UI", () => {
   test("choice auto-advance works with browser back and forward", async ({ page }) => {
     await page.goto("/tn");
-    await expect(page).toHaveURL(/\/tn\/vive-en-tennessee$/u);
+    await expect(page).toHaveURL(/\/tn\/custom\/vive-en-tennessee$/u);
 
     await clickActiveOption(page, "Si");
-    await expect(page).toHaveURL(/\/tn\/tiene-licencia$/u);
+    await expect(page).toHaveURL(/\/tn\/custom\/tiene-licencia$/u);
 
     await page.goBack();
-    await expect(page).toHaveURL(/\/tn\/vive-en-tennessee$/u);
+    await expect(page).toHaveURL(/\/tn\/custom\/vive-en-tennessee$/u);
 
     await page.goForward();
-    await expect(page).toHaveURL(/\/tn\/tiene-licencia$/u);
+    await expect(page).toHaveURL(/\/tn\/custom\/tiene-licencia$/u);
   });
 
   test("error modal appears without inline layout errors", async ({ page }) => {
-    await page.goto("/tn/vive-en-tennessee");
+    await page.goto("/tn/custom/vive-en-tennessee");
     await page.getByRole("button", { name: "Siguiente" }).click();
 
     await expect(page.getByRole("alertdialog")).toBeVisible();
@@ -43,7 +43,7 @@ test.describe("instant routed form UI", () => {
 
   test("autocomplete suggestions scroll internally and select a normalized state", async ({ page }) => {
     await seedCheckpoint(page, { belongs_to_state: "no" });
-    await page.goto("/tn/estado-donde-vive");
+    await page.goto("/tn/custom/estado-donde-vive");
 
     const stateInput = activeStep(page).getByPlaceholder("Escriba su estado aquí");
     await stateInput.fill("a");
@@ -74,7 +74,7 @@ test.describe("instant routed form UI", () => {
       element.dispatchEvent(new Event("scroll", { bubbles: true }));
     });
     await suggestions.locator("[data-autocomplete-suggestion]").first().click();
-    await expect(page).toHaveURL(/\/tn\/tiene-licencia$/u);
+    await expect(page).toHaveURL(/\/tn\/custom\/tiene-licencia$/u);
   });
 
   test("phone mask accepts +1 input and final submission succeeds", async ({ page }) => {
@@ -83,7 +83,7 @@ test.describe("instant routed form UI", () => {
       first_name: "Ana",
       last_name: "Lopez",
     });
-    await page.goto("/tn/telefono");
+    await page.goto("/tn/custom/telefono");
 
     const phoneInput = activeStep(page).getByPlaceholder("Escriba su telefono aquí");
     await phoneInput.fill("+1 (615) 555-1234");
@@ -103,25 +103,25 @@ test.describe("instant routed form UI", () => {
   });
 
   test("key visual states remain stable", async ({ page }) => {
-    await page.goto("/tn/vive-en-tennessee");
+    await page.goto("/tn/custom/vive-en-tennessee");
     await expect(page).toHaveScreenshot("first-choice.png");
 
     await seedCheckpoint(page, { belongs_to_state: "no" });
-    await page.goto("/tn/estado-donde-vive");
+    await page.goto("/tn/custom/estado-donde-vive");
     await activeStep(page).getByPlaceholder("Escriba su estado aquí").fill("a");
     await expect(page).toHaveScreenshot("autocomplete-suggestions.png");
 
     await seedCheckpoint(page, { ...preContactAnswers, matching_offer: "completed" });
-    await page.goto("/tn/buscando-oferta");
+    await page.goto("/tn/custom/buscando-oferta");
     await expect(page.getByText("Encontramos agentes listos para cotizarle.")).toBeVisible();
     await expect(page).toHaveScreenshot("matching-success.png");
 
     await seedCheckpoint(page, seenMatchingAnswers);
-    await page.goto("/tn/nombre");
+    await page.goto("/tn/custom/nombre");
     await expect(page).toHaveScreenshot("contact-name.png");
 
     await seedCheckpoint(page, { ...seenMatchingAnswers, first_name: "Ana", last_name: "Lopez" });
-    await page.goto("/tn/telefono");
+    await page.goto("/tn/custom/telefono");
     await expect(page).toHaveScreenshot("phone-step.png");
   });
 });

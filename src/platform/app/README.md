@@ -9,6 +9,7 @@
 - Hono app creation.
 - Route modules.
 - App-layer HTTP helper usage.
+- Registration of the compiled public form route tree.
 
 ## Does Not Belong Here
 
@@ -18,4 +19,4 @@
 
 ## Change Safely
 
-Public route changes need route tests. Keep this folder as orchestration over platform and authoring APIs.
+Public form route placement should change in `src/authoring/routes`, not here. Keep this folder as orchestration over platform and authoring APIs.

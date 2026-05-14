@@ -2,21 +2,22 @@
 
 ## Purpose
 
-`src/platform/app/routes/` owns public HTTP route behavior while delegating domain work to platform and authoring APIs.
+`src/platform/app/routes/` owns small Hono route modules that are not authored public form pages.
 
 ## Belongs Here
 
-- URL patterns.
-- Route guards and redirects.
+- Static asset routes.
+- Checkpoint and submission API routes.
 - Request body parsing at API boundaries.
 - Wiring between HTTP helpers and domain modules.
 
 ## Does Not Belong Here
 
 - Step-specific validation branches.
+- Authored public form folder placement.
 - Inline CSS or client JavaScript.
 - Area-specific flow definitions.
 
 ## Change Safely
 
-Keep public route changes covered by unit tests. For new route families, add a new route module and register it from `src/platform/app/server.ts`.
+Keep API and asset route changes covered by unit tests. Public form page placement belongs in `src/authoring/routes`, and its compiler belongs in `src/platform/routing`.

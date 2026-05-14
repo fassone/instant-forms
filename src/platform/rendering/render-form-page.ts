@@ -17,6 +17,15 @@ export type RenderFormPageOptions = {
   stepUrlOverrides?: Record<string, string>;
 };
 
+export type UnavailablePageContent = {
+  title: string;
+  message: string;
+  cta?: {
+    label: string;
+    href: string;
+  };
+};
+
 export function renderFormPage(form: InstantForm, options: RenderFormPageOptions = {}): string {
   const lastStepIndex = Math.max(0, form.steps.length - 1);
   const activeStepIndex = Math.max(0, Math.min(options.activeStepIndex ?? 0, lastStepIndex));
@@ -1187,7 +1196,29 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
             Object.assign(answers, body.answers);
           }
 
-          return typeof body.nextUrl === "string" ? body.nextUrl : undefined;
+          return typeof body.nextUrl === "string" ? getRouteAwareNextUrl(body.nextUrl) : undefined;
+        }
+
+        function getRouteAwareNextUrl(nextUrl) {
+          const nextPath = getPathname(nextUrl);
+          const directStep = config.steps.find((question) => question.url === nextPath);
+          if (directStep) {
+            return directStep.url;
+          }
+
+          const nextPathSegments = nextPath.split("/").filter(Boolean);
+          const nextSlug = nextPathSegments[nextPathSegments.length - 1];
+          const matchingStep = config.steps.find((question) => question.slug === nextSlug);
+
+          return matchingStep ? matchingStep.url : nextUrl;
+        }
+
+        function getPathname(url) {
+          try {
+            return new URL(url, window.location.origin).pathname;
+          } catch {
+            return url;
+          }
         }
 
         async function checkpointCurrentStep() {
@@ -2197,13 +2228,17 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
 </html>`;
 }
 
-export function renderUnavailablePage(areaCode: string): string {
+export function renderUnavailablePage(content: UnavailablePageContent): string {
+  const cta = content.cta
+    ? `<p class="unavailable-action"><a href="${escapeHtml(content.cta.href)}">${escapeHtml(content.cta.label)}</a></p>`
+    : "";
+
   return `<!doctype html>
 <html lang="es">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Formulario no disponible</title>
+    <title>${escapeHtml(content.title)}</title>
     <style>
       :root {
         color-scheme: light;
@@ -2252,6 +2287,10 @@ export function renderUnavailablePage(areaCode: string): string {
         line-height: 1.6;
       }
 
+      .unavailable-action {
+        margin-top: 24px;
+      }
+
       a {
         color: var(--primary);
         font-weight: 800;
@@ -2260,8 +2299,9 @@ export function renderUnavailablePage(areaCode: string): string {
   </head>
   <body>
     <main class="unavailable">
-      <h1>No disponible.</h1>
-      <p>El formulario para ${escapeHtml(areaCode.toUpperCase())} no está disponible en este momento. Puede volver al <a href="/tn">formulario de Tennessee</a>.</p>
+      <h1>${escapeHtml(content.title)}</h1>
+      <p>${escapeHtml(content.message)}</p>
+      ${cta}
     </main>
   </body>
 </html>`;
