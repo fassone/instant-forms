@@ -7,6 +7,7 @@ import type {
   InterstitialStep,
   PhoneStep,
   TextStep,
+  TrustedFormConsentStep,
 } from "../flow";
 import { createClientFormConfig } from "./client/config";
 import { prepareInlineAssetHtml } from "./inline-assets";
@@ -485,6 +486,58 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         margin-left: 6px;
       }
 
+      .consent-card {
+        display: grid;
+        width: min(100%, 620px);
+        gap: 14px;
+      }
+
+      .consent-summary {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.95rem;
+        font-weight: 700;
+        line-height: 1.35;
+      }
+
+      .consent-check {
+        display: flex;
+        align-items: flex-start;
+        gap: 14px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: #ffffff;
+        cursor: pointer;
+        padding: 18px;
+      }
+
+      .consent-check:has(input:focus-visible) {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 4px rgba(6, 77, 246, 0.13);
+      }
+
+      .consent-checkbox {
+        width: 22px;
+        height: 22px;
+        flex: 0 0 auto;
+        margin: 2px 0 0;
+        accent-color: var(--accent);
+      }
+
+      .consent-copy {
+        color: var(--text);
+        font-size: 1rem;
+        font-weight: 600;
+        line-height: 1.5;
+      }
+
+      .consent-acceptance {
+        display: block;
+        margin-top: 8px;
+        color: var(--brand-navy);
+        font-weight: 800;
+      }
+
       .actions {
         display: flex;
         align-items: center;
@@ -763,8 +816,8 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         </section>
         <footer>
           <div class="actions">
-            <button class="button button-secondary" id="back-button" type="button">Atrás</button>
-            <button class="button button-primary" id="next-button" type="button">Siguiente</button>
+            <button class="button button-secondary" id="back-button" name="back" type="button">Atrás</button>
+            <button class="button button-primary" id="next-button" name="next" type="button">Siguiente</button>
           </div>
         </footer>
       </form>
@@ -811,6 +864,10 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         const matchingBenefitDisplayMs = 950;
         const matchingBenefitMinCount = 3;
         const matchingBenefitMaxCount = 4;
+        const trustedFormReadyPollMs = 100;
+        const trustedFormReadyTimeoutMs = 5000;
+        const trustedFormReadyErrorMessage =
+          "No pudimos preparar el certificado de consentimiento. Revise su conexión e intente de nuevo.";
         let currentStep = config.activeStepIndex;
         let isSubmitting = false;
         let autoAdvanceTimer;
@@ -822,6 +879,12 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         let isAutocompleteSuggestionPointerDown = false;
         let focusedTextInput;
         let errorModalReturnFocusTarget;
+        let trustedFormSdkLoaded = false;
+        let trustedFormSdkLoadPromise;
+        let trustedFormPreloadStarted = false;
+        let trustedFormReadyPromise;
+        let trustedFormReadyFieldName;
+        let trustedFormReadinessRunId = 0;
 
         function clearAutoAdvance() {
           if (autoAdvanceTimer) {
@@ -870,7 +933,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
 
           progressBar.style.width = (countedStepNumber / countedStepCount) * 100 + "%";
           backButton.disabled = !config.previousUrl || isSubmitting;
-          nextButton.textContent = config.isFinalStep ? "Enviar" : "Siguiente";
+          nextButton.textContent = getNextButtonLabel(question);
           nextButton.disabled =
             isSubmitting ||
             (question.kind === "interstitial" &&
@@ -879,10 +942,26 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
               !completedMatchingSteps.has(question.key));
           hideErrorModal();
           hydrateCurrentStepAnswer(question);
+          syncTrustedFormElementRoles(question);
 
           if (question.kind === "interstitial") {
             runMatchingStep();
           }
+
+          if (question.kind === "trusted_form_consent") {
+            startTrustedFormStepReadiness(question);
+          } else {
+            trustedFormReadinessRunId += 1;
+            preloadTrustedFormSdk(config.trustedFormPreload);
+          }
+        }
+
+        function getNextButtonLabel(question) {
+          if (question.kind === "trusted_form_consent") {
+            return question.submitLabel;
+          }
+
+          return config.isFinalStep ? "Enviar" : "Siguiente";
         }
 
         function isQuestionVisible(question) {
@@ -962,6 +1041,10 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
 
           if (question.kind === "interstitial") {
             return answer === question.seenAnswer;
+          }
+
+          if (question.kind === "trusted_form_consent") {
+            return answer === question.acceptedAnswer;
           }
 
           return true;
@@ -1069,6 +1152,11 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
             return question.seenAnswer;
           }
 
+          if (question.kind === "trusted_form_consent") {
+            const checked = steps[currentStep].querySelector("[data-trusted-form-consent]:checked");
+            return checked ? question.acceptedAnswer : "";
+          }
+
           if (question.kind === "choice") {
             const checked = steps[currentStep].querySelector("input[type='radio']:checked");
             return checked ? checked.value : "";
@@ -1099,6 +1187,14 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
                 input.checked = input.value === answer;
               }
             });
+            return;
+          }
+
+          if (question.kind === "trusted_form_consent") {
+            const input = step.querySelector("[data-trusted-form-consent]");
+            if (input instanceof HTMLInputElement) {
+              input.checked = answer === question.acceptedAnswer;
+            }
             return;
           }
 
@@ -1165,6 +1261,17 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
           const answer = getCurrentAnswer();
 
           if (question.kind === "interstitial") {
+            return true;
+          }
+
+          if (question.kind === "trusted_form_consent") {
+            if (answer !== question.acceptedAnswer) {
+              showErrorModal(question.validationMessage);
+              return false;
+            }
+
+            answers[question.key] = question.acceptedAnswer;
+            hideErrorModal();
             return true;
           }
 
@@ -1265,6 +1372,242 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
           const answer = getCurrentAnswer();
 
           return saveCheckpoint(question.key, answer);
+        }
+
+        function syncTrustedFormElementRoles(question) {
+          if (question.kind !== "trusted_form_consent") {
+            form.removeAttribute("data-tf-element-role");
+            nextButton.removeAttribute("data-tf-element-role");
+            return;
+          }
+
+          form.setAttribute("data-tf-element-role", "offer");
+          nextButton.setAttribute("data-tf-element-role", "submit");
+        }
+
+        function preloadTrustedFormSdk(trustedForm) {
+          if (!trustedForm || trustedFormPreloadStarted) {
+            return;
+          }
+
+          trustedFormPreloadStarted = true;
+          runAfterPageSettles(() => {
+            const sdkUrl = buildTrustedFormSdkUrl(trustedForm);
+            if (!sdkUrl) {
+              return;
+            }
+
+            addResourceHint("preconnect", new URL(sdkUrl, window.location.href).origin);
+            addResourceHint("preload", sdkUrl, "script");
+          });
+        }
+
+        function loadTrustedFormSdk(trustedForm) {
+          if (trustedFormSdkLoaded) {
+            return Promise.resolve();
+          }
+
+          if (trustedFormSdkLoadPromise) {
+            return trustedFormSdkLoadPromise;
+          }
+
+          if (!trustedForm || trustedFormSdkLoaded) {
+            return Promise.resolve();
+          }
+
+          const sdkUrl = buildTrustedFormSdkUrl(trustedForm);
+          if (!sdkUrl) {
+            return Promise.reject(new Error(trustedFormReadyErrorMessage));
+          }
+
+          const script = document.createElement("script");
+          script.async = true;
+          script.src = sdkUrl;
+          script.dataset.trustedFormSdk = "true";
+
+          trustedFormSdkLoadPromise = new Promise((resolve, reject) => {
+            script.addEventListener(
+              "load",
+              () => {
+                trustedFormSdkLoaded = true;
+                resolve();
+              },
+              { once: true },
+            );
+            script.addEventListener(
+              "error",
+              () => {
+                trustedFormSdkLoadPromise = undefined;
+                script.remove();
+                reject(new Error(trustedFormReadyErrorMessage));
+              },
+              { once: true },
+            );
+          });
+
+          document.body.appendChild(script);
+          return trustedFormSdkLoadPromise;
+        }
+
+        function buildTrustedFormSdkUrl(trustedForm) {
+          if (!trustedForm.scriptBaseUrl) {
+            return "";
+          }
+
+          const url = new URL(trustedForm.scriptBaseUrl, window.location.href);
+          if (trustedForm.fieldName && !url.searchParams.has("field")) {
+            url.searchParams.set("field", trustedForm.fieldName);
+          }
+          if (trustedForm.useTaggedConsent && !url.searchParams.has("use_tagged_consent")) {
+            url.searchParams.set("use_tagged_consent", "true");
+          }
+          if (trustedForm.sandbox && !url.searchParams.has("sandbox")) {
+            url.searchParams.set("sandbox", "true");
+          }
+
+          return url.toString();
+        }
+
+        function addResourceHint(rel, href, as) {
+          const existingHint = document.querySelector('link[rel="' + rel + '"][href="' + href + '"]');
+          if (existingHint) {
+            return;
+          }
+
+          const link = document.createElement("link");
+          link.rel = rel;
+          link.href = href;
+          if (as) {
+            link.as = as;
+          }
+          document.head.appendChild(link);
+        }
+
+        function runAfterPageSettles(callback) {
+          const scheduleIdleCallback = () => {
+            if ("requestIdleCallback" in window) {
+              window.requestIdleCallback(callback, { timeout: 1500 });
+              return;
+            }
+
+            window.setTimeout(callback, 600);
+          };
+
+          if (document.readyState === "complete") {
+            scheduleIdleCallback();
+            return;
+          }
+
+          window.addEventListener("load", scheduleIdleCallback, { once: true });
+        }
+
+        function startTrustedFormStepReadiness(question) {
+          const runId = (trustedFormReadinessRunId += 1);
+
+          if (getTrustedFormCertUrl(question.trustedForm)) {
+            nextButton.textContent = getNextButtonLabel(question);
+            nextButton.disabled = isSubmitting;
+            return;
+          }
+
+          nextButton.textContent = "Preparando...";
+          nextButton.disabled = true;
+
+          ensureTrustedFormReady(question.trustedForm)
+            .then(() => {
+              if (runId !== trustedFormReadinessRunId || getQuestion().kind !== "trusted_form_consent") {
+                return;
+              }
+
+              nextButton.textContent = getNextButtonLabel(question);
+              nextButton.disabled = isSubmitting;
+            })
+            .catch((trustedFormError) => {
+              if (runId !== trustedFormReadinessRunId || getQuestion().kind !== "trusted_form_consent") {
+                return;
+              }
+
+              nextButton.textContent = getNextButtonLabel(question);
+              nextButton.disabled = isSubmitting;
+
+              if (!question.trustedForm.allowSubmitWithoutCert) {
+                showErrorModal(getTrustedFormReadyErrorMessage(trustedFormError));
+              }
+            });
+        }
+
+        function ensureTrustedFormReady(trustedForm) {
+          const certUrl = getTrustedFormCertUrl(trustedForm);
+          if (certUrl) {
+            return Promise.resolve(certUrl);
+          }
+
+          const fieldName = trustedForm?.fieldName ?? "";
+          if (trustedFormReadyPromise && trustedFormReadyFieldName === fieldName) {
+            return trustedFormReadyPromise;
+          }
+
+          trustedFormReadyFieldName = fieldName;
+          trustedFormReadyPromise = loadTrustedFormSdk(trustedForm)
+            .then(() => waitForTrustedFormCertUrl(trustedForm))
+            .catch((trustedFormError) => {
+              trustedFormReadyPromise = undefined;
+              trustedFormReadyFieldName = undefined;
+              throw trustedFormError;
+            });
+
+          return trustedFormReadyPromise;
+        }
+
+        function waitForTrustedFormCertUrl(trustedForm) {
+          return new Promise((resolve, reject) => {
+            const startedAt = Date.now();
+
+            const checkForCertUrl = () => {
+              const certUrl = getTrustedFormCertUrl(trustedForm);
+              if (certUrl) {
+                resolve(certUrl);
+                return;
+              }
+
+              if (Date.now() - startedAt >= trustedFormReadyTimeoutMs) {
+                reject(new Error(trustedFormReadyErrorMessage));
+                return;
+              }
+
+              window.setTimeout(checkForCertUrl, trustedFormReadyPollMs);
+            };
+
+            checkForCertUrl();
+          });
+        }
+
+        function getTrustedFormReadyErrorMessage(error) {
+          return error instanceof Error && error.message ? error.message : trustedFormReadyErrorMessage;
+        }
+
+        function getTrustedFormCertUrl(trustedForm = config.currentStep.trustedForm) {
+          const fieldName = trustedForm?.fieldName;
+          if (!fieldName) {
+            return null;
+          }
+
+          const selector = '[name="' + cssEscape(fieldName) + '"]';
+          const certField = form.querySelector(selector) || document.querySelector(selector);
+          if (!(certField instanceof HTMLInputElement)) {
+            return null;
+          }
+
+          const certUrl = certField.value.trim();
+          return certUrl || null;
+        }
+
+        function cssEscape(value) {
+          if (window.CSS && typeof window.CSS.escape === "function") {
+            return window.CSS.escape(value);
+          }
+
+          return String(value).replace(/["\\\\]/g, "\\\\$&");
         }
 
         function getCoverageStateName() {
@@ -1981,10 +2324,25 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
           showStep(currentStep);
 
           try {
+            const question = getQuestion();
+            let trustedFormCertUrl = getTrustedFormCertUrl();
+
+            if (question.kind === "trusted_form_consent") {
+              try {
+                trustedFormCertUrl = await ensureTrustedFormReady(question.trustedForm);
+              } catch (trustedFormError) {
+                if (!question.trustedForm.allowSubmitWithoutCert) {
+                  throw new Error(getTrustedFormReadyErrorMessage(trustedFormError));
+                }
+
+                trustedFormCertUrl = getTrustedFormCertUrl(question.trustedForm);
+              }
+            }
+
             const response = await fetch("/api/forms/" + encodeURIComponent(config.areaCode) + "/submissions", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ answers }),
+              body: JSON.stringify({ answers, trustedFormCertUrl }),
             });
 
             if (!response.ok) {
@@ -2412,6 +2770,7 @@ const stepTemplateRegistry = {
   phone: renderPhoneInput,
   autocomplete: renderAutocompleteInput,
   interstitial: renderInterstitial,
+  trusted_form_consent: renderTrustedFormConsent,
 } satisfies Record<FormStep["kind"], StepTemplateRenderer<any>>;
 
 function renderQuestion(
@@ -2477,6 +2836,61 @@ function renderTextInput(stepDefinition: TextStep, answers: Record<string, strin
 
 function renderPhoneInput(stepDefinition: PhoneStep, answers: Record<string, string>): string {
   return renderBaseTextInput(stepDefinition, answers, "tel");
+}
+
+function renderTrustedFormConsent(stepDefinition: TrustedFormConsentStep, answers: Record<string, string>): string {
+  const checked = answers[stepDefinition.key] === stepDefinition.acceptedAnswer ? " checked" : "";
+  const grantorSummary = renderTrustedFormGrantorSummary(stepDefinition, answers);
+
+  return `<div class="consent-card">
+    ${grantorSummary}
+    <label class="consent-check" data-tf-element-role="consent-language">
+      <input
+        class="consent-checkbox"
+        type="checkbox"
+        name="${escapeHtml(stepDefinition.key)}"
+        value="${escapeHtml(stepDefinition.acceptedAnswer)}"
+        data-trusted-form-consent="true"
+        data-tf-element-role="consent-opt-in"
+        ${checked}
+      >
+      <span class="consent-copy">
+        <span>${escapeHtml(stepDefinition.disclosure)}</span>
+        <span class="consent-acceptance">${escapeHtml(stepDefinition.checkboxLabel)}</span>
+      </span>
+    </label>
+  </div>`;
+}
+
+function renderTrustedFormGrantorSummary(
+  stepDefinition: TrustedFormConsentStep,
+  answers: Record<string, string>,
+): string {
+  const summary = stepDefinition.grantorSummary;
+  if (!summary) {
+    return "";
+  }
+
+  const name = summary.nameKeys
+    .map((key) => answers[key])
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  const phone = summary.phoneKey ? answers[summary.phoneKey] : "";
+
+  if (!name && !phone) {
+    return "";
+  }
+
+  const nameText = name
+    ? `<span data-tf-element-role="consent-grantor-name">${escapeHtml(name)}</span>`
+    : "";
+  const phoneText = phone
+    ? `<span data-tf-element-role="consent-grantor-phone">${escapeHtml(phone)}</span>`
+    : "";
+  const separator = nameText && phoneText ? " · " : "";
+
+  return `<p class="consent-summary">${nameText}${separator}${phoneText}</p>`;
 }
 
 function renderBaseTextInput(

@@ -1,6 +1,13 @@
 export type FormStatus = "ACTIVE" | "INACTIVE";
 
-export type SourceStepType = "CUSTOM" | "FIRST_NAME" | "LAST_NAME" | "PHONE" | "AUTOCOMPLETE" | "INTERSTITIAL";
+export type SourceStepType =
+  | "CUSTOM"
+  | "FIRST_NAME"
+  | "LAST_NAME"
+  | "PHONE"
+  | "AUTOCOMPLETE"
+  | "INTERSTITIAL"
+  | "TRUSTED_FORM_CONSENT";
 
 export type StepCondition = {
   questionKey: string;
@@ -12,7 +19,7 @@ export type FormOption = {
   value: string;
 };
 
-export type StepTemplateKey = "choice" | "text" | "phone" | "autocomplete" | "interstitial";
+export type StepTemplateKey = "choice" | "text" | "phone" | "autocomplete" | "interstitial" | "trusted_form_consent";
 
 export type CheckpointMode = "answer" | "checkpoint_only";
 
@@ -22,6 +29,7 @@ export type StepBehavior = {
   mask?: "us_phone";
   suggestions?: "autocomplete";
   interstitialTiming?: "matching_offer";
+  trustedForm?: "certify";
 };
 
 export type BaseStep = {
@@ -92,7 +100,39 @@ export type InterstitialStep = BaseStep & {
   benefits: readonly string[];
 };
 
-export type FormStep = ChoiceStep | TextStep | PhoneStep | AutocompleteStep | InterstitialStep;
+export type TrustedFormConsentConfig = {
+  fieldName: string;
+  scriptBaseUrl: string;
+  useTaggedConsent: boolean;
+  sandbox: boolean;
+  preloadOnPreviousStep: boolean;
+  allowSubmitWithoutCert: boolean;
+};
+
+export type TrustedFormGrantorSummary = {
+  nameKeys: readonly string[];
+  phoneKey?: string;
+};
+
+export type TrustedFormConsentStep = BaseStep & {
+  kind: "trusted_form_consent";
+  type: "TRUSTED_FORM_CONSENT";
+  disclosure: string;
+  checkboxLabel: string;
+  submitLabel: string;
+  acceptedAnswer: "accepted";
+  validationMessage: string;
+  trustedForm: TrustedFormConsentConfig;
+  grantorSummary?: TrustedFormGrantorSummary;
+};
+
+export type FormStep =
+  | ChoiceStep
+  | TextStep
+  | PhoneStep
+  | AutocompleteStep
+  | InterstitialStep
+  | TrustedFormConsentStep;
 
 export type InstantForm = {
   id: string;
@@ -140,6 +180,16 @@ export type InterstitialStepInput = BaseStepInput & {
   completionAnswer?: "completed";
   seenAnswer?: "seen";
   benefits: readonly string[];
+};
+
+export type TrustedFormConsentStepInput = BaseStepInput & {
+  disclosure: string;
+  checkboxLabel?: string;
+  submitLabel?: string;
+  acceptedAnswer?: "accepted";
+  validationMessage?: string;
+  trustedForm?: Partial<TrustedFormConsentConfig>;
+  grantorSummary?: TrustedFormGrantorSummary;
 };
 
 export type FormFlowInput = {

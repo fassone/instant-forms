@@ -8,6 +8,7 @@
 
 - Final all-answers validation.
 - Normalized submission payload shape.
+- Top-level submission metadata such as TrustedForm certificate URLs, including authored requirements for consent steps.
 - Submission-specific exported types.
 
 ## Does Not Belong Here

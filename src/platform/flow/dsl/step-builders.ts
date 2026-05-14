@@ -16,6 +16,8 @@ import type {
   StepTemplateKey,
   TextStep,
   TextStepInput,
+  TrustedFormConsentStep,
+  TrustedFormConsentStepInput,
 } from "./types";
 
 export const autocompleteSource = {
@@ -82,6 +84,28 @@ export const step = {
       completionAnswer: input.completionAnswer ?? "completed",
       seenAnswer: input.seenAnswer ?? "seen",
       benefits: input.benefits,
+    };
+  },
+
+  trustedFormConsent(input: TrustedFormConsentStepInput): TrustedFormConsentStep {
+    return {
+      ...baseStep(input, "trusted_form_consent", "checkpoint_only", { trustedForm: "certify" }),
+      kind: "trusted_form_consent",
+      type: "TRUSTED_FORM_CONSENT",
+      disclosure: input.disclosure,
+      checkboxLabel: input.checkboxLabel ?? "Acepto y quiero enviar mi solicitud.",
+      submitLabel: input.submitLabel ?? "Enviar",
+      acceptedAnswer: input.acceptedAnswer ?? "accepted",
+      validationMessage: input.validationMessage ?? "Debe aceptar el consentimiento para enviar la solicitud.",
+      trustedForm: {
+        fieldName: input.trustedForm?.fieldName ?? "xxTrustedFormCertUrl",
+        scriptBaseUrl: input.trustedForm?.scriptBaseUrl ?? "https://api.trustedform.com/trustedform.js",
+        useTaggedConsent: input.trustedForm?.useTaggedConsent ?? true,
+        sandbox: input.trustedForm?.sandbox ?? false,
+        preloadOnPreviousStep: input.trustedForm?.preloadOnPreviousStep ?? true,
+        allowSubmitWithoutCert: input.trustedForm?.allowSubmitWithoutCert ?? true,
+      },
+      grantorSummary: input.grantorSummary,
     };
   },
 } as const;

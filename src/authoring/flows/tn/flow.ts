@@ -112,5 +112,25 @@ export const tnFlow = defineFormFlow({
       label: "Número de teléfono",
       id: "1594967471565670",
     }),
+    step.trustedFormConsent({
+      key: "trustedform_consent",
+      slug: "consentimiento",
+      label: "Antes de enviar",
+      id: "trustedform_consent",
+      // Replace with approved consent language before production traffic.
+      disclosure:
+        "Al seleccionar esta casilla, autorizo a Seguros Aseguranza y a sus agentes a contactarme por teléfono o mensaje de texto sobre opciones de seguro de auto.",
+      checkboxLabel: "Acepto continuar y enviar mi solicitud.",
+      submitLabel: "Enviar",
+      grantorSummary: {
+        nameKeys: ["first_name", "last_name"],
+        phoneKey: "phone_number",
+      },
+      trustedForm: {
+        fieldName: "xxTrustedFormCertUrl",
+        preloadOnPreviousStep: true,
+        allowSubmitWithoutCert: false,
+      },
+    }),
   ],
 });

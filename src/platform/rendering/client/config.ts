@@ -9,6 +9,7 @@ import {
   type InterstitialStep,
   type PhoneStep,
   type TextStep,
+  type TrustedFormConsentStep,
 } from "../../flow";
 import { createStateAutocompleteItems } from "../../steps/autocomplete/ranking";
 
@@ -53,6 +54,15 @@ type ClientStep =
       completionAnswer: InterstitialStep["completionAnswer"];
       seenAnswer: InterstitialStep["seenAnswer"];
       benefits: readonly string[];
+    })
+  | (ClientStepBase & {
+      kind: "trusted_form_consent";
+      type: TrustedFormConsentStep["type"];
+      checkboxLabel: string;
+      submitLabel: string;
+      acceptedAnswer: TrustedFormConsentStep["acceptedAnswer"];
+      validationMessage: string;
+      trustedForm: TrustedFormConsentStep["trustedForm"];
     });
 
 export type ClientFormConfig = {
@@ -72,6 +82,7 @@ export type ClientFormConfig = {
   autocompleteSources?: {
     usStates: ReturnType<typeof createStateAutocompleteItems>;
   };
+  trustedFormPreload?: TrustedFormConsentStep["trustedForm"];
 };
 
 export function createClientFormConfig(
@@ -97,6 +108,11 @@ export function createClientFormConfig(
     form,
     initialAnswers,
   );
+  const nextStepDefinition = nextStepIndex === undefined ? undefined : getStepAt(form, nextStepIndex);
+  const trustedFormPreload =
+    nextStepDefinition?.kind === "trusted_form_consent" && nextStepDefinition.trustedForm.preloadOnPreviousStep
+      ? nextStepDefinition.trustedForm
+      : undefined;
 
   return {
     areaCode: form.areaCode,
@@ -119,6 +135,7 @@ export function createClientFormConfig(
           },
         }
       : {}),
+    ...(trustedFormPreload ? { trustedFormPreload } : {}),
   };
 }
 
@@ -175,6 +192,19 @@ function createClientStep(
       benefits: stepDefinition.benefits.map((benefit) =>
         benefit.replace("{{areaName}}", getCoverageStateName(form, answers)),
       ),
+    };
+  }
+
+  if (stepDefinition.kind === "trusted_form_consent") {
+    return {
+      ...baseStep,
+      kind: "trusted_form_consent",
+      type: stepDefinition.type,
+      checkboxLabel: stepDefinition.checkboxLabel,
+      submitLabel: stepDefinition.submitLabel,
+      acceptedAnswer: stepDefinition.acceptedAnswer,
+      validationMessage: stepDefinition.validationMessage,
+      trustedForm: stepDefinition.trustedForm,
     };
   }
 

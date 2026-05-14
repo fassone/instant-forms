@@ -9,6 +9,7 @@
 - Checkpoint validation per step kind.
 - Submission validation and normalization per step kind.
 - Answered-state checks.
+- Checkpoint-only step answers such as interstitial completion and TrustedForm consent acknowledgement.
 
 ## Does Not Belong Here
 

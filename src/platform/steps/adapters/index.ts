@@ -3,6 +3,7 @@ import { choiceAdapter } from "./choice";
 import { interstitialAdapter } from "./interstitial";
 import { phoneAdapter } from "./phone";
 import { textAdapter } from "./text";
+import { trustedFormConsentAdapter } from "./trusted-form-consent";
 import type { FormStep } from "../../flow";
 
 export type StepValidationResult =
@@ -35,6 +36,8 @@ export function validateStepCheckpointAnswer(stepDefinition: FormStep, input: un
       return autocompleteAdapter.validateCheckpoint(stepDefinition, input);
     case "interstitial":
       return interstitialAdapter.validateCheckpoint(stepDefinition, input);
+    case "trusted_form_consent":
+      return trustedFormConsentAdapter.validateCheckpoint(stepDefinition, input);
   }
 }
 
@@ -50,6 +53,8 @@ export function validateStepSubmissionAnswer(stepDefinition: FormStep, input: un
       return autocompleteAdapter.validateSubmission(stepDefinition, input);
     case "interstitial":
       return interstitialAdapter.validateSubmission(stepDefinition, input);
+    case "trusted_form_consent":
+      return trustedFormConsentAdapter.validateSubmission(stepDefinition, input);
   }
 }
 
@@ -65,5 +70,7 @@ export function isStepAnswered(stepDefinition: FormStep, answers: Record<string,
       return autocompleteAdapter.isAnswered(stepDefinition, answers);
     case "interstitial":
       return interstitialAdapter.isAnswered(stepDefinition, answers);
+    case "trusted_form_consent":
+      return trustedFormConsentAdapter.isAnswered(stepDefinition, answers);
   }
 }

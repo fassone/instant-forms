@@ -5,6 +5,7 @@ import { encodeCheckpointAnswers, getCheckpointCookieName } from "../../src/plat
 const areaCode = "tn";
 const appPort = Number(process.env.PLAYWRIGHT_PORT ?? 51234);
 const appUrl = `http://127.0.0.1:${appPort}`;
+const trustedFormCertUrl = "https://cert.trustedform.com/454a35b802f3e7b63ffabb4efedb7c6ebe67886c";
 const preContactAnswers = {
   belongs_to_state: "yes",
   has_license: "yes",
@@ -79,6 +80,7 @@ test.describe("instant routed form UI", () => {
   });
 
   test("phone mask accepts +1 input and final submission succeeds", async ({ page }) => {
+    await mockTrustedFormCertify(page);
     await seedCheckpoint(page, {
       ...seenMatchingAnswers,
       first_name: "Ana",
@@ -93,14 +95,53 @@ test.describe("instant routed form UI", () => {
     await phoneInput.press("5");
     await expect(phoneInput).toHaveValue("+1 (615) 555-1234");
 
-    const submissionResponse = page.waitForResponse(/\/api\/forms\/tn\/submissions/u);
     if (await page.evaluate("window.matchMedia('(max-width: 560px)').matches")) {
       await phoneInput.evaluate((input) => input.blur());
     } else {
-      await page.getByRole("button", { name: "Enviar" }).click();
+      await page.getByRole("button", { name: "Siguiente" }).click();
     }
+    await expect(page).toHaveURL(/\/tn\/custom\/consentimiento$/u);
+
+    await activeStep(page).locator("[data-trusted-form-consent]").check();
+    await expect(page.getByRole("button", { name: "Enviar" })).toBeEnabled();
+    const submissionRequest = page.waitForRequest(/\/api\/forms\/tn\/submissions/u);
+    const submissionResponse = page.waitForResponse(/\/api\/forms\/tn\/submissions/u);
+    await page.getByRole("button", { name: "Enviar" }).click();
+    expect(JSON.parse((await submissionRequest).postData() ?? "{}")).toMatchObject({
+      trustedFormCertUrl,
+    });
     await expect((await submissionResponse).status()).toBe(201);
     await expect(page.getByRole("heading", { name: "Gracias." })).toBeVisible();
+  });
+
+  test("TrustedForm consent waits for the certificate before submit", async ({ page }) => {
+    await mockTrustedFormCertify(page, { delayMs: 1000 });
+    await seedCheckpoint(page, {
+      ...seenMatchingAnswers,
+      first_name: "Ana",
+      last_name: "Lopez",
+      phone_number: "+16155551234",
+    });
+    await page.goto("/tn/custom/consentimiento");
+
+    await expect(page.getByRole("button", { name: "Preparando..." })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Enviar" })).toBeEnabled();
+  });
+
+  test("TrustedForm script failure shows an error instead of submitting null", async ({ page }) => {
+    await page.route("https://api.trustedform.com/trustedform.js**", async (route) => {
+      await route.abort();
+    });
+    await seedCheckpoint(page, {
+      ...seenMatchingAnswers,
+      first_name: "Ana",
+      last_name: "Lopez",
+      phone_number: "+16155551234",
+    });
+    await page.goto("/tn/custom/consentimiento");
+
+    await expect(page.getByRole("alertdialog")).toBeVisible();
+    await expect(page.getByText("No pudimos preparar el certificado de consentimiento.")).toBeVisible();
   });
 
   test("key visual states remain stable", async ({ page }) => {
@@ -146,4 +187,26 @@ async function seedCheckpoint(page: Page, answers: Record<string, string>): Prom
       sameSite: "Lax",
     },
   ]);
+}
+
+async function mockTrustedFormCertify(page: Page, options: { delayMs?: number } = {}): Promise<void> {
+  const delayMs = options.delayMs ?? 25;
+  await page.route("https://api.trustedform.com/trustedform.js**", async (route) => {
+    await route.fulfill({
+      contentType: "application/javascript",
+      body: `
+        window.setTimeout(function () {
+          var form = document.querySelector('[data-tf-element-role="offer"]') || document.querySelector("form");
+          if (!form || form.querySelector('[name="xxTrustedFormCertUrl"]')) {
+            return;
+          }
+          var input = document.createElement("input");
+          input.type = "hidden";
+          input.name = "xxTrustedFormCertUrl";
+          input.value = "${trustedFormCertUrl}";
+          form.appendChild(input);
+        }, ${delayMs});
+      `,
+    });
+  });
 }

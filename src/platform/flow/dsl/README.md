@@ -7,7 +7,7 @@
 ## Belongs Here
 
 - Shared form and step types.
-- Step builders for `choice`, `text`, `phone`, `autocomplete`, and `interstitial`.
+- Step builders for `choice`, `text`, `phone`, `autocomplete`, `interstitial`, and `trusted_form_consent`.
 - Flow-level normalization such as lowercase `areaCode`.
 
 ## Does Not Belong Here

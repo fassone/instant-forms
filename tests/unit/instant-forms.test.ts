@@ -43,12 +43,19 @@ const completedOutOfStateMatchingAnswers = {
   matching_offer: "completed",
 };
 
-const validAnswers = {
-  ...preContactAnswers,
+const preConsentAnswers = {
+  ...seenMatchingAnswers,
   first_name: "Ana",
   last_name: "Lopez",
   phone_number: "(615) 555-1234",
 };
+
+const validAnswers = {
+  ...preConsentAnswers,
+  trustedform_consent: "accepted",
+};
+
+const trustedFormCertUrl = "https://cert.trustedform.com/454a35b802f3e7b63ffabb4efedb7c6ebe67886c";
 
 const unavailableContent = {
   title: "404",
@@ -209,13 +216,14 @@ describe("form registry", () => {
     expect(html).toContain('href="/tn/custom"');
   });
 
-  it("keeps contact fields at the end of the flow", () => {
+  it("keeps contact and consent fields at the end of the flow", () => {
     const form = getFormByAreaCode("tn");
 
-    expect(form?.steps.map((stepDefinition) => stepDefinition.key).slice(-3)).toEqual([
+    expect(form?.steps.map((stepDefinition) => stepDefinition.key).slice(-4)).toEqual([
       "first_name",
       "last_name",
       "phone_number",
+      "trustedform_consent",
     ]);
   });
 
@@ -233,6 +241,7 @@ describe("form registry", () => {
       "nombre",
       "apellido",
       "telefono",
+      "consentimiento",
     ]);
   });
 
@@ -289,6 +298,12 @@ describe("form registry", () => {
           ],
           benefits: ["Beneficio"],
         }),
+        step.trustedFormConsent({
+          key: "trustedform_consent",
+          slug: "consentimiento",
+          label: "Consentimiento",
+          disclosure: "Texto de consentimiento.",
+        }),
       ],
     });
 
@@ -299,6 +314,7 @@ describe("form registry", () => {
       ["phone", "phone"],
       ["autocomplete", "autocomplete"],
       ["interstitial", "interstitial"],
+      ["trusted_form_consent", "trusted_form_consent"],
     ]);
     expect(flow.steps[0]?.behavior.autoAdvance).toBe(true);
     expect(flow.steps[2]?.behavior.mask).toBe("us_phone");
@@ -311,6 +327,12 @@ describe("form registry", () => {
         { text: "Linea azul", color: "brand-navy" },
         { text: "Linea rosa", color: "accent" },
       ],
+    });
+    expect(flow.steps[5]).toMatchObject({
+      kind: "trusted_form_consent",
+      checkpointMode: "checkpoint_only",
+      acceptedAnswer: "accepted",
+      behavior: { trustedForm: "certify" },
     });
   });
 });
@@ -409,13 +431,19 @@ describe("submission validation", () => {
   });
 
   it("accepts formatted US phone numbers and normalizes them to E.164", () => {
-    const result = validateSubmission(form, { answers: validAnswers }, "2026-05-13T00:00:00.000Z");
+    const result = validateSubmission(
+      form,
+      { answers: validAnswers, trustedFormCertUrl },
+      "2026-05-13T00:00:00.000Z",
+    );
 
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.payload.answers.phone_number).toBe("+16155551234");
       expect(result.payload.areaCode).toBe("tn");
       expect(result.payload.formId).toBe("1011189481863371");
+      expect(result.payload.trustedFormCertUrl).toBe(trustedFormCertUrl);
+      expect(result.payload.answers.trustedform_consent).toBeUndefined();
     }
   });
 
@@ -426,12 +454,12 @@ describe("submission validation", () => {
     });
     const validNoPath = validateSubmission(
       form,
-      { answers: { ...validAnswers, belongs_to_state: "no", residence_state: "Texas" } },
+      { answers: { ...validAnswers, belongs_to_state: "no", residence_state: "Texas" }, trustedFormCertUrl },
       "2026-05-13T00:00:00.000Z",
     );
     const staleYesPath = validateSubmission(
       form,
-      { answers: { ...validAnswers, belongs_to_state: "yes", residence_state: "Not a state" } },
+      { answers: { ...validAnswers, belongs_to_state: "yes", residence_state: "Not a state" }, trustedFormCertUrl },
       "2026-05-13T00:00:00.000Z",
     );
 
@@ -459,6 +487,44 @@ describe("submission validation", () => {
     expect(staleYesPath.ok).toBe(true);
     if (staleYesPath.ok) {
       expect(staleYesPath.payload.answers.residence_state).toBeUndefined();
+    }
+  });
+
+  it("accepts TrustedForm certificate URLs as top-level submission metadata", () => {
+    const validResult = validateSubmission(
+      form,
+      { answers: validAnswers, trustedFormCertUrl },
+      "2026-05-13T00:00:00.000Z",
+    );
+    const invalidResult = validateSubmission(form, {
+      answers: validAnswers,
+      trustedFormCertUrl: "https://example.com/not-a-cert",
+    });
+
+    expect(validResult.ok).toBe(true);
+    if (validResult.ok) {
+      expect(validResult.payload.trustedFormCertUrl).toBe(trustedFormCertUrl);
+      expect(validResult.payload.answers.trustedform_consent).toBeUndefined();
+    }
+
+    expect(invalidResult.ok).toBe(false);
+    if (!invalidResult.ok) {
+      expect(invalidResult.errors).toContainEqual({
+        field: "trustedFormCertUrl",
+        message: "TrustedForm certificate URL is not valid.",
+      });
+    }
+  });
+
+  it("requires a TrustedForm certificate URL when the authored consent step disallows fallback submissions", () => {
+    const result = validateSubmission(form, { answers: validAnswers });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors).toContainEqual({
+        field: "trustedFormCertUrl",
+        message: "TrustedForm certificate URL is required.",
+      });
     }
   });
 });
@@ -652,7 +718,7 @@ describe("server routing", () => {
     expect(matchingHtml).toContain('"matching_offer":"completed"');
     expect((matchingHtml.match(/<p class="step-count" data-step-count/g) ?? []).length).toBe(1);
     expect(matchingHtml).toContain('<div class="progress-meta">');
-    expect(matchingHtml).toContain('<p class="step-count" data-step-count aria-hidden="true">Paso 5 de 8</p>');
+    expect(matchingHtml).toContain('<p class="step-count" data-step-count aria-hidden="true">Paso 5 de 9</p>');
     expect(matchingHtml).toContain('class="matching-benefit is-success is-visible"');
     expect(matchingHtml).toContain(
       '<span class="matching-success-line" data-color="brand-navy">Encontramos agentes listos para cotizarle.</span>',
@@ -676,7 +742,7 @@ describe("server routing", () => {
     expect(response.status).toBe(200);
     expect(html).toContain('"matching_offer":"completed"');
     expect((html.match(/<p class="step-count" data-step-count/g) ?? []).length).toBe(1);
-    expect(html).toContain('<p class="step-count" data-step-count aria-hidden="true">Paso 6 de 9</p>');
+    expect(html).toContain('<p class="step-count" data-step-count aria-hidden="true">Paso 6 de 10</p>');
   });
 
   it("allows contact steps after the matching checkpoint has been seen", async () => {
@@ -693,7 +759,25 @@ describe("server routing", () => {
     const html = await response.text();
     expect(html).toContain('data-step="7" data-step-kind="text" data-step-counted="true" aria-hidden="false"');
     expect((html.match(/<p class="step-count" data-step-count/g) ?? []).length).toBe(1);
-    expect(html).toContain('<p class="step-count" data-step-count>Paso 6 de 8</p>');
+    expect(html).toContain('<p class="step-count" data-step-count>Paso 6 de 9</p>');
+  });
+
+  it("guards the TrustedForm consent step until contact information is answered", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(
+      new Request("http://localhost/tn/custom/consentimiento", {
+        headers: {
+          Cookie: createCheckpointCookie({
+            ...seenMatchingAnswers,
+            first_name: "Ana",
+            last_name: "Lopez",
+          }),
+        },
+      }),
+    );
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe("/tn/custom/telefono");
   });
 
   it("redirects an already-seen matching step to the next contact step", async () => {
@@ -1002,6 +1086,32 @@ describe("server routing", () => {
     });
   });
 
+  it("routes completed phone answers to the TrustedForm consent step", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(
+      new Request("http://localhost/api/forms/tn/checkpoints", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: createCheckpointCookie({
+            ...seenMatchingAnswers,
+            first_name: "Ana",
+            last_name: "Lopez",
+          }),
+        },
+        body: JSON.stringify({ questionKey: "phone_number", answer: "(615) 555-1234" }),
+      }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      ok: true,
+      nextUrl: "/tn/consentimiento",
+      answers: preConsentAnswers,
+    });
+  });
+
   it("marks checkpoint cookies secure when served over HTTPS", async () => {
     const handler = createFetchHandler();
     const response = await handler(
@@ -1119,7 +1229,7 @@ describe("server routing", () => {
       new Request("http://localhost/api/forms/tn/submissions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ answers: { ...validAnswers, matching_offer: "seen" } }),
+        body: JSON.stringify({ answers: { ...validAnswers, matching_offer: "seen" }, trustedFormCertUrl }),
       }),
     );
 
@@ -1129,8 +1239,10 @@ describe("server routing", () => {
       areaCode: "tn",
       formId: "1011189481863371",
       pageName: "Seguros Aseguranza",
+      trustedFormCertUrl,
     });
     expect((loggedPayloads[0] as { answers?: Record<string, string> }).answers?.matching_offer).toBeUndefined();
+    expect((loggedPayloads[0] as { answers?: Record<string, string> }).answers?.trustedform_consent).toBeUndefined();
   });
 
   it("clears the checkpoint cookie after a successful final submission", async () => {
@@ -1142,7 +1254,7 @@ describe("server routing", () => {
           "Content-Type": "application/json",
           Cookie: createCheckpointCookie({ belongs_to_state: "yes" }),
         },
-        body: JSON.stringify({ answers: validAnswers }),
+        body: JSON.stringify({ answers: validAnswers, trustedFormCertUrl }),
       }),
     );
     const setCookie = response.headers.get("Set-Cookie") ?? "";
@@ -1432,6 +1544,43 @@ describe("form rendering", () => {
     expect(html).toContain('autocomplete="tel"');
     expect(html).not.toContain("maxlength=");
     expect(html).not.toContain("pattern=");
+  });
+
+  it("renders TrustedForm consent as an authored final step", async () => {
+    const phoneHtml = await renderFormPage(getRequiredTennesseeForm(), {
+      activeStepIndex: 9,
+      answers: { ...seenMatchingAnswers, first_name: "Ana", last_name: "Lopez" },
+    });
+    const html = await renderFormPage(getRequiredTennesseeForm(), {
+      activeStepIndex: 10,
+      answers: preConsentAnswers,
+    });
+
+    expect(phoneHtml).toContain('"trustedFormPreload"');
+    expect(phoneHtml).toContain('"fieldName":"xxTrustedFormCertUrl"');
+    expect(html).toContain('"kind":"trusted_form_consent"');
+    expect(html).toContain('"slug":"consentimiento"');
+    expect(html).toContain('"submitLabel":"Enviar"');
+    expect(html).toContain('"trustedForm":{"fieldName":"xxTrustedFormCertUrl"');
+    expect(html).toContain('"allowSubmitWithoutCert":false');
+    expect(html).toContain('data-step="10" data-step-kind="trusted_form_consent"');
+    expect(html).toContain('data-tf-element-role="consent-language"');
+    expect(html).toContain('data-tf-element-role="consent-opt-in"');
+    expect(html).toContain('data-tf-element-role="consent-grantor-name"');
+    expect(html).toContain('data-tf-element-role="consent-grantor-phone"');
+    expect(html).toContain("Ana Lopez");
+    expect(html).toContain("(615) 555-1234");
+    expect(html).toContain("function loadTrustedFormSdk(trustedForm)");
+    expect(html).toContain("function preloadTrustedFormSdk(trustedForm)");
+    expect(html).toContain("function ensureTrustedFormReady(trustedForm)");
+    expect(html).toContain("function waitForTrustedFormCertUrl(trustedForm)");
+    expect(html).toContain("function getTrustedFormCertUrl(trustedForm = config.currentStep.trustedForm)");
+    expect(html).toContain('nextButton.textContent = "Preparando..."');
+    expect(html).toContain("No pudimos preparar el certificado de consentimiento");
+    expect(html).toContain("trustedFormCertUrl");
+    expect(html).toContain('nextButton.setAttribute("data-tf-element-role", "submit")');
+    expect(html).toContain('form.setAttribute("data-tf-element-role", "offer")');
+    expect(html).toContain("https://api.trustedform.com/trustedform.js");
   });
 
   it("renders a lightweight error modal instead of inline form errors", async () => {

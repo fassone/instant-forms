@@ -105,7 +105,7 @@ Unavailable public routes use author-controlled title, message, CTA, and status 
 
 ## Form Flow
 
-The Tennessee flow lives in `src/authoring/flows/tn/flow.ts` and is built with the typed DSL in `src/platform/flow/dsl/`. Public route placement lives in `src/authoring/routes/registry.ts`, where `/tn/custom` is mapped to the Tennessee flow and `/tn` is a small route group. Supported step kinds are `choice`, `text`, `phone`, `autocomplete`, and `interstitial`.
+The Tennessee flow lives in `src/authoring/flows/tn/flow.ts` and is built with the typed DSL in `src/platform/flow/dsl/`. Public route placement lives in `src/authoring/routes/registry.ts`, where `/tn/custom` is mapped to the Tennessee flow and `/tn` is a small route group. Supported step kinds are `choice`, `text`, `phone`, `autocomplete`, `interstitial`, and `trusted_form_consent`.
 
 Current visible order:
 
@@ -119,8 +119,11 @@ Current visible order:
 8. `first_name`
 9. `last_name`
 10. `phone_number`
+11. `trustedform_consent`
 
 The `matching_offer` step is routed and checkpointed, but not counted in `Paso X de Y`. Its success copy uses separate colored lines so each phrase can use a distinct brand color.
+
+The `trustedform_consent` step is authored like any other flow step. It renders the consent disclosure, opt-in checkbox, TrustedForm consent tags, and loads the TrustedForm Certify SDK only on that step. The previous step can preconnect/preload the SDK after the page settles.
 
 ## Checkpoints
 
@@ -134,6 +137,7 @@ The client posts:
 
 ```json
 {
+  "trustedFormCertUrl": "https://cert.trustedform.com/454a35b802f3e7b63ffabb4efedb7c6ebe67886c",
   "answers": {
     "belongs_to_state": "yes",
     "has_license": "yes",
@@ -147,7 +151,7 @@ The client posts:
 }
 ```
 
-Valid submissions are logged with `areaCode`, form/page metadata, `submittedAt`, and normalized answers. `matching_offer` is checkpoint-only and omitted from final payloads.
+Valid submissions are logged with `areaCode`, form/page metadata, `submittedAt`, the top-level `trustedFormCertUrl`, and normalized answers. The Tennessee flow waits for TrustedForm to populate the certificate field before submitting. `matching_offer` and `trustedform_consent` are checkpoint-only and omitted from final `answers`.
 
 ## Contributor Guidance
 
