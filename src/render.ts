@@ -1021,6 +1021,17 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
           return input ? input.value.trim() : "";
         }
 
+        function focusCurrentTextInput() {
+          const input = steps[currentStep].querySelector(".text-input");
+          if (!(input instanceof HTMLInputElement)) {
+            return;
+          }
+
+          window.setTimeout(() => {
+            input.focus({ preventScroll: true });
+          }, 0);
+        }
+
         function validateCurrentStep() {
           const question = getQuestion();
           const answer = getCurrentAnswer();
@@ -1031,6 +1042,9 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
 
           if (!answer) {
             error.textContent = "Esta respuesta es requerida.";
+            if (question.kind !== "choice") {
+              focusCurrentTextInput();
+            }
             return false;
           }
 
@@ -1039,6 +1053,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
 
             if (!normalizedState) {
               error.textContent = "Ingrese un estado válido de Estados Unidos.";
+              focusCurrentTextInput();
               return false;
             }
 
@@ -1052,6 +1067,7 @@ export function renderFormPage(form: InstantForm, options: RenderFormPageOptions
 
             if (!normalizedPhone) {
               error.textContent = "Ingrese un número de teléfono válido de Estados Unidos.";
+              focusCurrentTextInput();
               return false;
             }
 

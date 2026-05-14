@@ -1048,6 +1048,8 @@ describe("form rendering", () => {
     expect(html).toContain('window.matchMedia("(max-width: 560px)").matches');
     expect(html).toContain("function shouldSubmitTextInputOnMobileBlur(event)");
     expect(html).toContain("function shouldSubmitTextInputOnMobileOutsidePointer(event)");
+    expect(html).toContain("function focusCurrentTextInput()");
+    expect(html).toContain("input.focus({ preventScroll: true });");
     expect(html).toContain("let focusedTextInput");
     expect(html).toContain('form.addEventListener("focusin"');
     expect(html).toContain('form.addEventListener("focusout"');
