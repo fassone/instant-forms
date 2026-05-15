@@ -9,6 +9,7 @@
 - Area-specific form definitions.
 - Area-to-flow registration.
 - Public route-folder placement for authored flows.
+- Selected third-party script registrations that are safe to proxy.
 - Market copy, slugs, order, and authored conditional flow choices.
 
 ## Does Not Belong Here

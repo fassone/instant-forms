@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { Hono } from "hono";
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { selectedScripts } from "../../src/authoring/scripts/registry";
 import { formRoutes } from "../../src/authoring/routes/registry";
 import { createFetchHandler } from "../../src/platform/app/server";
 import { autocompleteSource, defineFormFlow, getFormByAreaCode, getStepSlug, isCountedStep, step } from "../../src/platform/flow";
@@ -9,6 +10,7 @@ import { encodeCheckpointAnswers, getCheckpointCookieName } from "../../src/plat
 import { FORM_CONFIG_PLACEHOLDER_EXPRESSION, buildTransitionAsset, renderFormPage } from "../../src/platform/rendering";
 import { buildInlineCss, getInlineAssetMode } from "../../src/platform/rendering/inline-assets";
 import { defineFormRoutes, redirectTo, registerFormRoutePages, unavailable } from "../../src/platform/routing";
+import { buildScriptProxyUpstreamUrl } from "../../src/platform/scripts";
 import { createStateAutocompleteItems, rankAutocompleteItems } from "../../src/platform/steps/autocomplete/ranking";
 import { normalizeUsPhoneNumber } from "../../src/platform/steps/phone/us-phone";
 import { validateSubmission } from "../../src/platform/submissions/validation";
@@ -333,6 +335,10 @@ describe("form registry", () => {
       checkpointMode: "checkpoint_only",
       acceptedAnswer: "accepted",
       behavior: { trustedForm: "certify" },
+      trustedForm: {
+        delivery: "main_thread",
+        scriptBaseUrl: "https://api.trustedform.com/trustedform.js",
+      },
     });
   });
 });
@@ -345,6 +351,7 @@ describe("repository structure", () => {
     "src/authoring/flows/README.md",
     "src/authoring/flows/tn/README.md",
     "src/authoring/routes/README.md",
+    "src/authoring/scripts/README.md",
     "src/platform/README.md",
     "src/platform/app/README.md",
     "src/platform/app/http/README.md",
@@ -356,6 +363,7 @@ describe("repository structure", () => {
     "src/platform/rendering/client/README.md",
     "src/platform/rendering/templates/README.md",
     "src/platform/routing/README.md",
+    "src/platform/scripts/README.md",
     "src/platform/steps/README.md",
     "src/platform/steps/adapters/README.md",
     "src/platform/steps/autocomplete/README.md",
@@ -594,6 +602,58 @@ describe("US phone normalization", () => {
       expect(normalizeUsPhoneNumber(input)).toBeUndefined();
     },
   );
+});
+
+describe("selected script proxy", () => {
+  it("registers TrustedForm Certify as an allowlisted selected script", () => {
+    const trustedFormScript = selectedScripts.tfc;
+    if (!trustedFormScript) {
+      throw new Error("Expected selectedScripts.tfc to be registered.");
+    }
+
+    expect(trustedFormScript.key).toBe("tfc");
+    expect(trustedFormScript.upstreamUrl).toBe("https://api.trustedform.com/trustedform.js");
+    expect(trustedFormScript.allowedQueryParams).toContain("field");
+    expect(trustedFormScript.queryAliases).toMatchObject({
+      f: "field",
+      t: "use_tagged_consent",
+      s: "sandbox",
+    });
+  });
+
+  it("translates safe selected-script query aliases", () => {
+    const trustedFormScript = selectedScripts.tfc;
+    if (!trustedFormScript) {
+      throw new Error("Expected selectedScripts.tfc to be registered.");
+    }
+    const result = buildScriptProxyUpstreamUrl(
+      trustedFormScript,
+      new URL("http://localhost/_instant/scripts/tfc.js?f=xxTrustedFormCertUrl&t=true&s=true"),
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.url.toString()).toBe(
+        "https://api.trustedform.com/trustedform.js?field=xxTrustedFormCertUrl&use_tagged_consent=true&sandbox=true",
+      );
+    }
+  });
+
+  it("rejects selected-script query parameters that are not allowlisted", () => {
+    const trustedFormScript = selectedScripts.tfc;
+    if (!trustedFormScript) {
+      throw new Error("Expected selectedScripts.tfc to be registered.");
+    }
+    const result = buildScriptProxyUpstreamUrl(
+      trustedFormScript,
+      new URL("http://localhost/_instant/scripts/tfc.js?f=xxTrustedFormCertUrl&url=https://example.com/x.js"),
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: 400,
+    });
+  });
 });
 
 describe("server routing", () => {
@@ -914,6 +974,66 @@ describe("server routing", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("Content-Type")).toBe("image/webp");
     expect(response.headers.get("Cache-Control")).toBe("public, max-age=31536000, immutable");
+  });
+
+  it("proxies selected scripts without forwarding visitor cookies", async () => {
+    const handler = createFetchHandler();
+    const originalFetch = globalThis.fetch;
+    let fetchedUrl = "";
+    let fetchedHeaders: Headers | undefined;
+
+    globalThis.fetch = ((input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+      fetchedUrl = input instanceof Request ? input.url : String(input);
+      fetchedHeaders = new Headers(init?.headers);
+
+      return Promise.resolve(
+        new Response("window.__trustedFormProxyLoaded = true;", {
+          headers: { "Content-Type": "application/javascript" },
+        }),
+      );
+    }) as typeof fetch;
+
+    try {
+      const response = await handler(
+        new Request("http://localhost/_instant/scripts/tfc.js?f=xxTrustedFormCertUrl&t=true", {
+          headers: {
+            Cookie: "private=value",
+          },
+        }),
+      );
+      const body = await response.text();
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("Content-Type")).toBe("application/javascript; charset=utf-8");
+      expect(response.headers.get("Cache-Control")).toContain("max-age=300");
+      expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
+      expect(body).toContain("__trustedFormProxyLoaded");
+      expect(fetchedUrl).toBe(
+        "https://api.trustedform.com/trustedform.js?field=xxTrustedFormCertUrl&use_tagged_consent=true",
+      );
+      expect(fetchedHeaders?.get("Cookie")).toBeNull();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("rejects unknown or unsafe selected script proxy requests", async () => {
+    const handler = createFetchHandler();
+
+    const unknownResponse = await handler(new Request("http://localhost/_instant/scripts/not-real.js"));
+    const unsafeQueryResponse = await handler(new Request("http://localhost/_instant/scripts/tfc.js?source=https://evil.test/x.js"));
+
+    expect(unknownResponse.status).toBe(404);
+    expect(unsafeQueryResponse.status).toBe(400);
+  });
+
+  it("serves Partytown runtime assets", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(new Request("http://localhost/~partytown/partytown.js"));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toBe("application/javascript; charset=utf-8");
+    expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
   });
 
   it("serves a no-store matching preview route without the full form flow", async () => {
@@ -1622,6 +1742,11 @@ describe("form rendering", () => {
     expect(html).toContain('"slug":"consentimiento"');
     expect(html).toContain('"submitLabel":"Enviar"');
     expect(html).toContain('"trustedForm":{"fieldName":"xxTrustedFormCertUrl"');
+    expect(html).toContain('"delivery":"partytown"');
+    expect(html).toContain('"scriptProxyKey":"tfc"');
+    expect(html).toContain('"scriptBaseUrl":"/_instant/scripts/tfc.js"');
+    expect(html).toContain('"partytownLib":"/~partytown/"');
+    expect(html).toContain('"partytownScriptUrl":"/~partytown/partytown.js"');
     expect(html).toContain('"allowSubmitWithoutCert":false');
     expect(html).toContain('data-step="10" data-step-kind="trusted_form_consent"');
     expect(html).toContain('data-tf-element-role="consent-language"');
@@ -1631,6 +1756,10 @@ describe("form rendering", () => {
     expect(html).toContain("Ana Lopez");
     expect(html).toContain("(615) 555-1234");
     expect(html).toContain("function loadTrustedFormSdk(trustedForm)");
+    expect(html).toContain("function loadTrustedFormSdkWithPartytown(trustedForm, sdkUrl)");
+    expect(html).toContain("function ensurePartytownReady(trustedForm)");
+    expect(html).toContain('script.type = "text/partytown"');
+    expect(html).toContain('window.dispatchEvent(new CustomEvent("ptupdate"))');
     expect(html).not.toContain("function preloadTrustedFormSdk(trustedForm)");
     expect(html).toContain("function ensureTrustedFormReady(trustedForm)");
     expect(html).toContain("function waitForTrustedFormCertUrl(trustedForm)");
@@ -1640,7 +1769,8 @@ describe("form rendering", () => {
     expect(html).toContain("trustedFormCertUrl");
     expect(html).toContain('document.getElementById("next-button")?.setAttribute("data-tf-element-role", "submit")');
     expect(html).toContain('ctx.form.setAttribute("data-tf-element-role", "offer")');
-    expect(html).toContain("https://api.trustedform.com/trustedform.js");
+    expect(html).toContain("/_instant/scripts/tfc.js");
+    expect(html).not.toContain("https://api.trustedform.com/trustedform.js");
   });
 
   it("renders a lightweight error modal instead of inline form errors", async () => {

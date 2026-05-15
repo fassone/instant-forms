@@ -8,6 +8,8 @@
 
 - Static asset routes.
 - Built production transition-bundle routes under `/_instant/forms/...`.
+- Allowlisted selected-script proxy routes under `/_instant/scripts/...`.
+- Partytown static runtime files under `/~partytown/...`.
 - Checkpoint and submission API routes.
 - Request body parsing at API boundaries.
 - Wiring between HTTP helpers and domain modules.

@@ -102,7 +102,11 @@ export type InterstitialStep = BaseStep & {
 
 export type TrustedFormConsentConfig = {
   fieldName: string;
+  delivery: "main_thread" | "partytown";
+  scriptProxyKey?: string;
   scriptBaseUrl: string;
+  partytownLib: string;
+  partytownScriptUrl: string;
   useTaggedConsent: boolean;
   sandbox: boolean;
   preloadOnPreviousStep: boolean;

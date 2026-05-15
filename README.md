@@ -98,6 +98,8 @@ Every source and test folder has its own `README.md` describing ownership and sa
 | `GET /tn/custom/:stepSlug` | Renders a guarded routed step, for example `/tn/custom/vive-en-tennessee`. |
 | `GET /tn/*` | Redirects unknown Tennessee group paths back to `/tn/custom`. |
 | `GET /__preview/tn/custom/:stepSlug` | No-store preview mirror for public form step visual iteration. |
+| `GET /_instant/scripts/:scriptKey.js` | Allowlisted first-party proxy for selected third-party scripts. |
+| `GET /~partytown/*` | Partytown runtime files used by proxied worker-delivered scripts. |
 | `POST /api/forms/:areaCode/checkpoints` | Validates one answer, writes the checkpoint cookie, and returns the next URL. |
 | `POST /api/forms/:areaCode/submissions` | Validates and logs completed submissions. |
 
@@ -123,7 +125,11 @@ Current visible order:
 
 The `matching_offer` step is routed and checkpointed, but not counted in `Paso X de Y`. Its success copy uses separate colored lines so each phrase can use a distinct brand color.
 
-The `trustedform_consent` step is authored like any other flow step. It renders the consent disclosure, opt-in checkbox, TrustedForm consent tags, and loads the TrustedForm Certify SDK only when that step is mounted. Transition assets may register the TrustedForm behavior module ahead of time, but they must not request or execute the external SDK until the visitor reaches the consent step.
+The `trustedform_consent` step is authored like any other flow step. It renders the consent disclosure, opt-in checkbox, TrustedForm consent tags, and loads the TrustedForm Certify SDK only when that step is mounted. Tennessee uses the selected-script proxy at `/_instant/scripts/tfc.js` and Partytown delivery so browsers request the SDK through the first-party domain. Transition assets may register the TrustedForm behavior module ahead of time, but they must not initialize Partytown or request the SDK until the visitor reaches the consent step.
+
+## Selected Scripts
+
+Selected third-party scripts are declared in `src/authoring/scripts/registry.ts` and served by an allowlisted proxy. The first entry is `tfc`, which maps short public query aliases (`f`, `t`, `s`) to the TrustedForm SDK parameters (`field`, `use_tagged_consent`, `sandbox`). The proxy does not accept arbitrary URLs or forward visitor cookies.
 
 ## Checkpoints
 

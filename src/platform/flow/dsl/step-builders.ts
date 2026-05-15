@@ -99,7 +99,15 @@ export const step = {
       validationMessage: input.validationMessage ?? "Debe aceptar el consentimiento para enviar la solicitud.",
       trustedForm: {
         fieldName: input.trustedForm?.fieldName ?? "xxTrustedFormCertUrl",
-        scriptBaseUrl: input.trustedForm?.scriptBaseUrl ?? "https://api.trustedform.com/trustedform.js",
+        delivery: input.trustedForm?.delivery ?? "main_thread",
+        scriptProxyKey: input.trustedForm?.scriptProxyKey,
+        scriptBaseUrl:
+          input.trustedForm?.scriptBaseUrl ??
+          (input.trustedForm?.delivery === "partytown" && input.trustedForm?.scriptProxyKey
+            ? `/_instant/scripts/${input.trustedForm.scriptProxyKey}.js`
+            : "https://api.trustedform.com/trustedform.js"),
+        partytownLib: input.trustedForm?.partytownLib ?? "/~partytown/",
+        partytownScriptUrl: input.trustedForm?.partytownScriptUrl ?? "/~partytown/partytown.js",
         useTaggedConsent: input.trustedForm?.useTaggedConsent ?? true,
         sandbox: input.trustedForm?.sandbox ?? false,
         preloadOnPreviousStep: input.trustedForm?.preloadOnPreviousStep ?? true,

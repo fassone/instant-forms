@@ -1,4 +1,5 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
+import { copyLibFiles } from "@qwik.dev/partytown/utils";
 import path from "node:path";
 
 import { formRoutes } from "../src/authoring/routes/registry";
@@ -17,6 +18,7 @@ import {
   renderFormPage,
   renderUnavailablePage,
 } from "../src/platform/rendering";
+import { getPartytownLibDistPath } from "../src/platform/scripts";
 import { getInlineAssetMode } from "../src/platform/rendering/inline-assets";
 
 type BuiltPageRecord = {
@@ -33,6 +35,8 @@ await rm(path.join(process.cwd(), DIST_FORMS_ROOT), { recursive: true, force: tr
 
 const builtPages: BuiltPageRecord[] = [];
 const builtTransitionAssets: Record<string, string> = {};
+
+await copyLibFiles(getPartytownLibDistPath());
 
 for (const entry of getFormRouteBuildEntries(formRoutes)) {
   const stepUrlOverrides = createStepUrlOverrides(entry.routeSegments, entry.form);
@@ -81,6 +85,7 @@ console.log(
     `Inline asset mode: ${getInlineAssetMode()}`,
     `Built form pages: ${builtPages.length}`,
     `Built transition assets: ${Object.keys(builtTransitionAssets).length}`,
+    `Built Partytown assets: ${path.relative(process.cwd(), getPartytownLibDistPath())}`,
     `Built unavailable page: ${path.relative(process.cwd(), unavailablePath)}`,
     `Output: ${DIST_FORMS_ROOT}`,
     `Total HTML: ${totalBytes} bytes`,

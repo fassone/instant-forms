@@ -210,22 +210,24 @@ test.describe("instant routed form UI", () => {
   });
 
   test("TrustedForm script preload does not execute before the consent step", async ({ page }) => {
-    let trustedFormRequests = 0;
-    await page.route("https://api.trustedform.com/trustedform.js**", async (route) => {
-      trustedFormRequests += 1;
+    let partytownRequests = 0;
+    let trustedFormProxyRequests = 0;
+    let trustedFormDirectRequests = 0;
+    await mockPartytownRuntime(page, () => {
+      partytownRequests += 1;
+    });
+    await page.route("**/_instant/scripts/tfc.js**", async (route) => {
+      trustedFormProxyRequests += 1;
       await route.fulfill({
         contentType: "application/javascript",
-        body: `
-          window.__TRUSTED_FORM_SCRIPT_EXECUTED__ = true;
-          var form = document.querySelector('[data-tf-element-role="offer"]') || document.querySelector("form");
-          if (form && !form.querySelector('[name="xxTrustedFormCertUrl"]')) {
-            var input = document.createElement("input");
-            input.type = "hidden";
-            input.name = "xxTrustedFormCertUrl";
-            input.value = "${trustedFormCertUrl}";
-            form.appendChild(input);
-          }
-        `,
+        body: getMockTrustedFormScript(25),
+      });
+    });
+    await page.route("https://api.trustedform.com/trustedform.js**", async (route) => {
+      trustedFormDirectRequests += 1;
+      await route.fulfill({
+        contentType: "application/javascript",
+        body: getMockTrustedFormScript(25),
       });
     });
     await seedCheckpoint(page, {
@@ -241,7 +243,9 @@ test.describe("instant routed form UI", () => {
         page.evaluate("Boolean(window.__TRUSTED_FORM_SCRIPT_EXECUTED__)"),
       )
       .toBe(false);
-    expect(trustedFormRequests).toBe(0);
+    expect(partytownRequests).toBe(0);
+    expect(trustedFormProxyRequests).toBe(0);
+    expect(trustedFormDirectRequests).toBe(0);
 
     const phoneInput = activeStep(page).getByPlaceholder("Escriba su telefono aquí");
     await phoneInput.fill("+1 (615) 555-1234");
@@ -252,7 +256,9 @@ test.describe("instant routed form UI", () => {
     }
 
     await expect(page).toHaveURL(/\/tn\/custom\/consentimiento$/u);
-    await expect.poll(() => trustedFormRequests).toBeGreaterThan(0);
+    await expect.poll(() => partytownRequests).toBeGreaterThan(0);
+    await expect.poll(() => trustedFormProxyRequests).toBeGreaterThan(0);
+    expect(trustedFormDirectRequests).toBe(0);
     await expect
       .poll(() =>
         page.evaluate("Boolean(window.__TRUSTED_FORM_SCRIPT_EXECUTED__)"),
@@ -261,7 +267,8 @@ test.describe("instant routed form UI", () => {
   });
 
   test("TrustedForm script failure shows an error instead of submitting null", async ({ page }) => {
-    await page.route("https://api.trustedform.com/trustedform.js**", async (route) => {
+    await mockPartytownRuntime(page);
+    await page.route("**/_instant/scripts/tfc.js**", async (route) => {
       await route.abort();
     });
     await seedCheckpoint(page, {
@@ -272,7 +279,7 @@ test.describe("instant routed form UI", () => {
     });
     await page.goto("/tn/custom/consentimiento");
 
-    await expect(page.getByRole("alertdialog")).toBeVisible();
+    await expect(page.getByRole("alertdialog")).toBeVisible({ timeout: 7000 });
     await expect(page.getByText("No pudimos preparar el certificado de consentimiento.")).toBeVisible();
   });
 
@@ -337,22 +344,59 @@ async function seedCheckpoint(page: Page, answers: Record<string, string>): Prom
 
 async function mockTrustedFormCertify(page: Page, options: { delayMs?: number } = {}): Promise<void> {
   const delayMs = options.delayMs ?? 25;
-  await page.route("https://api.trustedform.com/trustedform.js**", async (route) => {
+  await mockPartytownRuntime(page);
+  await page.route("**/_instant/scripts/tfc.js**", async (route) => {
+    await route.fulfill({
+      contentType: "application/javascript",
+      body: getMockTrustedFormScript(delayMs),
+    });
+  });
+}
+
+async function mockPartytownRuntime(page: Page, onRequest: () => void = () => undefined): Promise<void> {
+  await page.route("**/~partytown/partytown.js", async (route) => {
+    onRequest();
     await route.fulfill({
       contentType: "application/javascript",
       body: `
-        window.setTimeout(function () {
-          var form = document.querySelector('[data-tf-element-role="offer"]') || document.querySelector("form");
-          if (!form || form.querySelector('[name="xxTrustedFormCertUrl"]')) {
-            return;
+        (function () {
+          function executePartytownScripts() {
+            document.querySelectorAll('script[type="text/partytown"]').forEach(function (script) {
+              if (script.dataset.partytownExecuted === "true") {
+                return;
+              }
+              script.dataset.partytownExecuted = "true";
+              var executable = document.createElement("script");
+              executable.async = true;
+              if (script.src) {
+                executable.src = script.src;
+              } else {
+                executable.textContent = script.textContent;
+              }
+              document.body.appendChild(executable);
+            });
           }
-          var input = document.createElement("input");
-          input.type = "hidden";
-          input.name = "xxTrustedFormCertUrl";
-          input.value = "${trustedFormCertUrl}";
-          form.appendChild(input);
-        }, ${delayMs});
+          window.addEventListener("ptupdate", executePartytownScripts);
+          window.setTimeout(executePartytownScripts, 0);
+        })();
       `,
     });
   });
+}
+
+function getMockTrustedFormScript(delayMs: number): string {
+  return `
+    window.__TRUSTED_FORM_SCRIPT_EXECUTED__ = true;
+    window.setTimeout(function () {
+      var form = document.querySelector('[data-tf-element-role="offer"]') || document.querySelector("form");
+      if (!form || form.querySelector('[name="xxTrustedFormCertUrl"]')) {
+        return;
+      }
+      var input = document.createElement("input");
+      input.type = "hidden";
+      input.name = "xxTrustedFormCertUrl";
+      input.value = "${trustedFormCertUrl}";
+      form.appendChild(input);
+    }, ${delayMs});
+  `;
 }

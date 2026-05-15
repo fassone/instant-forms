@@ -10,6 +10,7 @@
 - Route modules.
 - App-layer HTTP helper usage.
 - Registration of the compiled public form route tree.
+- Registration of selected-script proxy and Partytown asset routes.
 
 ## Does Not Belong Here
 

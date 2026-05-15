@@ -1725,6 +1725,8 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
     let trustedFormReadyPromise;
     let trustedFormReadyFieldName;
     let trustedFormReadinessRunId = 0;
+    let partytownLoadPromise;
+    let partytownLoaded = false;
 
     function getAnswer(_ctx, question, step) {
       const checked = step.querySelector("[data-trusted-form-consent]:checked");
@@ -1852,6 +1854,13 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
       if (!trustedForm || trustedFormSdkLoaded) return Promise.resolve();
       const sdkUrl = buildTrustedFormSdkUrl(trustedForm);
       if (!sdkUrl) return Promise.reject(new Error(trustedFormReadyErrorMessage));
+      if (trustedForm.delivery === "partytown") {
+        trustedFormSdkLoadPromise = loadTrustedFormSdkWithPartytown(trustedForm, sdkUrl).catch((trustedFormError) => {
+          trustedFormSdkLoadPromise = undefined;
+          throw trustedFormError;
+        });
+        return trustedFormSdkLoadPromise;
+      }
       const script = document.createElement("script");
       script.async = true;
       script.src = sdkUrl;
@@ -1871,12 +1880,65 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
       return trustedFormSdkLoadPromise;
     }
 
+    async function loadTrustedFormSdkWithPartytown(trustedForm, sdkUrl) {
+      await ensurePartytownReady(trustedForm);
+      if (hasTrustedFormSdkScript(sdkUrl)) {
+        trustedFormSdkLoaded = true;
+        return;
+      }
+      const script = document.createElement("script");
+      script.type = "text/partytown";
+      script.src = sdkUrl;
+      script.dataset.trustedFormSdk = "true";
+      document.body.appendChild(script);
+      trustedFormSdkLoaded = true;
+      window.dispatchEvent(new CustomEvent("ptupdate"));
+    }
+
+    function hasTrustedFormSdkScript(sdkUrl) {
+      return Array.from(document.querySelectorAll('script[data-trusted-form-sdk="true"]')).some((script) => script.src === sdkUrl);
+    }
+
+    function ensurePartytownReady(trustedForm) {
+      if (partytownLoaded) return Promise.resolve();
+      if (partytownLoadPromise) return partytownLoadPromise;
+      window.partytown = {
+        ...(window.partytown || {}),
+        lib: trustedForm.partytownLib || "/~partytown/",
+      };
+      const existingRuntime = document.querySelector('script[data-partytown-runtime="true"]');
+      if (existingRuntime) {
+        partytownLoaded = true;
+        return Promise.resolve();
+      }
+      const runtime = document.createElement("script");
+      runtime.src = trustedForm.partytownScriptUrl || "/~partytown/partytown.js";
+      runtime.async = false;
+      runtime.dataset.partytownRuntime = "true";
+      partytownLoadPromise = new Promise((resolve, reject) => {
+        runtime.addEventListener("load", () => {
+          partytownLoaded = true;
+          resolve();
+        }, { once: true });
+        runtime.addEventListener("error", () => {
+          partytownLoadPromise = undefined;
+          runtime.remove();
+          reject(new Error(trustedFormReadyErrorMessage));
+        }, { once: true });
+      });
+      document.head.appendChild(runtime);
+      return partytownLoadPromise;
+    }
+
     function buildTrustedFormSdkUrl(trustedForm) {
       if (!trustedForm.scriptBaseUrl) return undefined;
       const url = new URL(trustedForm.scriptBaseUrl, window.location.href);
-      if (trustedForm.fieldName && !url.searchParams.has("field")) url.searchParams.set("field", trustedForm.fieldName);
-      if (trustedForm.useTaggedConsent && !url.searchParams.has("use_tagged_consent")) url.searchParams.set("use_tagged_consent", "true");
-      if (trustedForm.sandbox && !url.searchParams.has("sandbox")) url.searchParams.set("sandbox", "true");
+      const fieldParam = trustedForm.scriptProxyKey ? "f" : "field";
+      const taggedConsentParam = trustedForm.scriptProxyKey ? "t" : "use_tagged_consent";
+      const sandboxParam = trustedForm.scriptProxyKey ? "s" : "sandbox";
+      if (trustedForm.fieldName && !url.searchParams.has(fieldParam)) url.searchParams.set(fieldParam, trustedForm.fieldName);
+      if (trustedForm.useTaggedConsent && !url.searchParams.has(taggedConsentParam)) url.searchParams.set(taggedConsentParam, "true");
+      if (trustedForm.sandbox && !url.searchParams.has(sandboxParam)) url.searchParams.set(sandboxParam, "true");
       return url.toString();
     }
 
