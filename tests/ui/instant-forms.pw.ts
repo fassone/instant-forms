@@ -33,6 +33,36 @@ test.describe("instant routed form UI", () => {
     await expect(page).toHaveURL(/\/tn\/custom\/tiene-licencia$/u);
   });
 
+  test("production transition bundle swaps steps without a document navigation", async ({ page }) => {
+    await page.goto("/tn/custom/vive-en-tennessee");
+    const transitionBundleUrl = await page.evaluate(
+      "String(window.__FORM_CONFIG__?.transitionBundleUrl ?? '')",
+    );
+
+    if (!transitionBundleUrl) {
+      return;
+    }
+
+    await page.waitForFunction(
+      (bundleUrl) =>
+        performance
+          .getEntriesByType("resource")
+          .some((entry) => entry.name.includes(String(bundleUrl))),
+      transitionBundleUrl,
+    );
+
+    const documentRequests: string[] = [];
+    page.on("request", (request) => {
+      if (request.resourceType() === "document") {
+        documentRequests.push(request.url());
+      }
+    });
+
+    await clickActiveOption(page, "Si");
+    await expect(page).toHaveURL(/\/tn\/custom\/tiene-licencia$/u);
+    expect(documentRequests.filter((url) => url.includes("/tn/custom/tiene-licencia"))).toHaveLength(0);
+  });
+
   test("error modal appears without inline layout errors", async ({ page }) => {
     await page.goto("/tn/custom/vive-en-tennessee");
     await page.getByRole("button", { name: "Siguiente" }).click();
@@ -126,6 +156,57 @@ test.describe("instant routed form UI", () => {
 
     await expect(page.getByRole("button", { name: "Preparando..." })).toBeDisabled();
     await expect(page.getByRole("button", { name: "Enviar" })).toBeEnabled();
+  });
+
+  test("TrustedForm script preload does not execute before the consent step", async ({ page }) => {
+    let trustedFormRequests = 0;
+    await page.route("https://api.trustedform.com/trustedform.js**", async (route) => {
+      trustedFormRequests += 1;
+      await route.fulfill({
+        contentType: "application/javascript",
+        body: `
+          window.__TRUSTED_FORM_SCRIPT_EXECUTED__ = true;
+          var form = document.querySelector('[data-tf-element-role="offer"]') || document.querySelector("form");
+          if (form && !form.querySelector('[name="xxTrustedFormCertUrl"]')) {
+            var input = document.createElement("input");
+            input.type = "hidden";
+            input.name = "xxTrustedFormCertUrl";
+            input.value = "${trustedFormCertUrl}";
+            form.appendChild(input);
+          }
+        `,
+      });
+    });
+    await seedCheckpoint(page, {
+      ...seenMatchingAnswers,
+      first_name: "Ana",
+      last_name: "Lopez",
+    });
+    await page.goto("/tn/custom/telefono");
+    await page.waitForTimeout(300);
+
+    await expect
+      .poll(() =>
+        page.evaluate("Boolean(window.__TRUSTED_FORM_SCRIPT_EXECUTED__)"),
+      )
+      .toBe(false);
+    expect(trustedFormRequests).toBe(0);
+
+    const phoneInput = activeStep(page).getByPlaceholder("Escriba su telefono aquí");
+    await phoneInput.fill("+1 (615) 555-1234");
+    if (await page.evaluate("window.matchMedia('(max-width: 560px)').matches")) {
+      await phoneInput.evaluate((input) => input.blur());
+    } else {
+      await page.getByRole("button", { name: "Siguiente" }).click();
+    }
+
+    await expect(page).toHaveURL(/\/tn\/custom\/consentimiento$/u);
+    await expect.poll(() => trustedFormRequests).toBeGreaterThan(0);
+    await expect
+      .poll(() =>
+        page.evaluate("Boolean(window.__TRUSTED_FORM_SCRIPT_EXECUTED__)"),
+      )
+      .toBe(true);
   });
 
   test("TrustedForm script failure shows an error instead of submitting null", async ({ page }) => {

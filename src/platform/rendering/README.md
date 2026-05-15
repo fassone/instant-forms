@@ -10,7 +10,9 @@ flowchart LR
   Flow --> Page["render-form-page.ts"]
   Config --> Page
   Page --> Assets["inline-assets.ts source/built mode"]
+  Page --> Bundle["transition-bundle.ts"]
   Assets --> Dist["/_dist/forms prebuilt HTML"]
+  Bundle --> Dist
   Assets --> HTML["HTML + inline CSS + inline JS"]
   Dist --> HTML
   HTML --> Browser["Browser form"]
@@ -22,6 +24,7 @@ flowchart LR
 - Unavailable-page presentation for content supplied by routing.
 - Critical CSS and browser controller delivery.
 - Production inline CSS tokenization, selector tokenization, HTML/CSS/JS compaction, and prebuilt page shells.
+- Static transition bundle generation for post-load step swaps.
 - Client config generated from the server DSL.
 - Template ownership files for each step kind.
 
@@ -36,3 +39,5 @@ flowchart LR
 Rendering changes are layout-sensitive. Run render assertions and Playwright screenshots when adjusting CSS, DOM structure, or client behavior.
 
 Development responses keep readable CSS variables and readable inline controller JS. Production responses still inline everything for speed, but `bun run build:forms` writes minified active-step shells into `/_dist/forms`. Request-time production rendering reads the prebuilt shell and injects only the dynamic form config needed for checkpoint-prefilled answers and route state.
+
+For faster transitions, production builds also emit a cacheable transition bundle with static step HTML and non-PII client metadata. The browser loads that bundle after the first page settles; guarded checkpoint APIs still decide which route is allowed next.

@@ -10,9 +10,13 @@ export {
 export {
   DIST_FORMS_ROOT,
   DIST_ROOT,
+  getPrebuiltTransitionBundlePath,
   getPrebuiltFormStepHtmlPath,
   getPrebuiltUnavailableHtmlPath,
+  getTransitionBundleManifestRouteKey,
+  getTransitionBundleUrl,
   injectFormConfig,
   readPrebuiltFormPage,
   readPrebuiltUnavailablePage,
 } from "./prebuilt-pages";
+export { buildTransitionBundle, type TransitionBundle } from "./transition-bundle";

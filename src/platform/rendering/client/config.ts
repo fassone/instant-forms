@@ -27,7 +27,7 @@ type ClientStepBase = {
   showWhen?: ClientStepCondition;
 };
 
-type ClientStep =
+export type ClientStep =
   | (ClientStepBase & {
       kind: "choice";
       options: readonly string[];
@@ -63,6 +63,7 @@ type ClientStep =
       acceptedAnswer: TrustedFormConsentStep["acceptedAnswer"];
       validationMessage: string;
       trustedForm: TrustedFormConsentStep["trustedForm"];
+      grantorSummary?: TrustedFormConsentStep["grantorSummary"];
     });
 
 export type ClientFormConfig = {
@@ -82,7 +83,11 @@ export type ClientFormConfig = {
   autocompleteSources?: {
     usStates: ReturnType<typeof createStateAutocompleteItems>;
   };
-  trustedFormPreload?: TrustedFormConsentStep["trustedForm"];
+  transitionBundleUrl?: string;
+};
+
+export type ClientFormConfigOptions = {
+  transitionBundleUrl?: string;
 };
 
 export function createClientFormConfig(
@@ -91,6 +96,7 @@ export function createClientFormConfig(
   initialAnswers: Record<string, string>,
   previewMode: boolean,
   getClientStepUrl: (stepDefinition: FormStep) => string,
+  options: ClientFormConfigOptions = {},
 ): ClientFormConfig {
   const currentStepDefinition = getStepAt(form, activeStepIndex);
   const visibleStepIndexes = getVisibleStepIndexes(form, initialAnswers, previewMode);
@@ -108,12 +114,6 @@ export function createClientFormConfig(
     form,
     initialAnswers,
   );
-  const nextStepDefinition = nextStepIndex === undefined ? undefined : getStepAt(form, nextStepIndex);
-  const trustedFormPreload =
-    nextStepDefinition?.kind === "trusted_form_consent" && nextStepDefinition.trustedForm.preloadOnPreviousStep
-      ? nextStepDefinition.trustedForm
-      : undefined;
-
   return {
     areaCode: form.areaCode,
     activeStepIndex: 0,
@@ -135,8 +135,15 @@ export function createClientFormConfig(
           },
         }
       : {}),
-    ...(trustedFormPreload ? { trustedFormPreload } : {}),
+    ...(options.transitionBundleUrl ? { transitionBundleUrl: options.transitionBundleUrl } : {}),
   };
+}
+
+export function createClientTransitionSteps(
+  form: InstantForm,
+  getClientStepUrl: (stepDefinition: FormStep) => string,
+): readonly ClientStep[] {
+  return form.steps.map((stepDefinition) => createClientStep(stepDefinition, getClientStepUrl(stepDefinition), form, {}));
 }
 
 function createClientStep(
@@ -189,9 +196,7 @@ function createClientStep(
       successLines: stepDefinition.successLines,
       completionAnswer: stepDefinition.completionAnswer,
       seenAnswer: stepDefinition.seenAnswer,
-      benefits: stepDefinition.benefits.map((benefit) =>
-        benefit.replace("{{areaName}}", getCoverageStateName(form, answers)),
-      ),
+      benefits: stepDefinition.benefits,
     };
   }
 
@@ -205,6 +210,7 @@ function createClientStep(
       acceptedAnswer: stepDefinition.acceptedAnswer,
       validationMessage: stepDefinition.validationMessage,
       trustedForm: stepDefinition.trustedForm,
+      grantorSummary: stepDefinition.grantorSummary,
     };
   }
 
@@ -219,13 +225,6 @@ function getVisibleStepIndexes(form: InstantForm, answers: Record<string, string
   return form.steps
     .map((stepDefinition, index) => (previewMode || isStepVisible(stepDefinition, answers) ? index : -1))
     .filter((index) => index !== -1);
-}
-
-function getCoverageStateName(form: InstantForm, answers: Record<string, string>): string {
-  const areaCode = String(answers.residence_state || form.areaCode).toUpperCase();
-  const state = US_STATES.find((candidate) => candidate.code === areaCode);
-
-  return state ? state.name : areaCode;
 }
 
 function getStepAt(form: InstantForm, index: number): FormStep {

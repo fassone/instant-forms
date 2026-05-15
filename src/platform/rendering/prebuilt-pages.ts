@@ -13,6 +13,14 @@ const BUILT_FORM_CONFIG_TOKEN = JSON.stringify(FORM_CONFIG_JSON_PLACEHOLDER);
 
 export const DIST_ROOT = "_dist";
 export const DIST_FORMS_ROOT = path.join(DIST_ROOT, "forms");
+export const INSTANT_FORM_ASSET_URL_PREFIX = "/_instant/forms";
+export const TRANSITION_BUNDLE_MANIFEST_ROUTE_KEY_SEPARATOR = "/";
+
+type PrebuiltFormsManifest = {
+  transitionBundles?: Record<string, string>;
+};
+
+let prebuiltFormsManifestPromise: Promise<PrebuiltFormsManifest | undefined> | undefined;
 
 export type PrebuiltFormPageOptions = RenderFormPageOptions & {
   routeSegments: readonly string[];
@@ -39,7 +47,13 @@ export async function readPrebuiltFormPage(
     return undefined;
   }
 
-  return injectFormConfig(html, createRequestFormConfig(form, activeStepIndex, options));
+  return injectFormConfig(
+    html,
+    createRequestFormConfig(form, activeStepIndex, {
+      ...options,
+      transitionBundleUrl: options.transitionBundleUrl ?? (await getPrebuiltTransitionBundleUrl(options.routeSegments)),
+    }),
+  );
 }
 
 export async function readPrebuiltUnavailablePage(name = "not-found"): Promise<string | undefined> {
@@ -62,13 +76,58 @@ export function getPrebuiltUnavailableHtmlPath(name = "not-found"): string {
   return path.join(process.cwd(), DIST_FORMS_ROOT, `__${name}`, "index.html");
 }
 
-function createRequestFormConfig(form: InstantForm, activeStepIndex: number, options: PrebuiltFormPageOptions): unknown {
+export function getPrebuiltTransitionBundlePath(hash: string): string {
+  return path.join(process.cwd(), DIST_FORMS_ROOT, "_instant", "forms", hash, "transition.json");
+}
+
+export function getTransitionBundleUrl(hash: string): string {
+  return `${INSTANT_FORM_ASSET_URL_PREFIX}/${hash}/transition.json`;
+}
+
+export function getTransitionBundleManifestRouteKey(routeSegments: readonly string[]): string {
+  return routeSegments.join(TRANSITION_BUNDLE_MANIFEST_ROUTE_KEY_SEPARATOR);
+}
+
+async function getPrebuiltTransitionBundleUrl(routeSegments: readonly string[]): Promise<string | undefined> {
+  const manifest = await readPrebuiltFormsManifest();
+
+  return manifest?.transitionBundles?.[getTransitionBundleManifestRouteKey(routeSegments)];
+}
+
+async function readPrebuiltFormsManifest(): Promise<PrebuiltFormsManifest | undefined> {
+  if (!prebuiltFormsManifestPromise) {
+    prebuiltFormsManifestPromise = readPrebuiltFormsManifestFromDisk();
+  }
+
+  return prebuiltFormsManifestPromise;
+}
+
+async function readPrebuiltFormsManifestFromDisk(): Promise<PrebuiltFormsManifest | undefined> {
+  const manifestText = await readTextFileIfExists(path.join(process.cwd(), DIST_FORMS_ROOT, "manifest.json"));
+  if (!manifestText) {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(manifestText) as PrebuiltFormsManifest;
+  } catch {
+    return undefined;
+  }
+}
+
+function createRequestFormConfig(
+  form: InstantForm,
+  activeStepIndex: number,
+  options: PrebuiltFormPageOptions,
+): unknown {
   const answers = options.answers ?? {};
   const stepUrlOverrides = options.stepUrlOverrides ?? createStepUrlOverrides(options.routeSegments, form);
   const getClientStepUrl = (stepDefinition: FormStep) =>
     stepUrlOverrides[stepDefinition.key] ?? getStepUrl(form, stepDefinition);
 
-  return createClientFormConfig(form, activeStepIndex, answers, options.previewMode ?? false, getClientStepUrl);
+  return createClientFormConfig(form, activeStepIndex, answers, options.previewMode ?? false, getClientStepUrl, {
+    transitionBundleUrl: options.transitionBundleUrl,
+  });
 }
 
 function createStepUrlOverrides(routeSegments: readonly string[], form: InstantForm): Record<string, string> {

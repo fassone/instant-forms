@@ -21,6 +21,7 @@ export type RenderFormPageOptions = {
   previewMode?: boolean;
   stepUrlOverrides?: Record<string, string>;
   formConfigExpression?: string;
+  transitionBundleUrl?: string;
 };
 
 export type UnavailablePageContent = {
@@ -49,6 +50,9 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
     initialAnswers,
     options.previewMode ?? false,
     getClientStepUrl,
+    {
+      transitionBundleUrl: options.transitionBundleUrl,
+    },
   );
   const formConfigExpression = options.formConfigExpression ?? serializeForScript(clientConfig);
 
@@ -849,7 +853,8 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         const config = window.__FORM_CONFIG__;
         const form = document.getElementById("lead-form");
         const thanks = document.getElementById("thanks");
-        const steps = Array.from(document.querySelectorAll("[data-step]"));
+        const stepsContainer = document.getElementById("steps");
+        let steps = Array.from(document.querySelectorAll("[data-step]"));
         const progressBar = document.getElementById("progress-bar");
         const stepCount = document.querySelector("[data-step-count]");
         const backButton = document.getElementById("back-button");
@@ -881,10 +886,12 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         let errorModalReturnFocusTarget;
         let trustedFormSdkLoaded = false;
         let trustedFormSdkLoadPromise;
-        let trustedFormPreloadStarted = false;
         let trustedFormReadyPromise;
         let trustedFormReadyFieldName;
         let trustedFormReadinessRunId = 0;
+        let transitionBundlePromise;
+        let transitionBundle;
+        let transitionBundleHydrated = false;
 
         function clearAutoAdvance() {
           if (autoAdvanceTimer) {
@@ -918,8 +925,9 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
           const requestedStep = Math.max(0, Math.min(nextStep, steps.length - 1));
           currentStep = requestedStep;
           const question = getQuestion();
-          const countedStepNumber = config.countedStepNumber;
-          const countedStepCount = config.countedStepCount;
+          const countedStepNumber = getRenderedCountedStepNumber();
+          const countedStepCount = getRenderedCountedStepCount();
+          config.currentStep = question;
 
           steps.forEach((step, index) => {
             step.setAttribute("aria-hidden", String(index !== currentStep));
@@ -932,7 +940,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
           }
 
           progressBar.style.width = (countedStepNumber / countedStepCount) * 100 + "%";
-          backButton.disabled = !config.previousUrl || isSubmitting;
+          backButton.disabled = !getRenderedPreviousUrl() || isSubmitting;
           nextButton.textContent = getNextButtonLabel(question);
           nextButton.disabled =
             isSubmitting ||
@@ -952,7 +960,6 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
             startTrustedFormStepReadiness(question);
           } else {
             trustedFormReadinessRunId += 1;
-            preloadTrustedFormSdk(config.trustedFormPreload);
           }
         }
 
@@ -961,7 +968,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
             return question.submitLabel;
           }
 
-          return config.isFinalStep ? "Enviar" : "Siguiente";
+          return isCurrentStepFinal() ? "Enviar" : "Siguiente";
         }
 
         function isQuestionVisible(question) {
@@ -988,6 +995,44 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
 
         function isCountedStep(question) {
           return question.countsAsStep !== false;
+        }
+
+        function hasFullStepContext() {
+          return transitionBundleHydrated && config.steps.length > 1;
+        }
+
+        function getRenderedCountedStepNumber() {
+          return hasFullStepContext() ? getCurrentCountedStepNumber() : config.countedStepNumber;
+        }
+
+        function getRenderedCountedStepCount() {
+          return hasFullStepContext() ? getCountedStepCount() : config.countedStepCount;
+        }
+
+        function getRenderedPreviousUrl() {
+          if (!hasFullStepContext()) {
+            return config.previousUrl;
+          }
+
+          const visibleStepIndexes = getVisibleStepIndexes();
+          const currentVisiblePosition = getCurrentVisiblePosition();
+          const previousStepIndex = visibleStepIndexes[currentVisiblePosition - 1];
+          const previousQuestion = previousStepIndex === undefined ? undefined : config.steps[previousStepIndex];
+
+          return previousQuestion?.url;
+        }
+
+        function getRenderedNextUrl() {
+          if (!hasFullStepContext()) {
+            return config.nextUrl;
+          }
+
+          const visibleStepIndexes = getVisibleStepIndexes();
+          const currentVisiblePosition = getCurrentVisiblePosition();
+          const nextStepIndex = visibleStepIndexes[currentVisiblePosition + 1];
+          const nextQuestion = nextStepIndex === undefined ? undefined : config.steps[nextStepIndex];
+
+          return nextQuestion?.url;
         }
 
         function getCountedVisibleStepIndexes() {
@@ -1051,7 +1096,13 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         }
 
         function isCurrentStepFinal() {
-          return config.isFinalStep;
+          if (!hasFullStepContext()) {
+            return config.isFinalStep;
+          }
+
+          const visibleStepIndexes = getVisibleStepIndexes();
+
+          return getCurrentVisiblePosition() === visibleStepIndexes.length - 1;
         }
 
         function getPreviousVisibleStepIndex() {
@@ -1095,11 +1146,118 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
           return true;
         }
 
+        function preloadTransitionBundle() {
+          if (!config.transitionBundleUrl || config.previewMode) {
+            return;
+          }
+
+          runAfterPageSettles(() => {
+            void loadTransitionBundle();
+          });
+        }
+
+        function loadTransitionBundle() {
+          if (transitionBundle) {
+            return Promise.resolve(transitionBundle);
+          }
+
+          if (transitionBundlePromise) {
+            return transitionBundlePromise;
+          }
+
+          if (!config.transitionBundleUrl) {
+            return Promise.resolve(undefined);
+          }
+
+          transitionBundlePromise = fetch(config.transitionBundleUrl, {
+            cache: "force-cache",
+            credentials: "same-origin",
+          })
+            .then((response) => {
+              if (!response.ok) {
+                throw new Error("Transition bundle unavailable.");
+              }
+
+              return response.json();
+            })
+            .then((bundle) => {
+              if (!bundle || !Array.isArray(bundle.steps)) {
+                throw new Error("Transition bundle is invalid.");
+              }
+
+              transitionBundle = bundle;
+              return transitionBundle;
+            })
+            .catch(() => {
+              transitionBundlePromise = undefined;
+              return undefined;
+            });
+
+          return transitionBundlePromise;
+        }
+
+        function hydrateTransitionBundle() {
+          if (transitionBundleHydrated) {
+            return true;
+          }
+
+          if (!transitionBundle || !stepsContainer || !Array.isArray(transitionBundle.steps)) {
+            return false;
+          }
+
+          const currentQuestion = getQuestion();
+          const currentPath = window.location.pathname;
+          config.steps = transitionBundle.steps.map((step) => step.config);
+          config.stepUrlsBySlug = transitionBundle.stepUrlsBySlug || config.stepUrlsBySlug;
+          stepsContainer.innerHTML = transitionBundle.steps.map((step) => step.html).join("");
+          steps = Array.from(document.querySelectorAll("[data-step]"));
+          transitionBundleHydrated = true;
+
+          const pathStepIndex = getStepIndexForPath(currentPath);
+          const keyStepIndex = config.steps.findIndex((question) => question.key === currentQuestion?.key);
+          currentStep = pathStepIndex !== -1 ? pathStepIndex : keyStepIndex !== -1 ? keyStepIndex : 0;
+          showStep(currentStep);
+          return true;
+        }
+
+        function navigateWithTransitionBundle(url, mode) {
+          if (!transitionBundle || !hydrateTransitionBundle()) {
+            return false;
+          }
+
+          const nextPath = getPathname(url);
+          const stepIndex = getStepIndexForPath(nextPath);
+          if (stepIndex === -1 || !canRenderStepFromTransitionBundle(stepIndex)) {
+            return false;
+          }
+
+          showStep(stepIndex);
+          if (window.location.pathname !== nextPath) {
+            if (mode === "replace") {
+              window.history.replaceState({ step: stepIndex }, "", nextPath);
+            } else {
+              window.history.pushState({ step: stepIndex }, "", nextPath);
+            }
+          }
+
+          return true;
+        }
+
+        function canRenderStepFromTransitionBundle(stepIndex) {
+          const question = config.steps[stepIndex];
+
+          return Boolean(question) && isQuestionVisible(question);
+        }
+
         function navigateToStep(nextStep) {
           const safeStep = Math.max(0, Math.min(nextStep, steps.length - 1));
           const nextQuestion = config.steps[safeStep];
 
           if (safeStep !== currentStep && nextQuestion) {
+            if (navigateWithTransitionBundle(nextQuestion.url, "push")) {
+              return;
+            }
+
             window.location.href = nextQuestion.url;
             return;
           }
@@ -1112,6 +1270,10 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
           const nextQuestion = config.steps[safeStep];
 
           if (safeStep !== currentStep && nextQuestion) {
+            if (navigateWithTransitionBundle(nextQuestion.url, "replace")) {
+              return;
+            }
+
             window.location.replace(nextQuestion.url);
             return;
           }
@@ -1120,6 +1282,10 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         }
 
         function navigateToUrl(url) {
+          if (navigateWithTransitionBundle(url, "push")) {
+            return;
+          }
+
           const stepIndex = config.steps.findIndex((question) => question.url === url);
 
           if (stepIndex === -1) {
@@ -1131,6 +1297,10 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         }
 
         function replaceToUrl(url) {
+          if (navigateWithTransitionBundle(url, "replace")) {
+            return;
+          }
+
           const stepIndex = config.steps.findIndex((question) => question.url === url);
 
           if (stepIndex === -1) {
@@ -1175,7 +1345,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         function hydrateCurrentStepAnswer(question) {
           const answer = answers[question.key];
 
-          if (!answer || question.kind === "interstitial") {
+          if ((!answer && question.kind !== "trusted_form_consent") || question.kind === "interstitial") {
             return;
           }
 
@@ -1195,6 +1365,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
             if (input instanceof HTMLInputElement) {
               input.checked = answer === question.acceptedAnswer;
             }
+            hydrateTrustedFormGrantorSummary(question, step);
             return;
           }
 
@@ -1215,6 +1386,61 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
           }
 
           input.value = answer;
+        }
+
+        function hydrateTrustedFormGrantorSummary(question, step) {
+          const grantorSummary = question.grantorSummary;
+          if (!grantorSummary) {
+            return;
+          }
+
+          const card = step.querySelector(".consent-card");
+          if (!(card instanceof HTMLElement)) {
+            return;
+          }
+
+          const name = (grantorSummary.nameKeys || [])
+            .map((key) => answers[key])
+            .filter(Boolean)
+            .join(" ")
+            .trim();
+          const phone = grantorSummary.phoneKey ? answers[grantorSummary.phoneKey] : "";
+          const displayPhone = phone ? formatUsPhoneForDisplay(phone) : "";
+          let summary = card.querySelector("[data-consent-summary]");
+
+          if (!name && !displayPhone) {
+            if (summary) {
+              summary.remove();
+            }
+            return;
+          }
+
+          if (!(summary instanceof HTMLElement)) {
+            summary = document.createElement("p");
+            summary.className = "consent-summary";
+            summary.dataset.consentSummary = "true";
+            card.prepend(summary);
+          }
+
+          summary.replaceChildren();
+
+          if (name) {
+            const nameElement = document.createElement("span");
+            nameElement.dataset.tfElementRole = "consent-grantor-name";
+            nameElement.textContent = name;
+            summary.appendChild(nameElement);
+          }
+
+          if (name && displayPhone) {
+            summary.appendChild(document.createTextNode(" · "));
+          }
+
+          if (displayPhone) {
+            const phoneElement = document.createElement("span");
+            phoneElement.dataset.tfElementRole = "consent-grantor-phone";
+            phoneElement.textContent = displayPhone;
+            summary.appendChild(phoneElement);
+          }
         }
 
         function showErrorModal(message, options = {}) {
@@ -1385,23 +1611,6 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
           nextButton.setAttribute("data-tf-element-role", "submit");
         }
 
-        function preloadTrustedFormSdk(trustedForm) {
-          if (!trustedForm || trustedFormPreloadStarted) {
-            return;
-          }
-
-          trustedFormPreloadStarted = true;
-          runAfterPageSettles(() => {
-            const sdkUrl = buildTrustedFormSdkUrl(trustedForm);
-            if (!sdkUrl) {
-              return;
-            }
-
-            addResourceHint("preconnect", new URL(sdkUrl, window.location.href).origin);
-            addResourceHint("preload", sdkUrl, "script");
-          });
-        }
-
         function loadTrustedFormSdk(trustedForm) {
           if (trustedFormSdkLoaded) {
             return Promise.resolve();
@@ -1466,21 +1675,6 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
           }
 
           return url.toString();
-        }
-
-        function addResourceHint(rel, href, as) {
-          const existingHint = document.querySelector('link[rel="' + rel + '"][href="' + href + '"]');
-          if (existingHint) {
-            return;
-          }
-
-          const link = document.createElement("link");
-          link.rel = rel;
-          link.href = href;
-          if (as) {
-            link.as = as;
-          }
-          document.head.appendChild(link);
         }
 
         function runAfterPageSettles(callback) {
@@ -1784,7 +1978,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
                 return;
               }
 
-              replaceToUrl(config.nextUrl ?? question.url);
+              replaceToUrl(getRenderedNextUrl() ?? question.url);
             }, 300);
             return;
           }
@@ -2249,7 +2443,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
                   return;
                 }
 
-                navigateToUrl(nextUrl ?? config.nextUrl ?? config.steps[getNextVisibleStepIndex()].url);
+                navigateToUrl(nextUrl ?? getRenderedNextUrl() ?? config.steps[getNextVisibleStepIndex()].url);
               } catch (checkpointError) {
                 showErrorModal(
                   checkpointError instanceof Error ? checkpointError.message : "No pudimos guardar esta respuesta.",
@@ -2392,7 +2586,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
             try {
               const nextUrl = await saveCheckpoint(question.key, question.seenAnswer);
 
-              replaceToUrl(nextUrl ?? config.nextUrl ?? config.steps[getNextVisibleStepIndex()].url);
+              replaceToUrl(nextUrl ?? getRenderedNextUrl() ?? config.steps[getNextVisibleStepIndex()].url);
             } catch (checkpointError) {
               showErrorModal(
                 checkpointError instanceof Error ? checkpointError.message : "No pudimos guardar este paso.",
@@ -2413,7 +2607,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
               return;
             }
 
-            navigateToUrl(nextUrl ?? config.nextUrl ?? config.steps[getNextVisibleStepIndex()].url);
+            navigateToUrl(nextUrl ?? getRenderedNextUrl() ?? config.steps[getNextVisibleStepIndex()].url);
           } catch (checkpointError) {
             showErrorModal(
               checkpointError instanceof Error ? checkpointError.message : "No pudimos guardar esta respuesta.",
@@ -2427,8 +2621,9 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
 
         backButton.addEventListener("click", () => {
           clearAutoAdvance();
-          if (config.previousUrl) {
-            window.location.href = config.previousUrl;
+          const previousUrl = getRenderedPreviousUrl();
+          if (previousUrl) {
+            navigateToUrl(previousUrl);
           }
         });
 
@@ -2627,6 +2822,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         });
 
         showStep(config.activeStepIndex);
+        preloadTransitionBundle();
         if (!replaceHiddenMatchingRouteIfNeeded()) {
           const currentQuestion = config.steps[currentStep];
           if (currentQuestion) {
@@ -2773,6 +2969,14 @@ const stepTemplateRegistry = {
   trusted_form_consent: renderTrustedFormConsent,
 } satisfies Record<FormStep["kind"], StepTemplateRenderer<any>>;
 
+export function renderTransitionStepHtml(
+  stepDefinition: FormStep,
+  index: number,
+  answers: Record<string, string> = {},
+): string {
+  return renderQuestion(stepDefinition, index, index, answers);
+}
+
 function renderQuestion(
   stepDefinition: FormStep,
   index: number,
@@ -2890,7 +3094,7 @@ function renderTrustedFormGrantorSummary(
     : "";
   const separator = nameText && phoneText ? " · " : "";
 
-  return `<p class="consent-summary">${nameText}${separator}${phoneText}</p>`;
+  return `<p class="consent-summary" data-consent-summary="true">${nameText}${separator}${phoneText}</p>`;
 }
 
 function renderBaseTextInput(

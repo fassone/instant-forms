@@ -66,7 +66,7 @@ Build production form HTML:
 bun run build:forms
 ```
 
-The build writes minified route HTML into `/_dist/forms`. Each step page still ships CSS and JavaScript inline for speed, but production requests read the prebuilt shell and only inject the request-specific checkpoint config from the HttpOnly cookie. Development keeps readable CSS/JS and uses the same active-step-only SSR shape.
+The build writes minified route HTML into `/_dist/forms`. Each step page still ships CSS and JavaScript inline for speed, but production requests read the prebuilt shell and only inject the request-specific checkpoint config from the HttpOnly cookie. The build also emits a hashed, cacheable transition bundle under `/_dist/forms/_instant/forms/<hash>/transition.json`; after the first page settles, the browser fetches that static bundle so approved next/back transitions can swap step HTML without a full document load. Development keeps readable CSS/JS and uses the same active-step-only SSR shape.
 
 ## Project Structure
 

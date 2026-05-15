@@ -6,7 +6,7 @@ import { formRoutes } from "../../src/authoring/routes/registry";
 import { createFetchHandler } from "../../src/platform/app/server";
 import { autocompleteSource, defineFormFlow, getFormByAreaCode, getStepSlug, isCountedStep, step } from "../../src/platform/flow";
 import { encodeCheckpointAnswers, getCheckpointCookieName } from "../../src/platform/persistence/checkpoints";
-import { FORM_CONFIG_PLACEHOLDER_EXPRESSION, renderFormPage } from "../../src/platform/rendering";
+import { FORM_CONFIG_PLACEHOLDER_EXPRESSION, buildTransitionBundle, renderFormPage } from "../../src/platform/rendering";
 import { buildInlineCss, getInlineAssetMode } from "../../src/platform/rendering/inline-assets";
 import { defineFormRoutes, redirectTo, registerFormRoutePages, unavailable } from "../../src/platform/routing";
 import { createStateAutocompleteItems, rankAutocompleteItems } from "../../src/platform/steps/autocomplete/ranking";
@@ -1300,6 +1300,39 @@ describe("form rendering", () => {
     expect(productionHtml).not.toContain("\n      (() => {");
   });
 
+  it("builds a static non-PII transition bundle for snappy production step changes", async () => {
+    const form = getRequiredTennesseeForm();
+    const stepUrlOverrides = Object.fromEntries(
+      form.steps.map((stepDefinition) => [
+        stepDefinition.key,
+        `/tn/custom/${getStepSlug(stepDefinition)}`,
+      ]),
+    );
+    const transitionBundle = await buildTransitionBundle(form, ["tn", "custom"], stepUrlOverrides);
+    const devHtml = await renderFormPage(form, {
+      transitionBundleUrl: `/_instant/forms/${transitionBundle.hash}/transition.json`,
+    });
+    const productionHtml = await withNodeEnv("production", () =>
+      renderFormPage(form, {
+        transitionBundleUrl: `/_instant/forms/${transitionBundle.hash}/transition.json`,
+      }),
+    );
+
+    expect(transitionBundle.hash).toMatch(/^[a-f0-9]{16}$/u);
+    expect(transitionBundle.bundle.steps).toHaveLength(form.steps.length);
+    expect(transitionBundle.body).toContain('"route":"/tn/custom"');
+    expect(transitionBundle.body).toContain('"html":"<article');
+    expect(transitionBundle.body).toContain('"config":{"key":"belongs_to_state"');
+    expect(transitionBundle.body).toContain('"trustedForm":{"fieldName":"xxTrustedFormCertUrl"');
+    expect(transitionBundle.body).not.toContain("Ana");
+    expect(transitionBundle.body).not.toContain("Lopez");
+    expect(transitionBundle.body).not.toContain("6155551234");
+    expect(transitionBundle.body).not.toContain('class="form-panel"');
+    expect(productionHtml).toContain("/_instant/forms/");
+    expect(devHtml).toContain("function preloadTransitionBundle()");
+    expect(devHtml).toContain("function navigateWithTransitionBundle(url, mode)");
+  });
+
   it("renders the logo and brand theme tokens", async () => {
     const html = await renderFormPage(getRequiredTennesseeForm());
 
@@ -1409,7 +1442,7 @@ describe("form rendering", () => {
     expect(html).toContain("Revisando sus respuestas");
     expect(html).toContain("Buscando agentes disponibles");
     expect(html).toContain("Priorizando atención en español");
-    expect(html).toContain("Preparando opciones en Tennessee");
+    expect(html).toContain("Preparando opciones en {{areaName}}");
     expect(html).toContain("Encontramos agentes listos para cotizarle.");
     expect(html).toContain("Descubra cuánto puede ahorrar.");
     expect(html).toContain('"successLines":[{"text":"Encontramos agentes listos para cotizarle.","color":"brand-navy"}');
@@ -1503,7 +1536,7 @@ describe("form rendering", () => {
     expect(html).toContain("!completedMatchingSteps.has(question.key)");
     expect(html).toContain('saveCheckpoint(question.key, question.completionAnswer)');
     expect(html).toContain('saveCheckpoint(question.key, question.seenAnswer)');
-    expect(html).toContain("replaceToUrl(nextUrl ?? config.nextUrl ?? config.steps[getNextVisibleStepIndex()].url)");
+    expect(html).toContain("replaceToUrl(nextUrl ?? getRenderedNextUrl() ?? config.steps[getNextVisibleStepIndex()].url)");
     expect(html).toContain('nextButton.textContent = "Siguiente"');
     expect(html).not.toContain("matching-loader");
     expect(html).not.toContain("data-matching-retry");
@@ -1556,8 +1589,8 @@ describe("form rendering", () => {
       answers: preConsentAnswers,
     });
 
-    expect(phoneHtml).toContain('"trustedFormPreload"');
-    expect(phoneHtml).toContain('"fieldName":"xxTrustedFormCertUrl"');
+    expect(phoneHtml).not.toContain('"trustedFormPreload"');
+    expect(phoneHtml).not.toContain('"fieldName":"xxTrustedFormCertUrl"');
     expect(html).toContain('"kind":"trusted_form_consent"');
     expect(html).toContain('"slug":"consentimiento"');
     expect(html).toContain('"submitLabel":"Enviar"');
@@ -1571,7 +1604,7 @@ describe("form rendering", () => {
     expect(html).toContain("Ana Lopez");
     expect(html).toContain("(615) 555-1234");
     expect(html).toContain("function loadTrustedFormSdk(trustedForm)");
-    expect(html).toContain("function preloadTrustedFormSdk(trustedForm)");
+    expect(html).not.toContain("function preloadTrustedFormSdk(trustedForm)");
     expect(html).toContain("function ensureTrustedFormReady(trustedForm)");
     expect(html).toContain("function waitForTrustedFormCertUrl(trustedForm)");
     expect(html).toContain("function getTrustedFormCertUrl(trustedForm = config.currentStep.trustedForm)");
