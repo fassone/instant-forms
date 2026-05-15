@@ -1,12 +1,48 @@
 import { defineFormFlow } from "../../../platform/flow/dsl/define-form-flow";
 import { autocompleteSource, step } from "../../../platform/flow/dsl/step-builders";
+import { z } from "../../../platform/flow";
 
 export const tnFlow = defineFormFlow({
   name: "ES - TN - v6",
   status: "ACTIVE",
-  customVariables: {
+  contract: {
+    context: z.object({
+      areaCode: z.string(),
+      areaName: z.string().optional(),
+      product: z.string(),
+    }),
+    answers: z.object({
+      belongs_to_state: z.enum(["yes", "no"]),
+      residence_state: z.string().optional(),
+      has_license: z.enum(["yes", "no"]),
+      has_insurance: z.enum(["yes", "no"]),
+      is_clean_title: z.enum(["yes", "no"]),
+      number_of_registered_cars: z.enum(["1", "2+"]),
+      first_name: z.string(),
+      last_name: z.string(),
+      phone_number: z.string(),
+    }),
+    payload: z.object({
+      marketState: z.string(),
+      marketName: z.string(),
+      product: z.string(),
+      phone: z.string(),
+    }),
+  },
+  context: {
     areaCode: "TN",
     areaName: "Tennessee",
+    product: "auto_insurance",
+  },
+  payload: {
+    method: "POST",
+    encoding: "json",
+    mapping: ({ context, answers }) => ({
+      marketState: context.areaCode,
+      marketName: context.areaName ?? context.product,
+      product: context.product,
+      phone: answers.phone_number,
+    }),
   },
   page: {
     name: "Seguros Aseguranza",
@@ -28,7 +64,7 @@ export const tnFlow = defineFormFlow({
       autocomplete: "address-level1",
       source: autocompleteSource.usStates(),
       showWhen: {
-        questionKey: "belongs_to_state",
+        questionKey: "has_license",
         answer: "no",
       },
     }),

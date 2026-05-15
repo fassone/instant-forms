@@ -6,7 +6,7 @@ import { selectedScripts } from "../../src/authoring/scripts/registry";
 import { formRoutes } from "../../src/authoring/routes/registry";
 import { createFetchHandler } from "../../src/platform/app/server";
 import { registerScriptRoutes } from "../../src/platform/app/routes/scripts";
-import { autocompleteSource, defineFormFlow, getStepSlug, isCountedStep, step } from "../../src/platform/flow";
+import { autocompleteSource, defineFormFlow, getStepSlug, isCountedStep, step, z } from "../../src/platform/flow";
 import { encodeCheckpointAnswers, getCheckpointCookieName } from "../../src/platform/persistence/checkpoints";
 import { FORM_CONFIG_PLACEHOLDER_EXPRESSION, buildTransitionAsset, renderFormPage } from "../../src/platform/rendering";
 import { buildInlineCss, getInlineAssetMode } from "../../src/platform/rendering/inline-assets";
@@ -275,9 +275,33 @@ describe("form registry", () => {
     const flow = defineFormFlow({
       name: "Test Flow",
       status: "ACTIVE",
-      customVariables: {
+      contract: {
+        context: z.object({
+          areaCode: z.string(),
+          areaName: z.string(),
+        }),
+        answers: z.object({
+          choice_key: z.enum(["yes"]),
+          first_name: z.string(),
+          phone_number: z.string(),
+          residence_state: z.string(),
+        }),
+        payload: z.object({
+          marketState: z.string(),
+          firstName: z.string(),
+        }),
+      },
+      context: {
         areaCode: "XX",
         areaName: "Example Area",
+      },
+      payload: {
+        method: "POST",
+        encoding: "json",
+        mapping: ({ context, answers }) => ({
+          marketState: context.areaCode,
+          firstName: answers.first_name,
+        }),
       },
       page: { name: "Test Page" },
       steps: [
@@ -328,6 +352,10 @@ describe("form registry", () => {
       areaCode: "XX",
       areaName: "Example Area",
     });
+    expect(flow.context).toEqual({
+      areaCode: "XX",
+      areaName: "Example Area",
+    });
     expect(flow.steps[0]).not.toHaveProperty("id");
     expect(flow.steps.map((stepDefinition) => [stepDefinition.kind, stepDefinition.template])).toEqual([
       ["choice", "choice"],
@@ -365,7 +393,17 @@ describe("form registry", () => {
     const flow = defineFormFlow({
       name: "Proxy Test",
       status: "ACTIVE",
-      customVariables: {},
+      contract: {
+        context: z.object({}),
+        answers: z.object({}),
+        payload: z.object({}),
+      },
+      context: {},
+      payload: {
+        method: "POST",
+        encoding: "json",
+        mapping: () => ({}),
+      },
       page: { name: "Page" },
       steps: [
         step.trustedFormConsent({
@@ -388,6 +426,415 @@ describe("form registry", () => {
         scriptBaseUrl: "/_instant/scripts/tfc.js",
       },
     });
+  });
+
+  it("validates Zod flow contracts and resolves answer variables into delivery payloads", () => {
+    const flow = defineFormFlow({
+      name: "Contract Test",
+      status: "ACTIVE",
+      contract: {
+        context: z.object({
+          areaCode: z.string(),
+          product: z.string(),
+        }),
+        answers: z.object({
+          choice_key: z.enum(["yes"]),
+        }),
+        payload: z.object({
+          marketState: z.string(),
+          product: z.string(),
+          selectedChoice: z.string(),
+        }),
+      },
+      context: {
+        areaCode: "TX",
+        product: "home_insurance",
+      },
+      payload: {
+        method: "POST",
+        encoding: "form_urlencoded",
+        mapping: ({ context, answers }) => ({
+          marketState: context.areaCode,
+          product: context.product,
+          selectedChoice: answers.choice_key,
+        }),
+      },
+      page: { name: "Page" },
+      steps: [
+        step.choice({
+          key: "choice_key",
+          slug: "elige",
+          label: "Elige",
+          options: [{ key: "yes", label: "Si" }],
+        }),
+      ],
+    });
+
+    const result = validateSubmission(flow, "test_route", { answers: { choice_key: "yes" } });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.payload.delivery).toEqual({
+        method: "POST",
+        encoding: "form_urlencoded",
+        payload: {
+          marketState: "TX",
+          product: "home_insurance",
+          selectedChoice: "yes",
+        },
+      });
+    }
+  });
+
+  it("rejects missing, invalid, undeclared, and unresolved context variables", () => {
+    const baseStep = step.choice({
+      key: "choice_key",
+      slug: "elige",
+      label: "Elige",
+      options: [{ key: "yes", label: "Si" }],
+    });
+
+    expect(() =>
+      defineFormFlow({
+        name: "Missing Variable",
+        status: "ACTIVE",
+        contract: {
+          context: z.object({ areaCode: z.string(), product: z.string() }),
+          answers: z.object({ choice_key: z.enum(["yes"]) }),
+          payload: z.object({ marketState: z.string() }),
+        },
+        context: { areaCode: "TX" },
+        payload: {
+          method: "POST",
+          encoding: "json",
+          mapping: ({ context }: any) => ({ marketState: context.areaCode }),
+        },
+        page: { name: "Page" },
+        steps: [baseStep],
+      }),
+    ).toThrow("context does not match the context contract");
+
+    expect(() =>
+      defineFormFlow({
+        name: "Invalid Variable",
+        status: "ACTIVE",
+        contract: {
+          context: z.object({ areaCode: z.string().min(2) }),
+          answers: z.object({ choice_key: z.enum(["yes"]) }),
+          payload: z.object({ marketState: z.string() }),
+        },
+        context: { areaCode: "T" },
+        payload: {
+          method: "POST",
+          encoding: "json",
+          mapping: ({ context }: any) => ({ marketState: context.areaCode }),
+        },
+        page: { name: "Page" },
+        steps: [baseStep],
+      }),
+    ).toThrow("context does not match the context contract");
+
+    expect(() =>
+      defineFormFlow({
+        name: "Unknown Variable",
+        status: "ACTIVE",
+        contract: {
+          context: z.object({ areaCode: z.string() }),
+          answers: z.object({ choice_key: z.enum(["yes"]) }),
+          payload: z.object({ marketState: z.string() }),
+        },
+        context: { areaCode: "TX", extraVariable: "nope" } as any,
+        payload: {
+          method: "POST",
+          encoding: "json",
+          mapping: ({ context }: { context: { areaCode: string } }) => ({ marketState: context.areaCode }),
+        },
+        page: { name: "Page" },
+        steps: [baseStep],
+      }),
+    ).toThrow("context includes undeclared keys");
+
+    expect(() =>
+      defineFormFlow({
+        name: "Unknown Template",
+        status: "ACTIVE",
+        contract: {
+          context: z.object({ areaCode: z.string() }),
+          answers: z.object({}),
+          payload: z.object({ marketState: z.string() }),
+        },
+        context: { areaCode: "TX" },
+        payload: {
+          method: "POST",
+          encoding: "json",
+          mapping: ({ context }: { context: { areaCode: string } }) => ({ marketState: context.areaCode }),
+        },
+        page: { name: "Page" },
+        steps: [
+          step.interstitial({
+            key: "matching_offer",
+            slug: "buscando",
+            label: "Buscando",
+            successLines: [{ text: "Listo", color: "accent" }],
+            benefits: ["Preparando {{missingVariable}}"],
+          }),
+        ],
+      }),
+    ).toThrow('Template variable "{{missingVariable}}" is not declared in contract.context');
+  });
+
+  it("rejects answer-producing steps that do not match the answer contract", () => {
+    expect(() =>
+      defineFormFlow({
+        name: "Unknown Answer Step",
+        status: "ACTIVE",
+        contract: {
+          context: z.object({ areaCode: z.string() }),
+          answers: z.object({ known_answer: z.string() }),
+          payload: z.object({ marketState: z.string() }),
+        },
+        context: { areaCode: "TX" },
+        payload: {
+          method: "POST",
+          encoding: "json",
+          mapping: ({ context }: { context: { areaCode: string } }) => ({ marketState: context.areaCode }),
+        },
+        page: { name: "Page" },
+        steps: [
+          step.choice({
+            key: "unknown_answer",
+            slug: "elige",
+            label: "Elige",
+            options: [{ key: "yes", label: "Si" }],
+          }),
+        ],
+      } as any),
+    ).toThrow('Answer step key "unknown_answer" is not declared in contract.answers');
+
+    expect(() =>
+      defineFormFlow({
+        name: "Missing Answer Step",
+        status: "ACTIVE",
+        contract: {
+          context: z.object({ areaCode: z.string() }),
+          answers: z.object({ missing_answer: z.string() }),
+          payload: z.object({ marketState: z.string() }),
+        },
+        context: { areaCode: "TX" },
+        payload: {
+          method: "POST",
+          encoding: "json",
+          mapping: ({ context }: { context: { areaCode: string } }) => ({ marketState: context.areaCode }),
+        },
+        page: { name: "Page" },
+        steps: [
+          step.interstitial({
+            key: "matching_offer",
+            slug: "buscando",
+            label: "Buscando",
+            successLines: [{ text: "Listo", color: "accent" }],
+            benefits: ["Beneficio"],
+          }),
+        ],
+      } as any),
+    ).toThrow("contract.answers includes keys without answer-producing steps: missing_answer");
+
+    expect(() =>
+      defineFormFlow({
+        name: "Duplicate Answer Step",
+        status: "ACTIVE",
+        contract: {
+          context: z.object({ areaCode: z.string() }),
+          answers: z.object({ duplicate_answer: z.enum(["yes"]) }),
+          payload: z.object({ marketState: z.string() }),
+        },
+        context: { areaCode: "TX" },
+        payload: {
+          method: "POST",
+          encoding: "json",
+          mapping: ({ context }) => ({ marketState: context.areaCode }),
+        },
+        page: { name: "Page" },
+        steps: [
+          step.choice({
+            key: "duplicate_answer",
+            slug: "elige",
+            label: "Elige",
+            options: [{ key: "yes", label: "Si" }],
+          }),
+          step.choice({
+            key: "duplicate_answer",
+            slug: "elige-otra",
+            label: "Elige otra",
+            options: [{ key: "yes", label: "Si" }],
+          }),
+        ],
+      }),
+    ).toThrow('Answer step key "duplicate_answer" is provided more than once');
+  });
+
+  it("rejects choice options and showWhen conditions that drift from answer contracts", () => {
+    const contract = {
+      context: z.object({ areaCode: z.string() }),
+      answers: z.object({
+        belongs_to_state: z.enum(["yes", "no"]),
+        first_name: z.string(),
+      }),
+      payload: z.object({ marketState: z.string() }),
+    };
+    const context = { areaCode: "TX" };
+    const payload = {
+      method: "POST" as const,
+      encoding: "json" as const,
+      mapping: ({ context }: { context: { areaCode: string } }) => ({ marketState: context.areaCode }),
+    };
+    const validChoice = step.choice({
+      key: "belongs_to_state",
+      slug: "vive",
+      label: "Vive aqui?",
+      options: [
+        { key: "yes", label: "Si" },
+        { key: "no", label: "No" },
+      ],
+    });
+    const validText = step.text({
+      key: "first_name",
+      slug: "nombre",
+      label: "Nombre",
+      autocomplete: "given-name",
+    });
+
+    expect(() =>
+      defineFormFlow({
+        name: "Invalid Choice Options",
+        status: "ACTIVE",
+        contract,
+        context,
+        payload,
+        page: { name: "Page" },
+        steps: [
+          step.choice({
+            key: "belongs_to_state",
+            slug: "vive",
+            label: "Vive aqui?",
+            options: [
+              { key: "yeas", label: "Si" },
+              { key: "nao", label: "No" },
+            ],
+          }),
+          validText,
+        ],
+      } as any),
+    ).toThrow('Choice step "belongs_to_state" includes option keys outside contract.answers: yeas, nao');
+
+    expect(() =>
+      defineFormFlow({
+        name: "Missing Choice Option",
+        status: "ACTIVE",
+        contract,
+        context,
+        payload,
+        page: { name: "Page" },
+        steps: [
+          step.choice({
+            key: "belongs_to_state",
+            slug: "vive",
+            label: "Vive aqui?",
+            options: [{ key: "yes", label: "Si" }],
+          }),
+          validText,
+        ],
+      } as any),
+    ).toThrow('Choice step "belongs_to_state" is missing option keys from contract.answers: no');
+
+    expect(() =>
+      defineFormFlow({
+        name: "Invalid ShowWhen Key",
+        status: "ACTIVE",
+        contract,
+        context,
+        payload,
+        page: { name: "Page" },
+        steps: [
+          validChoice,
+          step.text({
+            key: "first_name",
+            slug: "nombre",
+            label: "Nombre",
+            autocomplete: "given-name",
+            showWhen: {
+              questionKey: "belonegs_to_state",
+              answer: "no",
+            },
+          }),
+        ],
+      } as any),
+    ).toThrow('showWhen for step "first_name" references unknown contract.answers key "belonegs_to_state"');
+
+    expect(() =>
+      defineFormFlow({
+        name: "Invalid ShowWhen Answer",
+        status: "ACTIVE",
+        contract,
+        context,
+        payload,
+        page: { name: "Page" },
+        steps: [
+          validChoice,
+          step.text({
+            key: "first_name",
+            slug: "nombre",
+            label: "Nombre",
+            autocomplete: "given-name",
+            showWhen: {
+              questionKey: "belongs_to_state",
+              answer: "nreo",
+            },
+          }),
+        ],
+      } as any),
+    ).toThrow('showWhen for step "first_name" uses answer "nreo" that does not match contract.answers.belongs_to_state');
+  });
+
+  it("validates mapped delivery payloads against the payload contract", () => {
+    const flow = defineFormFlow({
+      name: "Payload Contract",
+      status: "ACTIVE",
+      contract: {
+        context: z.object({ areaCode: z.string() }),
+        answers: z.object({ choice_key: z.enum(["yes"]) }),
+        payload: z.object({ marketState: z.string().min(2) }),
+      },
+      context: { areaCode: "TX" },
+      payload: {
+        method: "POST",
+        encoding: "json",
+        mapping: () =>
+          ({
+            marketState: "",
+            extra: "nope",
+          }) as any,
+      },
+      page: { name: "Page" },
+      steps: [
+        step.choice({
+          key: "choice_key",
+          slug: "elige",
+          label: "Elige",
+          options: [{ key: "yes", label: "Si" }],
+        }),
+      ],
+    });
+
+    const result = validateSubmission(flow, "test_route", { answers: { choice_key: "yes" } });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors).toContainEqual({
+        field: "delivery.payload",
+        message: "Delivery payload includes undeclared keys: extra.",
+      });
+    }
   });
 });
 
@@ -502,6 +949,16 @@ describe("submission validation", () => {
       expect(result.payload).not.toHaveProperty("formId");
       expect(result.payload).not.toHaveProperty("pageId");
       expect(result.payload.trustedFormCertUrl).toBe(trustedFormCertUrl);
+      expect(result.payload.delivery).toEqual({
+        method: "POST",
+        encoding: "json",
+        payload: {
+          marketState: "TN",
+          marketName: "Tennessee",
+          product: "auto_insurance",
+          phone: "+16155551234",
+        },
+      });
       expect(result.payload.answers.trustedform_consent).toBeUndefined();
     }
   });
@@ -1616,6 +2073,16 @@ describe("server routing", () => {
       routeKey,
       pageName: "Seguros Aseguranza",
       trustedFormCertUrl,
+      delivery: {
+        method: "POST",
+        encoding: "json",
+        payload: {
+          marketState: "TN",
+          marketName: "Tennessee",
+          product: "auto_insurance",
+          phone: "+16155551234",
+        },
+      },
     });
     expect(loggedPayloads[0]).not.toHaveProperty("areaCode");
     expect(loggedPayloads[0]).not.toHaveProperty("formId");
@@ -2090,7 +2557,7 @@ describe("form rendering", () => {
     expect(html).toContain('"activeStepIndex":0');
     expect(html).toContain('"initialAnswers":{}');
     expect(html).toContain('"routeKey":"tn_custom"');
-    expect(html).toContain('"customVariables":{"areaCode":"TN","areaName":"Tennessee"}');
+    expect(html).toContain('"customVariables":{"areaCode":"TN","areaName":"Tennessee","product":"auto_insurance"}');
     expect(html).not.toContain('"stateCode"');
     expect(html).toContain('"slug":"vive-en-tennessee"');
     expect(html).not.toContain('"slug":"estado-donde-vive"');

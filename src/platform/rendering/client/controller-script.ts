@@ -1540,7 +1540,13 @@ function getInterstitialBehaviorScript(registerExpression: string): string {
     }
 
     function formatMatchingBenefit(ctx, benefit) {
-      return benefit.replace("{{areaName}}", getCoverageStateName(ctx));
+      return benefit.replace(/\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g, (_match, variableName) => {
+        if (variableName === "areaName") {
+          return getCoverageStateName(ctx);
+        }
+
+        return String(window.__FORM_CONFIG__.customVariables?.[variableName] ?? "");
+      });
     }
 
     function shuffleMatchingBenefits(benefits) {

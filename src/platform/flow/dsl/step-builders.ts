@@ -2,23 +2,67 @@ import { US_STATE_VALIDATION_MESSAGE, normalizeUsState } from "../../../shared/d
 import type {
   AutocompleteSourceDefinition,
   AutocompleteStep,
-  AutocompleteStepInput,
   BaseStep,
-  BaseStepInput,
   CheckpointMode,
+  ChoiceOptionInput,
   ChoiceStep,
-  ChoiceStepInput,
   InterstitialStep,
-  InterstitialStepInput,
   PhoneStep,
-  PhoneStepInput,
   StepBehavior,
+  StepCondition,
   StepTemplateKey,
   TextStep,
-  TextStepInput,
   TrustedFormConsentStep,
   TrustedFormConsentStepInput,
 } from "./types";
+
+type RawStepCondition = {
+  questionKey: string;
+  answer: string;
+};
+type RawBaseStepInput = {
+  key: string;
+  slug: string;
+  label: string;
+  countsAsStep?: boolean;
+  showWhen?: RawStepCondition;
+};
+type RawChoiceStepInput = RawBaseStepInput & {
+  options: readonly ChoiceOptionInput[];
+};
+type RawTextStepInput = RawBaseStepInput & {
+  type?: TextStep["type"];
+  autocomplete: string;
+};
+type RawPhoneStepInput = RawBaseStepInput;
+type RawAutocompleteStepInput = RawBaseStepInput & {
+  source: AutocompleteSourceDefinition;
+  autocomplete: string;
+  inputMode?: "text";
+  normalize?: (value: string) => string | undefined;
+  validationMessage?: string;
+};
+type RawInterstitialStepInput = RawBaseStepInput & {
+  loadingLabel?: string;
+  successLines: readonly InterstitialStep["successLines"][number][];
+  completionAnswer?: "completed";
+  seenAnswer?: "seen";
+  benefits: readonly string[];
+};
+type RawTrustedFormConsentStepInput = RawBaseStepInput & {
+  disclosure: string;
+  checkboxLabel?: string;
+  submitLabel?: string;
+  acceptedAnswer?: "accepted";
+  validationMessage?: string;
+  trustedForm?: TrustedFormConsentStepInput["trustedForm"];
+  grantorSummary?: TrustedFormConsentStepInput["grantorSummary"];
+};
+
+type InputShowWhen<TInput> = TInput extends { readonly showWhen: infer TShowWhen }
+  ? Extract<TShowWhen, StepCondition>
+  : undefined;
+type ChoiceOptionKey<TOptions extends readonly ChoiceOptionInput[]> = TOptions[number]["key"];
 
 export const autocompleteSource = {
   usStates(): AutocompleteSourceDefinition {
@@ -32,7 +76,9 @@ export const autocompleteSource = {
 } as const;
 
 export const step = {
-  choice(input: ChoiceStepInput): ChoiceStep {
+  choice<const TInput extends RawChoiceStepInput>(
+    input: TInput,
+  ): ChoiceStep<TInput["key"], ChoiceOptionKey<TInput["options"]>, InputShowWhen<TInput>> {
     return {
       ...baseStep(input, "choice", "answer", { autoAdvance: true }),
       kind: "choice",
@@ -41,7 +87,7 @@ export const step = {
     };
   },
 
-  text(input: TextStepInput): TextStep {
+  text<const TInput extends RawTextStepInput>(input: TInput): TextStep<TInput["key"], InputShowWhen<TInput>> {
     return {
       ...baseStep(input, "text", "answer", { mobileBlurSubmit: true }),
       kind: "text",
@@ -51,7 +97,7 @@ export const step = {
     };
   },
 
-  phone(input: PhoneStepInput): PhoneStep {
+  phone<const TInput extends RawPhoneStepInput>(input: TInput): PhoneStep<TInput["key"], InputShowWhen<TInput>> {
     return {
       ...baseStep(input, "phone", "answer", { mask: "us_phone", mobileBlurSubmit: true }),
       kind: "phone",
@@ -61,7 +107,9 @@ export const step = {
     };
   },
 
-  autocomplete(input: AutocompleteStepInput): AutocompleteStep {
+  autocomplete<const TInput extends RawAutocompleteStepInput>(
+    input: TInput,
+  ): AutocompleteStep<TInput["key"], InputShowWhen<TInput>> {
     return {
       ...baseStep(input, "autocomplete", "answer", { suggestions: "autocomplete" }),
       kind: "autocomplete",
@@ -74,7 +122,9 @@ export const step = {
     };
   },
 
-  interstitial(input: InterstitialStepInput): InterstitialStep {
+  interstitial<const TInput extends RawInterstitialStepInput>(
+    input: TInput,
+  ): InterstitialStep<TInput["key"], InputShowWhen<TInput>> {
     return {
       ...baseStep(input, "interstitial", "checkpoint_only", { interstitialTiming: "matching_offer" }),
       kind: "interstitial",
@@ -87,7 +137,9 @@ export const step = {
     };
   },
 
-  trustedFormConsent(input: TrustedFormConsentStepInput): TrustedFormConsentStep {
+  trustedFormConsent<const TInput extends RawTrustedFormConsentStepInput>(
+    input: TInput,
+  ): TrustedFormConsentStep<TInput["key"], InputShowWhen<TInput>> {
     return {
       ...baseStep(input, "trusted_form_consent", "checkpoint_only", { trustedForm: "certify" }),
       kind: "trusted_form_consent",
@@ -118,12 +170,12 @@ export const step = {
   },
 } as const;
 
-function baseStep(
-  input: BaseStepInput,
+function baseStep<const TInput extends RawBaseStepInput>(
+  input: TInput,
   template: StepTemplateKey,
   checkpointMode: CheckpointMode,
   behavior: StepBehavior,
-): BaseStep {
+): BaseStep<TInput["key"], InputShowWhen<TInput>> {
   return {
     key: input.key,
     slug: input.slug,
@@ -132,6 +184,6 @@ function baseStep(
     checkpointMode,
     behavior,
     countsAsStep: input.countsAsStep,
-    showWhen: input.showWhen,
+    showWhen: input.showWhen as InputShowWhen<TInput>,
   };
 }
