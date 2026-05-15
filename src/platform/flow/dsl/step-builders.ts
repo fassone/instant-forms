@@ -103,7 +103,7 @@ export const step = {
         scriptProxyKey: input.trustedForm?.scriptProxyKey,
         scriptBaseUrl:
           input.trustedForm?.scriptBaseUrl ??
-          (input.trustedForm?.delivery === "partytown" && input.trustedForm?.scriptProxyKey
+          (input.trustedForm?.scriptProxyKey
             ? `/_instant/scripts/${input.trustedForm.scriptProxyKey}.js`
             : "https://api.trustedform.com/trustedform.js"),
         partytownLib: input.trustedForm?.partytownLib ?? "/~partytown/",

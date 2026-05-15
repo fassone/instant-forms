@@ -5,12 +5,13 @@ import { join } from "node:path";
 import { selectedScripts } from "../../src/authoring/scripts/registry";
 import { formRoutes } from "../../src/authoring/routes/registry";
 import { createFetchHandler } from "../../src/platform/app/server";
+import { registerScriptRoutes } from "../../src/platform/app/routes/scripts";
 import { autocompleteSource, defineFormFlow, getFormByAreaCode, getStepSlug, isCountedStep, step } from "../../src/platform/flow";
 import { encodeCheckpointAnswers, getCheckpointCookieName } from "../../src/platform/persistence/checkpoints";
 import { FORM_CONFIG_PLACEHOLDER_EXPRESSION, buildTransitionAsset, renderFormPage } from "../../src/platform/rendering";
 import { buildInlineCss, getInlineAssetMode } from "../../src/platform/rendering/inline-assets";
 import { defineFormRoutes, redirectTo, registerFormRoutePages, unavailable } from "../../src/platform/routing";
-import { buildScriptProxyUpstreamUrl } from "../../src/platform/scripts";
+import { buildScriptProxyUpstreamUrl, proxySelectedScript } from "../../src/platform/scripts";
 import { createStateAutocompleteItems, rankAutocompleteItems } from "../../src/platform/steps/autocomplete/ranking";
 import { normalizeUsPhoneNumber } from "../../src/platform/steps/phone/us-phone";
 import { validateSubmission } from "../../src/platform/submissions/validation";
@@ -341,6 +342,36 @@ describe("form registry", () => {
       },
     });
   });
+
+  it("uses the selected-script proxy for TrustedForm regardless of delivery mode", () => {
+    const flow = defineFormFlow({
+      areaCode: "zz",
+      id: "proxy-test",
+      name: "Proxy Test",
+      status: "ACTIVE",
+      page: { id: "page", name: "Page" },
+      steps: [
+        step.trustedFormConsent({
+          key: "trustedform_consent",
+          slug: "consentimiento",
+          label: "Consentimiento",
+          disclosure: "Texto de consentimiento.",
+          trustedForm: {
+            delivery: "main_thread",
+            scriptProxyKey: "tfc",
+          },
+        }),
+      ],
+    });
+
+    expect(flow.steps[0]).toMatchObject({
+      trustedForm: {
+        delivery: "main_thread",
+        scriptProxyKey: "tfc",
+        scriptBaseUrl: "/_instant/scripts/tfc.js",
+      },
+    });
+  });
 });
 
 describe("repository structure", () => {
@@ -613,11 +644,21 @@ describe("selected script proxy", () => {
 
     expect(trustedFormScript.key).toBe("tfc");
     expect(trustedFormScript.upstreamUrl).toBe("https://api.trustedform.com/trustedform.js");
+    expect(trustedFormScript.fetchRuntime).toBe("node");
     expect(trustedFormScript.allowedQueryParams).toContain("field");
     expect(trustedFormScript.queryAliases).toMatchObject({
       f: "field",
       t: "use_tagged_consent",
       s: "sandbox",
+    });
+    expect(trustedFormScript.responseReplacements).toContainEqual({
+      search: "https://cdn.trustedform.com/trustedform-1.11.7.js",
+      replace: "/_instant/scripts/trustedform.com/tfc-core.js",
+    });
+    expect(selectedScripts["tfc-core"]).toMatchObject({
+      key: "tfc-core",
+      upstreamUrl: "https://cdn.trustedform.com/trustedform-1.11.7.js",
+      fetchRuntime: "node",
     });
   });
 
@@ -977,8 +1018,8 @@ describe("server routing", () => {
   });
 
   it("proxies selected scripts without forwarding visitor cookies", async () => {
-    const handler = createFetchHandler();
     const originalFetch = globalThis.fetch;
+    const registry = getBunFetchSelectedScriptRegistry();
     let fetchedUrl = "";
     let fetchedHeaders: Headers | undefined;
 
@@ -994,24 +1035,203 @@ describe("server routing", () => {
     }) as typeof fetch;
 
     try {
-      const response = await handler(
+      const response = await proxySelectedScript(
         new Request("http://localhost/_instant/scripts/tfc.js?f=xxTrustedFormCertUrl&t=true", {
           headers: {
             Cookie: "private=value",
           },
         }),
+        registry,
+        "tfc",
       );
       const body = await response.text();
 
       expect(response.status).toBe(200);
       expect(response.headers.get("Content-Type")).toBe("application/javascript; charset=utf-8");
       expect(response.headers.get("Cache-Control")).toContain("max-age=300");
+      expect(response.headers.get("Content-Length")).toBe(String(new TextEncoder().encode(body).byteLength));
       expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
       expect(body).toContain("__trustedFormProxyLoaded");
       expect(fetchedUrl).toBe(
         "https://api.trustedform.com/trustedform.js?field=xxTrustedFormCertUrl&use_tagged_consent=true",
       );
       expect(fetchedHeaders?.get("Cookie")).toBeNull();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("routes nested selected-script proxy URLs through their script key", async () => {
+    const app = new Hono();
+    registerScriptRoutes(app, getBunFetchSelectedScriptRegistry());
+    const originalFetch = globalThis.fetch;
+
+    globalThis.fetch = (() =>
+      Promise.resolve(new Response("window.__trustedFormRouteProxyLoaded = true;"))) as unknown as typeof fetch;
+
+    try {
+      const response = await app.fetch(
+        new Request("http://localhost/_instant/scripts/trustedform.com/tfc.js?f=xxTrustedFormCertUrl&t=true"),
+      );
+      const body = await response.text();
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("Content-Type")).toBe("application/javascript; charset=utf-8");
+      expect(body).toContain("__trustedFormRouteProxyLoaded");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("proxies selected scripts from nested first-party paths that SDKs can inspect", async () => {
+    const originalFetch = globalThis.fetch;
+    const registry = getBunFetchSelectedScriptRegistry();
+    let fetchedUrl = "";
+
+    globalThis.fetch = ((input: Parameters<typeof fetch>[0]) => {
+      fetchedUrl = input instanceof Request ? input.url : String(input);
+      return Promise.resolve(new Response("window.__trustedFormNestedProxyLoaded = true;"));
+    }) as typeof fetch;
+
+    try {
+      const response = await proxySelectedScript(
+        new Request("http://localhost/_instant/scripts/trustedform.com/tfc.js?f=xxTrustedFormCertUrl&t=true"),
+        registry,
+        "tfc",
+      );
+      const body = await response.text();
+
+      expect(response.status).toBe(200);
+      expect(body).toContain("__trustedFormNestedProxyLoaded");
+      expect(fetchedUrl).toBe(
+        "https://api.trustedform.com/trustedform.js?field=xxTrustedFormCertUrl&use_tagged_consent=true",
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("uses the configured Node fetch runtime for the TrustedForm selected script", async () => {
+    let nodeFetchedUrl = "";
+    const response = await proxySelectedScript(
+      new Request("http://localhost/_instant/scripts/tfc.js?f=xxTrustedFormCertUrl&t=true"),
+      selectedScripts,
+      "tfc",
+      {
+        nodeFetch: (url) => {
+          nodeFetchedUrl = url.toString();
+          return Promise.resolve(new TextEncoder().encode("window.__trustedFormNodeFetchLoaded = true;").buffer);
+        },
+      },
+    );
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toBe("application/javascript; charset=utf-8");
+    expect(body).toContain("__trustedFormNodeFetchLoaded");
+    expect(nodeFetchedUrl).toBe(
+      "https://api.trustedform.com/trustedform.js?field=xxTrustedFormCertUrl&use_tagged_consent=true",
+    );
+  });
+
+  it("rewrites TrustedForm follow-up SDK loads to the first-party proxy", async () => {
+    const response = await proxySelectedScript(
+      new Request("http://localhost/_instant/scripts/trustedform.com/tfc.js?f=xxTrustedFormCertUrl&t=true"),
+      selectedScripts,
+      "tfc",
+      {
+        nodeFetch: () =>
+          Promise.resolve(
+            new TextEncoder().encode(
+              'script.src="https://cdn.trustedform.com/trustedform-1.11.7.js";',
+            ).buffer,
+          ),
+      },
+    );
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(body).toContain('script.src="/_instant/scripts/trustedform.com/tfc-core.js";');
+    expect(body).not.toContain("https://cdn.trustedform.com/trustedform-1.11.7.js");
+  });
+
+  it("returns a clean JavaScript 502 when the selected script upstream fetch fails", async () => {
+    const originalFetch = globalThis.fetch;
+    const registry = getBunFetchSelectedScriptRegistry();
+
+    globalThis.fetch = (() => Promise.reject(new Error("network failed"))) as unknown as typeof fetch;
+
+    try {
+      const response = await proxySelectedScript(
+        new Request("http://localhost/_instant/scripts/tfc.js?f=xxTrustedFormCertUrl"),
+        registry,
+        "tfc",
+      );
+      const body = await response.text();
+
+      expect(response.status).toBe(502);
+      expect(response.headers.get("Content-Type")).toBe("application/javascript; charset=utf-8");
+      expect(response.headers.get("Cache-Control")).toBe("no-store");
+      expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
+      expect(body).toContain("Unable to fetch selected script");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("returns a clean JavaScript 502 when the selected script upstream is not OK", async () => {
+    const originalFetch = globalThis.fetch;
+    const registry = getBunFetchSelectedScriptRegistry();
+
+    globalThis.fetch = (() =>
+      Promise.resolve(
+        new Response("service unavailable", {
+          status: 503,
+          headers: { "Content-Type": "text/plain" },
+        }),
+      )) as unknown as typeof fetch;
+
+    try {
+      const response = await proxySelectedScript(
+        new Request("http://localhost/_instant/scripts/tfc.js?f=xxTrustedFormCertUrl"),
+        registry,
+        "tfc",
+      );
+      const body = await response.text();
+
+      expect(response.status).toBe(502);
+      expect(response.headers.get("Content-Type")).toBe("application/javascript; charset=utf-8");
+      expect(response.headers.get("Content-Length")).toBe(String(new TextEncoder().encode(body).byteLength));
+      expect(body).toContain("Unable to fetch selected script");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("returns a clean JavaScript 502 when the selected script body cannot be buffered", async () => {
+    const originalFetch = globalThis.fetch;
+    const registry = getBunFetchSelectedScriptRegistry();
+    const upstreamResponse = new Response("window.fail = false;", {
+      headers: { "Content-Type": "application/javascript" },
+    });
+    Object.defineProperty(upstreamResponse, "arrayBuffer", {
+      value: () => Promise.reject(new Error("read failed")),
+    });
+
+    globalThis.fetch = (() => Promise.resolve(upstreamResponse)) as unknown as typeof fetch;
+
+    try {
+      const response = await proxySelectedScript(
+        new Request("http://localhost/_instant/scripts/tfc.js?f=xxTrustedFormCertUrl"),
+        registry,
+        "tfc",
+      );
+      const body = await response.text();
+
+      expect(response.status).toBe(502);
+      expect(response.headers.get("Content-Type")).toBe("application/javascript; charset=utf-8");
+      expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
+      expect(body).toContain("Unable to fetch selected script");
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -1742,9 +1962,9 @@ describe("form rendering", () => {
     expect(html).toContain('"slug":"consentimiento"');
     expect(html).toContain('"submitLabel":"Enviar"');
     expect(html).toContain('"trustedForm":{"fieldName":"xxTrustedFormCertUrl"');
-    expect(html).toContain('"delivery":"partytown"');
+    expect(html).toContain('"delivery":"main_thread"');
     expect(html).toContain('"scriptProxyKey":"tfc"');
-    expect(html).toContain('"scriptBaseUrl":"/_instant/scripts/tfc.js"');
+    expect(html).toContain('"scriptBaseUrl":"/_instant/scripts/trustedform.com/tfc.js"');
     expect(html).toContain('"partytownLib":"/~partytown/"');
     expect(html).toContain('"partytownScriptUrl":"/~partytown/partytown.js"');
     expect(html).toContain('"allowSubmitWithoutCert":false');
@@ -1758,6 +1978,8 @@ describe("form rendering", () => {
     expect(html).toContain("function loadTrustedFormSdk(trustedForm)");
     expect(html).toContain("function loadTrustedFormSdkWithPartytown(trustedForm, sdkUrl)");
     expect(html).toContain("function ensurePartytownReady(trustedForm)");
+    expect(html).toContain("function getTrustedFormGlobalState()");
+    expect(html).toContain("function shouldUseTrustedFormProxyAliases(trustedForm, url)");
     expect(html).toContain('script.type = "text/partytown"');
     expect(html).toContain('window.dispatchEvent(new CustomEvent("ptupdate"))');
     expect(html).not.toContain("function preloadTrustedFormSdk(trustedForm)");
@@ -1769,7 +1991,7 @@ describe("form rendering", () => {
     expect(html).toContain("trustedFormCertUrl");
     expect(html).toContain('document.getElementById("next-button")?.setAttribute("data-tf-element-role", "submit")');
     expect(html).toContain('ctx.form.setAttribute("data-tf-element-role", "offer")');
-    expect(html).toContain("/_instant/scripts/tfc.js");
+    expect(html).toContain("/_instant/scripts/trustedform.com/tfc.js");
     expect(html).not.toContain("https://api.trustedform.com/trustedform.js");
   });
 
@@ -1921,6 +2143,20 @@ function getRequiredTennesseeForm() {
 
 function createCheckpointCookie(answers: Record<string, string>): string {
   return `${getCheckpointCookieName("tn")}=${encodeCheckpointAnswers(answers)}`;
+}
+
+function getBunFetchSelectedScriptRegistry() {
+  const trustedFormScript = selectedScripts.tfc;
+  if (!trustedFormScript) {
+    throw new Error("Expected selectedScripts.tfc to be registered.");
+  }
+
+  return {
+    tfc: {
+      ...trustedFormScript,
+      fetchRuntime: "bun" as const,
+    },
+  };
 }
 
 async function withNodeEnv<T>(nodeEnv: string | undefined, callback: () => T | Promise<T>): Promise<T> {

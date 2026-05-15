@@ -4,8 +4,8 @@ import type { ScriptProxyRegistry } from "../../scripts";
 import { getPartytownAssetPath, proxySelectedScript } from "../../scripts";
 
 export function registerScriptRoutes(app: Hono, registry: ScriptProxyRegistry): void {
-  app.get("/_instant/scripts/:scriptFile", (c) => {
-    const scriptFile = c.req.param("scriptFile");
+  app.get("/_instant/scripts/*", (c) => {
+    const scriptFile = getScriptFileFromPath(new URL(c.req.url).pathname);
     if (!scriptFile?.endsWith(".js")) {
       return new Response("Not found", { status: 404 });
     }
@@ -32,6 +32,11 @@ export function registerScriptRoutes(app: Hono, registry: ScriptProxyRegistry): 
       },
     });
   });
+}
+
+function getScriptFileFromPath(pathname: string): string | undefined {
+  const scriptPath = pathname.slice("/_instant/scripts/".length);
+  return scriptPath.split("/").filter(Boolean).at(-1);
 }
 
 function getPartytownContentType(assetPath: string): string {

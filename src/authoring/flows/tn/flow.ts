@@ -128,8 +128,9 @@ export const tnFlow = defineFormFlow({
       },
       trustedForm: {
         fieldName: "xxTrustedFormCertUrl",
-        delivery: "main_thread",
+        delivery: "partytown",
         scriptProxyKey: "tfc",
+        scriptBaseUrl: "/_instant/scripts/trustedform.com/tfc.js",
         preloadOnPreviousStep: true,
         allowSubmitWithoutCert: false,
       },

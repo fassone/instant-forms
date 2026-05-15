@@ -1849,16 +1849,28 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
     }
 
     function loadTrustedFormSdk(trustedForm) {
-      if (trustedFormSdkLoaded) return Promise.resolve();
+      const globalState = getTrustedFormGlobalState();
+      if (trustedFormSdkLoaded || globalState.sdkLoaded || window.trustedForm?.lock) return Promise.resolve();
       if (trustedFormSdkLoadPromise) return trustedFormSdkLoadPromise;
+      if (globalState.sdkLoadPromise) {
+        trustedFormSdkLoadPromise = globalState.sdkLoadPromise;
+        return trustedFormSdkLoadPromise;
+      }
       if (!trustedForm || trustedFormSdkLoaded) return Promise.resolve();
       const sdkUrl = buildTrustedFormSdkUrl(trustedForm);
       if (!sdkUrl) return Promise.reject(new Error(trustedFormReadyErrorMessage));
+      if (hasTrustedFormSdkScript(sdkUrl)) {
+        trustedFormSdkLoaded = true;
+        globalState.sdkLoaded = true;
+        return Promise.resolve();
+      }
       if (trustedForm.delivery === "partytown") {
         trustedFormSdkLoadPromise = loadTrustedFormSdkWithPartytown(trustedForm, sdkUrl).catch((trustedFormError) => {
           trustedFormSdkLoadPromise = undefined;
+          globalState.sdkLoadPromise = undefined;
           throw trustedFormError;
         });
+        globalState.sdkLoadPromise = trustedFormSdkLoadPromise;
         return trustedFormSdkLoadPromise;
       }
       const script = document.createElement("script");
@@ -1868,14 +1880,17 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
       trustedFormSdkLoadPromise = new Promise((resolve, reject) => {
         script.addEventListener("load", () => {
           trustedFormSdkLoaded = true;
+          globalState.sdkLoaded = true;
           resolve();
         }, { once: true });
         script.addEventListener("error", () => {
           trustedFormSdkLoadPromise = undefined;
+          globalState.sdkLoadPromise = undefined;
           script.remove();
           reject(new Error(trustedFormReadyErrorMessage));
         }, { once: true });
       });
+      globalState.sdkLoadPromise = trustedFormSdkLoadPromise;
       document.body.appendChild(script);
       return trustedFormSdkLoadPromise;
     }
@@ -1884,6 +1899,7 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
       await ensurePartytownReady(trustedForm);
       if (hasTrustedFormSdkScript(sdkUrl)) {
         trustedFormSdkLoaded = true;
+        getTrustedFormGlobalState().sdkLoaded = true;
         return;
       }
       const script = document.createElement("script");
@@ -1892,7 +1908,13 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
       script.dataset.trustedFormSdk = "true";
       document.body.appendChild(script);
       trustedFormSdkLoaded = true;
+      getTrustedFormGlobalState().sdkLoaded = true;
       window.dispatchEvent(new CustomEvent("ptupdate"));
+    }
+
+    function getTrustedFormGlobalState() {
+      window.__INSTANT_TRUSTED_FORM_CERTIFY__ = window.__INSTANT_TRUSTED_FORM_CERTIFY__ || {};
+      return window.__INSTANT_TRUSTED_FORM_CERTIFY__;
     }
 
     function hasTrustedFormSdkScript(sdkUrl) {
@@ -1933,13 +1955,23 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
     function buildTrustedFormSdkUrl(trustedForm) {
       if (!trustedForm.scriptBaseUrl) return undefined;
       const url = new URL(trustedForm.scriptBaseUrl, window.location.href);
-      const fieldParam = trustedForm.scriptProxyKey ? "f" : "field";
-      const taggedConsentParam = trustedForm.scriptProxyKey ? "t" : "use_tagged_consent";
-      const sandboxParam = trustedForm.scriptProxyKey ? "s" : "sandbox";
+      const usesProxyAliases = shouldUseTrustedFormProxyAliases(trustedForm, url);
+      const fieldParam = usesProxyAliases ? "f" : "field";
+      const taggedConsentParam = usesProxyAliases ? "t" : "use_tagged_consent";
+      const sandboxParam = usesProxyAliases ? "s" : "sandbox";
       if (trustedForm.fieldName && !url.searchParams.has(fieldParam)) url.searchParams.set(fieldParam, trustedForm.fieldName);
       if (trustedForm.useTaggedConsent && !url.searchParams.has(taggedConsentParam)) url.searchParams.set(taggedConsentParam, "true");
       if (trustedForm.sandbox && !url.searchParams.has(sandboxParam)) url.searchParams.set(sandboxParam, "true");
       return url.toString();
+    }
+
+    function shouldUseTrustedFormProxyAliases(trustedForm, url) {
+      if (!trustedForm.scriptProxyKey) return false;
+      return (
+        url.origin === window.location.origin &&
+        url.pathname.startsWith("/_instant/scripts/") &&
+        url.pathname.endsWith("/" + trustedForm.scriptProxyKey + ".js")
+      );
     }
 
     function waitForTrustedFormCertUrl(trustedForm) {

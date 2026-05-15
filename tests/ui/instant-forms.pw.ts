@@ -216,7 +216,7 @@ test.describe("instant routed form UI", () => {
     await mockPartytownRuntime(page, () => {
       partytownRequests += 1;
     });
-    await page.route("**/_instant/scripts/tfc.js**", async (route) => {
+    await page.route("**/_instant/scripts/**/tfc.js**", async (route) => {
       trustedFormProxyRequests += 1;
       await route.fulfill({
         contentType: "application/javascript",
@@ -256,7 +256,7 @@ test.describe("instant routed form UI", () => {
     }
 
     await expect(page).toHaveURL(/\/tn\/custom\/consentimiento$/u);
-    await expect.poll(() => partytownRequests).toBeGreaterThan(0);
+    expect(partytownRequests).toBe(0);
     await expect.poll(() => trustedFormProxyRequests).toBeGreaterThan(0);
     expect(trustedFormDirectRequests).toBe(0);
     await expect
@@ -264,11 +264,13 @@ test.describe("instant routed form UI", () => {
         page.evaluate("Boolean(window.__TRUSTED_FORM_SCRIPT_EXECUTED__)"),
       )
       .toBe(true);
+    await page.waitForTimeout(150);
+    expect(trustedFormProxyRequests).toBe(1);
   });
 
   test("TrustedForm script failure shows an error instead of submitting null", async ({ page }) => {
     await mockPartytownRuntime(page);
-    await page.route("**/_instant/scripts/tfc.js**", async (route) => {
+    await page.route("**/_instant/scripts/**/tfc.js**", async (route) => {
       await route.abort();
     });
     await seedCheckpoint(page, {
@@ -345,7 +347,7 @@ async function seedCheckpoint(page: Page, answers: Record<string, string>): Prom
 async function mockTrustedFormCertify(page: Page, options: { delayMs?: number } = {}): Promise<void> {
   const delayMs = options.delayMs ?? 25;
   await mockPartytownRuntime(page);
-  await page.route("**/_instant/scripts/tfc.js**", async (route) => {
+  await page.route("**/_instant/scripts/**/tfc.js**", async (route) => {
     await route.fulfill({
       contentType: "application/javascript",
       body: getMockTrustedFormScript(delayMs),

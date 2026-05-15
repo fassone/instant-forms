@@ -4,6 +4,13 @@ export type ScriptProxyDefinition = {
   allowedQueryParams: readonly string[];
   queryAliases?: Readonly<Record<string, string>>;
   cacheControl?: string;
+  fetchRuntime?: "bun" | "node";
+  responseReplacements?: readonly ScriptProxyReplacement[];
+};
+
+export type ScriptProxyReplacement = {
+  search: string;
+  replace: string;
 };
 
 export type ScriptProxyDefinitionInput = Omit<ScriptProxyDefinition, "key">;
