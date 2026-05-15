@@ -2,12 +2,13 @@ import { defineFormFlow } from "../../../platform/flow/dsl/define-form-flow";
 import { autocompleteSource, step } from "../../../platform/flow/dsl/step-builders";
 
 export const tnFlow = defineFormFlow({
-  id: "1011189481863371",
   name: "ES - TN - v6",
   status: "ACTIVE",
-  areaCode: "tn",
+  customVariables: {
+    areaCode: "TN",
+    areaName: "Tennessee",
+  },
   page: {
-    id: "298730479987891",
     name: "Seguros Aseguranza",
   },
   steps: [
@@ -15,7 +16,6 @@ export const tnFlow = defineFormFlow({
       key: "belongs_to_state",
       slug: "vive-en-tennessee",
       label: "¿Usted vive en Tennessee?",
-      id: "1653615922583282",
       options: [
         { key: "yes", label: "Si" },
         { key: "no", label: "No" },
@@ -25,7 +25,6 @@ export const tnFlow = defineFormFlow({
       key: "residence_state",
       slug: "estado-donde-vive",
       label: "¿En qué estado vive?",
-      id: "residence_state",
       autocomplete: "address-level1",
       source: autocompleteSource.usStates(),
       showWhen: {
@@ -37,7 +36,6 @@ export const tnFlow = defineFormFlow({
       key: "has_license",
       slug: "tiene-licencia",
       label: "¿Usted tiene licencia de los Estado Unidos?",
-      id: "782123394910922",
       options: [
         { key: "yes", label: "Si" },
         { key: "no", label: "No" },
@@ -47,7 +45,6 @@ export const tnFlow = defineFormFlow({
       key: "has_insurance",
       slug: "tiene-seguro",
       label: "¿Usted tiene seguro de los Estado Unidos?",
-      id: "2197559684116183",
       options: [
         { key: "yes", label: "Si" },
         { key: "no", label: "No" },
@@ -57,7 +54,6 @@ export const tnFlow = defineFormFlow({
       key: "is_clean_title",
       slug: "titulo-limpio",
       label: "¿Su auto tiene título limpio?",
-      id: "1044815071204693",
       options: [
         { key: "yes", label: "Si" },
         { key: "no", label: "No" },
@@ -67,7 +63,6 @@ export const tnFlow = defineFormFlow({
       key: "number_of_registered_cars",
       slug: "autos-a-asegurar",
       label: "¿Cuantos autos quiere asegurar?",
-      id: "1000790812295278",
       options: [
         { key: "1", label: "1" },
         { key: "2+", label: "2+" },
@@ -77,7 +72,6 @@ export const tnFlow = defineFormFlow({
       key: "matching_offer",
       slug: "buscando-oferta",
       label: "Estamos buscando su seguro ideal",
-      id: "matching_offer",
       countsAsStep: false,
       benefits: [
         "Revisando sus respuestas",
@@ -94,7 +88,6 @@ export const tnFlow = defineFormFlow({
       key: "first_name",
       slug: "nombre",
       label: "Nombre",
-      id: "1283697083392173",
       type: "FIRST_NAME",
       autocomplete: "given-name",
     }),
@@ -102,7 +95,6 @@ export const tnFlow = defineFormFlow({
       key: "last_name",
       slug: "apellido",
       label: "Apellido",
-      id: "1529546892176037",
       type: "LAST_NAME",
       autocomplete: "family-name",
     }),
@@ -110,13 +102,11 @@ export const tnFlow = defineFormFlow({
       key: "phone_number",
       slug: "telefono",
       label: "Número de teléfono",
-      id: "1594967471565670",
     }),
     step.trustedFormConsent({
       key: "trustedform_consent",
       slug: "consentimiento",
       label: "Antes de enviar",
-      id: "trustedform_consent",
       // Replace with approved consent language before production traffic.
       disclosure:
         "Al seleccionar esta casilla, autorizo a Seguros Aseguranza y a sus agentes a contactarme por teléfono o mensaje de texto sobre opciones de seguro de auto.",

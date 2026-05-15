@@ -20,6 +20,7 @@ export type RenderFormPageOptions = {
   activeStepIndex?: number;
   answers?: Record<string, string>;
   previewMode?: boolean;
+  routeKey?: string;
   stepUrlOverrides?: Record<string, string>;
   formConfigExpression?: string;
   transitionAssetUrl?: string;
@@ -45,6 +46,8 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
   const initialProgressPercent = getStepProgressPercent(form, activeStepIndex, initialAnswers);
   const activeStep = form.steps[activeStepIndex] ?? form.steps[0];
   const activeStepKind = activeStep?.kind ?? "choice";
+  const routeKey = options.routeKey ?? "preview";
+  const displayAreaCode = getDisplayAreaCode(form, routeKey);
   const initialStepCountAriaHidden = activeStep && !isCountedStep(activeStep) ? ' aria-hidden="true"' : "";
   const clientConfig = createClientFormConfig(
     form,
@@ -53,6 +56,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
     options.previewMode ?? false,
     getClientStepUrl,
     {
+      routeKey,
       transitionAssetUrl: options.transitionAssetUrl,
     },
   );
@@ -63,7 +67,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>${escapeHtml(form.page.name)} | ${escapeHtml(form.areaCode.toUpperCase())}</title>
+    <title>${escapeHtml(form.page.name)} | ${escapeHtml(displayAreaCode.toUpperCase())}</title>
     <style>
       :root {
         color-scheme: light;
@@ -807,7 +811,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
             <img class="brand-logo" src="/assets/logo.webp" alt="${escapeHtml(form.page.name)}" width="220" height="63">
             
           </div>
-          <span class="area-pill">${escapeHtml(form.areaCode)}</span>
+          <span class="area-pill">${escapeHtml(displayAreaCode)}</span>
         </header>
         <div class="progress-area">
           <div class="progress-meta">
@@ -978,6 +982,10 @@ function getStepProgressPercent(form: InstantForm, stepIndex: number, answers: R
   const countedStepCount = Math.max(countedStepIndexes.length, 1);
 
   return (countedStepNumber / countedStepCount) * 100;
+}
+
+function getDisplayAreaCode(form: InstantForm, routeKey: string): string {
+  return form.customVariables.areaCode || routeKey;
 }
 
 type StepTemplateRenderer<TStep extends FormStep> = (stepDefinition: TStep, answers: Record<string, string>) => string;

@@ -5,10 +5,8 @@ import { validateStepSubmissionAnswer } from "../steps/adapters";
 export type AnswerMap = Record<string, string>;
 
 export type SubmissionPayload = {
-  areaCode: string;
-  formId: string;
+  routeKey: string;
   formName: string;
-  pageId: string;
   pageName: string;
   submittedAt: string;
   trustedFormCertUrl: string | null;
@@ -34,6 +32,7 @@ export { US_PHONE_VALIDATION_MESSAGE, normalizeUsPhoneNumber };
 
 export function validateSubmission(
   form: InstantForm,
+  routeKey: string,
   input: unknown,
   submittedAt = new Date().toISOString(),
 ): SubmissionValidationResult {
@@ -98,10 +97,8 @@ export function validateSubmission(
   return {
     ok: true,
     payload: {
-      areaCode: form.areaCode,
-      formId: form.id,
+      routeKey,
       formName: form.name,
-      pageId: form.page.id,
       pageName: form.page.name,
       submittedAt,
       trustedFormCertUrl,

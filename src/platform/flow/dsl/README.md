@@ -8,7 +8,7 @@
 
 - Shared form and step types.
 - Step builders for `choice`, `text`, `phone`, `autocomplete`, `interstitial`, and `trusted_form_consent`.
-- Flow-level normalization such as lowercase `areaCode`.
+- Flow-level custom variables used by authored copy and display.
 
 ## Does Not Belong Here
 

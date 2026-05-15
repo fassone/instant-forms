@@ -72,6 +72,7 @@ export type FormRoutes = {
 };
 
 export type FormRouteBuildEntry = {
+  routeKey: string;
   routeSegments: readonly string[];
   form: InstantForm;
 };
@@ -111,13 +112,34 @@ export function getFormRouteBuildEntries(routes: FormRoutes): FormRouteBuildEntr
   return Object.entries(routes.folders).flatMap(([folder, node]) => getFormRouteNodeBuildEntries([folder], node));
 }
 
+export function getFormRouteByRouteKey(routes: FormRoutes, routeKey: string): FormRouteBuildEntry | undefined {
+  const normalizedRouteKey = routeKey.trim().toLowerCase();
+
+  return getFormRouteBuildEntries(routes).find((entry) => entry.routeKey === normalizedRouteKey);
+}
+
+export function getFormRouteKey(routeSegments: readonly string[]): string {
+  return routeSegments.join("_");
+}
+
+export function getFormRouteStepUrl(routeSegments: readonly string[], stepDefinition: FormStep): string {
+  return getPublicStepUrl(routeSegments, stepDefinition);
+}
+
+export function getFormRouteStepUrlOverrides(
+  routeSegments: readonly string[],
+  form: InstantForm,
+): Record<string, string> {
+  return createStepUrlOverrides(routeSegments, form);
+}
+
 export function renderFormRouteNotFound(c: Context, routes: FormRoutes): Promise<Response> {
   return executeRouteAction(c, routes.notFound, undefined, true);
 }
 
 function getFormRouteNodeBuildEntries(routeSegments: readonly string[], node: FormRouteNode): FormRouteBuildEntry[] {
   if (node.type === "flow") {
-    return [{ routeSegments, form: node.form }];
+    return [{ routeKey: getFormRouteKey(routeSegments), routeSegments, form: node.form }];
   }
 
   return Object.entries(node.children).flatMap(([childSegment, childNode]) =>
@@ -150,9 +172,10 @@ function registerPublicRouteNode(
 
 function registerPublicFormFolder(app: Hono, routeSegments: readonly string[], form: InstantForm): void {
   const folderRoot = getFolderRoot(routeSegments);
+  const routeKey = getFormRouteKey(routeSegments);
 
   app.get(folderRoot, (c) => {
-    const answers = readCheckpointAnswers(c, form);
+    const answers = readCheckpointAnswers(c, form, routeKey);
     const resumeStep = getStepAt(form, getResumeStepIndex(form, answers));
 
     return redirectNoStore(c, getPublicStepUrl(routeSegments, resumeStep));
@@ -166,7 +189,7 @@ function registerPublicFormFolder(app: Hono, routeSegments: readonly string[], f
       const legacyStepIndex = getStepIndexByLegacySlug(form, stepSlug);
 
       if (legacyStepIndex !== -1) {
-        const answers = readCheckpointAnswers(c, form);
+        const answers = readCheckpointAnswers(c, form, routeKey);
 
         if (!canAccessStep(form, legacyStepIndex, answers)) {
           const resumeStep = getStepAt(form, getResumeStepIndex(form, answers));
@@ -182,7 +205,7 @@ function registerPublicFormFolder(app: Hono, routeSegments: readonly string[], f
       return redirectNoStore(c, folderRoot);
     }
 
-    const answers = readCheckpointAnswers(c, form);
+    const answers = readCheckpointAnswers(c, form, routeKey);
 
     if (!canAccessStep(form, stepIndex, answers)) {
       const resumeStep = getStepAt(form, getResumeStepIndex(form, answers));
@@ -201,6 +224,7 @@ function registerPublicFormFolder(app: Hono, routeSegments: readonly string[], f
     const renderOptions = {
       activeStepIndex: stepIndex,
       answers,
+      routeKey,
       stepUrlOverrides: createStepUrlOverrides(routeSegments, form),
     };
     const prebuiltHtml = await readPrebuiltFormPage(form, {
@@ -246,6 +270,7 @@ function registerPreviewRouteNode(
 
 function registerPreviewFormFolder(app: Hono, routeSegments: readonly string[], form: InstantForm): void {
   const previewFolderRoot = getFolderRoot([RESERVED_PREVIEW_FOLDER, ...routeSegments]);
+  const routeKey = getFormRouteKey(routeSegments);
 
   app.get(previewFolderRoot, (c) => {
     const firstStep = getStepAt(form, 0);
@@ -273,6 +298,7 @@ function registerPreviewFormFolder(app: Hono, routeSegments: readonly string[], 
         activeStepIndex: 0,
         answers: {},
         previewMode: true,
+        routeKey,
         stepUrlOverrides: {
           [requestedStep.key]: previewUrl,
         },
@@ -417,12 +443,7 @@ function getPreviewUnavailableAction(routeSegments: readonly string[]): Unavaila
 }
 
 function isInstantForm(value: unknown): value is InstantForm {
-  return (
-    isRecord(value) &&
-    typeof value.areaCode === "string" &&
-    typeof value.id === "string" &&
-    Array.isArray(value.steps)
-  );
+  return isRecord(value) && typeof value.name === "string" && Array.isArray(value.steps);
 }
 
 function isFormRouteAction(value: unknown): value is FormRouteAction {

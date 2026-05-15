@@ -36,7 +36,6 @@ export type BaseStep = {
   key: string;
   slug: string;
   label: string;
-  id: string;
   template: StepTemplateKey;
   checkpointMode: CheckpointMode;
   behavior: StepBehavior;
@@ -139,12 +138,10 @@ export type FormStep =
   | TrustedFormConsentStep;
 
 export type InstantForm = {
-  id: string;
   name: string;
   status: FormStatus;
-  areaCode: string;
+  customVariables: Readonly<Record<string, string>>;
   page: {
-    id: string;
     name: string;
   };
   steps: readonly FormStep[];
@@ -154,7 +151,6 @@ export type BaseStepInput = {
   key: string;
   slug: string;
   label: string;
-  id?: string;
   countsAsStep?: boolean;
   showWhen?: StepCondition;
 };
@@ -197,12 +193,10 @@ export type TrustedFormConsentStepInput = BaseStepInput & {
 };
 
 export type FormFlowInput = {
-  id: string;
   name: string;
   status: FormStatus;
-  areaCode: string;
+  customVariables: Readonly<Record<string, string>>;
   page: {
-    id: string;
     name: string;
   };
   steps: readonly FormStep[];

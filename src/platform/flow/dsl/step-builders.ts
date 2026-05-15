@@ -128,7 +128,6 @@ function baseStep(
     key: input.key,
     slug: input.slug,
     label: input.label,
-    id: input.id ?? input.key,
     template,
     checkpointMode,
     behavior,

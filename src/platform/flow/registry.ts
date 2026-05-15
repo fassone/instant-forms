@@ -1,13 +1,4 @@
-import { formsByArea } from "../../authoring/flows/registry";
 import type { FormStep, InstantForm } from "./dsl/types";
-
-export type AreaCode = keyof typeof formsByArea;
-
-export function getFormByAreaCode(areaCode: string): InstantForm | undefined {
-  const normalizedAreaCode = areaCode.trim().toLowerCase();
-
-  return (formsByArea as Record<string, InstantForm>)[normalizedAreaCode];
-}
 
 export function getStepSlug(stepDefinition: FormStep): string {
   return stepDefinition.slug;
@@ -17,8 +8,8 @@ export function getLegacyStepSlug(stepDefinition: FormStep): string {
   return stepDefinition.key.replaceAll("_", "-");
 }
 
-export function getStepUrl(form: InstantForm, stepDefinition: FormStep): string {
-  return `/${form.areaCode}/${getStepSlug(stepDefinition)}`;
+export function getStepUrl(_form: InstantForm, stepDefinition: FormStep): string {
+  return `/${getStepSlug(stepDefinition)}`;
 }
 
 export function isStepVisible(stepDefinition: FormStep, answers: Record<string, string>): boolean {

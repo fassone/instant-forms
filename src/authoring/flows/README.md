@@ -2,13 +2,14 @@
 
 ## Purpose
 
-`src/authoring/flows/` registers authored area flows and groups each market's editable form definition.
+`src/authoring/flows/` contains each market's editable form definition.
 
 ## Belongs Here
 
 - One folder per authored area or market.
-- `registry.ts` mapping lowercase area codes to authored flows.
+- `registry.ts` with named exports for authored flows.
 - Flow-level content such as labels, slugs, and matching copy.
+- Business context in `customVariables`, such as `areaCode` and `areaName`.
 
 ## Does Not Belong Here
 
@@ -18,4 +19,4 @@
 
 ## Change Safely
 
-Keep public slugs stable once launched. Register new flows in `registry.ts` and add route/structure tests for the new area.
+Keep public slugs stable once launched. Register public placement in `src/authoring/routes/registry.ts`; route mounts define runtime route keys such as `tn_custom`.

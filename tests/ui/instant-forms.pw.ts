@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { encodeCheckpointAnswers, getCheckpointCookieName } from "../../src/platform/persistence/checkpoints";
 
-const areaCode = "tn";
+const routeKey = "tn_custom";
 const appPort = Number(process.env.PLAYWRIGHT_PORT ?? 51234);
 const appUrl = `http://127.0.0.1:${appPort}`;
 const trustedFormCertUrl = "https://cert.trustedform.com/454a35b802f3e7b63ffabb4efedb7c6ebe67886c";
@@ -66,7 +66,7 @@ test.describe("instant routed form UI", () => {
     await waitForTransitionAsset(page, transitionAssetUrl);
 
     let releasedCheckpoints = 0;
-    await page.route("**/api/forms/tn/checkpoints", async (route) => {
+    await page.route("**/api/forms/tn_custom/checkpoints", async (route) => {
       await new Promise((resolve) => {
         setTimeout(resolve, 1000);
       });
@@ -94,7 +94,7 @@ test.describe("instant routed form UI", () => {
     }
 
     await waitForTransitionAsset(page, transitionAssetUrl);
-    await page.route("**/api/forms/tn/checkpoints", async (route) => {
+    await page.route("**/api/forms/tn_custom/checkpoints", async (route) => {
       await new Promise((resolve) => {
         setTimeout(resolve, 250);
       });
@@ -185,8 +185,8 @@ test.describe("instant routed form UI", () => {
 
     await activeStep(page).locator("[data-trusted-form-consent]").check();
     await expect(page.getByRole("button", { name: "Enviar" })).toBeEnabled();
-    const submissionRequest = page.waitForRequest(/\/api\/forms\/tn\/submissions/u);
-    const submissionResponse = page.waitForResponse(/\/api\/forms\/tn\/submissions/u);
+    const submissionRequest = page.waitForRequest(/\/api\/forms\/tn_custom\/submissions/u);
+    const submissionResponse = page.waitForResponse(/\/api\/forms\/tn_custom\/submissions/u);
     await page.getByRole("button", { name: "Enviar" }).click();
     expect(JSON.parse((await submissionRequest).postData() ?? "{}")).toMatchObject({
       trustedFormCertUrl,
@@ -256,7 +256,7 @@ test.describe("instant routed form UI", () => {
     }
 
     await expect(page).toHaveURL(/\/tn\/custom\/consentimiento$/u);
-    expect(partytownRequests).toBe(0);
+    await expect.poll(() => partytownRequests).toBeGreaterThan(0);
     await expect.poll(() => trustedFormProxyRequests).toBeGreaterThan(0);
     expect(trustedFormDirectRequests).toBe(0);
     await expect
@@ -268,7 +268,7 @@ test.describe("instant routed form UI", () => {
     expect(trustedFormProxyRequests).toBe(1);
   });
 
-  test("TrustedForm script failure shows an error instead of submitting null", async ({ page }) => {
+  test("TrustedForm script failure allows fallback submission when configured", async ({ page }) => {
     await mockPartytownRuntime(page);
     await page.route("**/_instant/scripts/**/tfc.js**", async (route) => {
       await route.abort();
@@ -281,8 +281,15 @@ test.describe("instant routed form UI", () => {
     });
     await page.goto("/tn/custom/consentimiento");
 
-    await expect(page.getByRole("alertdialog")).toBeVisible({ timeout: 7000 });
-    await expect(page.getByText("No pudimos preparar el certificado de consentimiento.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Enviar" })).toBeEnabled({ timeout: 7000 });
+    await expect(page.getByRole("alertdialog")).toBeHidden();
+
+    await activeStep(page).locator("[data-trusted-form-consent]").check();
+    const submissionRequest = page.waitForRequest(/\/api\/forms\/tn_custom\/submissions/u);
+    const submissionResponse = page.waitForResponse(/\/api\/forms\/tn_custom\/submissions/u);
+    await page.getByRole("button", { name: "Enviar" }).click();
+    expect(JSON.parse((await submissionRequest).postData() ?? "{}")).not.toHaveProperty("trustedFormCertUrl");
+    await expect((await submissionResponse).status()).toBe(201);
   });
 
   test("key visual states remain stable", async ({ page }) => {
@@ -335,7 +342,7 @@ async function seedCheckpoint(page: Page, answers: Record<string, string>): Prom
   await page.context().clearCookies();
   await page.context().addCookies([
     {
-      name: getCheckpointCookieName(areaCode),
+      name: getCheckpointCookieName(routeKey),
       value: encodeCheckpointAnswers(answers),
       url: appUrl,
       httpOnly: true,

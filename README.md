@@ -100,14 +100,14 @@ Every source and test folder has its own `README.md` describing ownership and sa
 | `GET /__preview/tn/custom/:stepSlug` | No-store preview mirror for public form step visual iteration. |
 | `GET /_instant/scripts/:scriptKey.js` | Allowlisted first-party proxy for selected third-party scripts. |
 | `GET /~partytown/*` | Partytown runtime files used by proxied worker-delivered scripts. |
-| `POST /api/forms/:areaCode/checkpoints` | Validates one answer, writes the checkpoint cookie, and returns the next URL. |
-| `POST /api/forms/:areaCode/submissions` | Validates and logs completed submissions. |
+| `POST /api/forms/:routeKey/checkpoints` | Validates one answer, writes the checkpoint cookie, and returns the next URL. |
+| `POST /api/forms/:routeKey/submissions` | Validates and logs completed submissions. |
 
 Unavailable public routes use author-controlled title, message, CTA, and status from `src/authoring/routes/registry.ts`.
 
 ## Form Flow
 
-The Tennessee flow lives in `src/authoring/flows/tn/flow.ts` and is built with the typed DSL in `src/platform/flow/dsl/`. Public route placement lives in `src/authoring/routes/registry.ts`, where `/tn/custom` is mapped to the Tennessee flow and `/tn` is a small route group. Supported step kinds are `choice`, `text`, `phone`, `autocomplete`, `interstitial`, and `trusted_form_consent`.
+The Tennessee flow lives in `src/authoring/flows/tn/flow.ts` and is built with the typed DSL in `src/platform/flow/dsl/`. Public route placement lives in `src/authoring/routes/registry.ts`, where `/tn/custom` is mapped to the Tennessee flow and `/tn` is a small route group. Runtime identity comes from that route mount, so `/tn/custom` uses the encoded route key `tn_custom`. Business context such as `areaCode: "TN"` and `areaName: "Tennessee"` lives in the flow's `customVariables`. Supported step kinds are `choice`, `text`, `phone`, `autocomplete`, `interstitial`, and `trusted_form_consent`.
 
 Current visible order:
 
@@ -133,7 +133,7 @@ Selected third-party scripts are declared in `src/authoring/scripts/registry.ts`
 
 ## Checkpoints
 
-Partial answers are saved in an HttpOnly cookie named `instant_forms_<areaCode>_answers` with a 7-day max age, `SameSite=Lax`, `Path=/`, and `Secure` on HTTPS. Cookie values are base64url JSON and are sanitized before use.
+Partial answers are saved in an HttpOnly cookie named `instant_forms_<routeKey>_answers` with a 7-day max age, `SameSite=Lax`, `Path=/`, and `Secure` on HTTPS. For the current Tennessee mount, that cookie is `instant_forms_tn_custom_answers`. Cookie values are base64url JSON and are sanitized before use.
 
 Phone checkpoints preserve the visitor-visible value for resume. Final submissions normalize valid US numbers to E.164, for example `+16155551234`.
 
@@ -157,7 +157,7 @@ The client posts:
 }
 ```
 
-Valid submissions are logged with `areaCode`, form/page metadata, `submittedAt`, the top-level `trustedFormCertUrl`, and normalized answers. The Tennessee flow waits for TrustedForm to populate the certificate field before submitting. `matching_offer` and `trustedform_consent` are checkpoint-only and omitted from final `answers`.
+Valid submissions are logged with `routeKey`, form/page names, `submittedAt`, the top-level `trustedFormCertUrl`, and normalized answers. The Tennessee flow can submit without a TrustedForm certificate when `allowSubmitWithoutCert` is true. `matching_offer` and `trustedform_consent` are checkpoint-only and omitted from final `answers`.
 
 ## Contributor Guidance
 

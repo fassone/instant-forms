@@ -53,6 +53,7 @@ for (const entry of getFormRouteBuildEntries(formRoutes)) {
       activeStepIndex: stepIndex,
       answers: {},
       formConfigExpression: FORM_CONFIG_PLACEHOLDER_EXPRESSION,
+      routeKey: entry.routeKey,
       stepUrlOverrides,
       transitionAssetUrl,
     });

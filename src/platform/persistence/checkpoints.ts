@@ -15,8 +15,8 @@ export type CheckpointValidationResult =
 
 export const CHECKPOINT_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
 
-export function getCheckpointCookieName(areaCode: string): string {
-  return `instant_forms_${areaCode.toLowerCase()}_answers`;
+export function getCheckpointCookieName(routeKey: string): string {
+  return `instant_forms_${routeKey.toLowerCase()}_answers`;
 }
 
 export function encodeCheckpointAnswers(answers: CheckpointAnswers): string {

@@ -8,32 +8,36 @@ import {
   validateCheckpointAnswer,
 } from "../../persistence/checkpoints";
 import {
-  getFormByAreaCode,
   getStepByKey,
-  getStepUrl,
   isStepVisible,
   type FormStep,
   type InstantForm,
 } from "../../flow";
+import {
+  getFormRouteByRouteKey,
+  getFormRouteStepUrl,
+  type FormRoutes,
+} from "../../routing";
 import { validateSubmission, type SubmissionPayload } from "../../submissions/validation";
 import { clearCheckpointAnswers, readCheckpointAnswers, setCheckpointAnswers } from "../http/cookies";
 import { jsonResponse } from "../http/responses";
 
 export type SubmissionLogger = (payload: SubmissionPayload) => void;
 
-export function registerFormRoutes(app: Hono, logger: SubmissionLogger): void {
-  app.post("/api/forms/:areaCode/checkpoints", async (c) => {
-    const areaCode = c.req.param("areaCode");
-    const form = getFormByAreaCode(areaCode);
+export function registerFormRoutes(app: Hono, routes: FormRoutes, logger: SubmissionLogger): void {
+  app.post("/api/forms/:routeKey/checkpoints", async (c) => {
+    const routeKey = c.req.param("routeKey");
+    const routeEntry = getFormRouteByRouteKey(routes, routeKey);
 
-    if (!form) {
+    if (!routeEntry) {
       return jsonResponse(
         c,
-        { ok: false, errors: [{ field: "areaCode", message: "Area form is not available." }] },
+        { ok: false, errors: [{ field: "routeKey", message: "Form route is not available." }] },
         404,
       );
     }
 
+    const { form } = routeEntry;
     const body = await parseJsonBody(c.req.raw);
 
     if (!body.ok || !isRecord(body.value)) {
@@ -47,7 +51,7 @@ export function registerFormRoutes(app: Hono, logger: SubmissionLogger): void {
       return jsonResponse(c, { ok: false, errors: [{ field: "questionKey", message: "Question is not available." }] }, 404);
     }
 
-    const answers = readCheckpointAnswers(c, form);
+    const answers = readCheckpointAnswers(c, form, routeEntry.routeKey);
     const stepIndex = form.steps.findIndex((candidate) => candidate.key === stepDefinition.key);
 
     if (stepDefinition.kind === "interstitial" && (stepIndex === -1 || !canAccessStep(form, stepIndex, answers))) {
@@ -77,7 +81,7 @@ export function registerFormRoutes(app: Hono, logger: SubmissionLogger): void {
 
     answers[stepDefinition.key] = validation.answer;
     const sanitizedAnswers = sanitizeCheckpointAnswers(form, answers);
-    setCheckpointAnswers(c, form, sanitizedAnswers);
+    setCheckpointAnswers(c, routeEntry.routeKey, sanitizedAnswers);
 
     const nextIndex =
       stepDefinition.kind === "interstitial" && validation.answer === stepDefinition.completionAnswer
@@ -91,21 +95,21 @@ export function registerFormRoutes(app: Hono, logger: SubmissionLogger): void {
       c,
       {
         ok: true,
-        nextUrl: getStepUrl(form, nextStep),
+        nextUrl: getFormRouteStepUrl(routeEntry.routeSegments, nextStep),
         answers: sanitizedAnswers,
       },
       200,
     );
   });
 
-  app.post("/api/forms/:areaCode/submissions", async (c) => {
-    const areaCode = c.req.param("areaCode");
-    const form = getFormByAreaCode(areaCode);
+  app.post("/api/forms/:routeKey/submissions", async (c) => {
+    const routeKey = c.req.param("routeKey");
+    const routeEntry = getFormRouteByRouteKey(routes, routeKey);
 
-    if (!form) {
+    if (!routeEntry) {
       return jsonResponse(
         c,
-        { ok: false, errors: [{ field: "areaCode", message: "Area form is not available." }] },
+        { ok: false, errors: [{ field: "routeKey", message: "Form route is not available." }] },
         404,
       );
     }
@@ -116,14 +120,14 @@ export function registerFormRoutes(app: Hono, logger: SubmissionLogger): void {
       return jsonResponse(c, { ok: false, errors: [{ field: "body", message: "Request body must be valid JSON." }] }, 400);
     }
 
-    const validation = validateSubmission(form, body.value);
+    const validation = validateSubmission(routeEntry.form, routeEntry.routeKey, body.value);
 
     if (validation.ok === false) {
       return jsonResponse(c, { ok: false, errors: validation.errors }, 400);
     }
 
     logger(validation.payload);
-    clearCheckpointAnswers(c, form);
+    clearCheckpointAnswers(c, routeEntry.routeKey);
 
     return jsonResponse(c, { ok: true, submittedAt: validation.payload.submittedAt }, 201);
   });

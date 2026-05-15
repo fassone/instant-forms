@@ -26,7 +26,7 @@ export function createApp(options: AppOptions = {}) {
   registerAssetRoutes(app);
   registerScriptRoutes(app, selectedScripts);
   registerFormRoutePages(app, formRoutes);
-  registerFormRoutes(app, logger);
+  registerFormRoutes(app, formRoutes, logger);
 
   app.notFound((c) => renderFormRouteNotFound(c, formRoutes));
 

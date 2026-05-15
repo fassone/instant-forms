@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`src/platform/flow/` owns reusable flow semantics: DSL exports, step URL helpers, visibility, counted-step logic, and area lookup.
+`src/platform/flow/` owns reusable flow semantics: DSL exports, step URL helpers, visibility, and counted-step logic.
 
 ```mermaid
 flowchart LR
@@ -14,8 +14,7 @@ flowchart LR
 ## Belongs Here
 
 - Flow DSL exports and platform-level flow helper functions.
-- Runtime lookup by `areaCode`.
-- Step slug, URL, visibility, and counted-step semantics.
+- Step slug, fallback URL, visibility, and counted-step semantics.
 
 ## Does Not Belong Here
 
@@ -25,4 +24,4 @@ flowchart LR
 
 ## Change Safely
 
-Runtime modules should import flow behavior from this folder. This folder may load authored flows only through `src/authoring/flows/registry.ts`.
+Runtime modules should import flow behavior from this folder. Public placement and route-key lookup belong in `src/platform/routing`, not in the flow DSL.

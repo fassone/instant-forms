@@ -67,7 +67,8 @@ export type ClientStep =
     });
 
 export type ClientFormConfig = {
-  areaCode: string;
+  routeKey: string;
+  customVariables: Readonly<Record<string, string>>;
   activeStepIndex: number;
   initialAnswers: Record<string, string>;
   previewMode: boolean;
@@ -87,6 +88,7 @@ export type ClientFormConfig = {
 };
 
 export type ClientFormConfigOptions = {
+  routeKey?: string;
   transitionAssetUrl?: string;
 };
 
@@ -115,7 +117,8 @@ export function createClientFormConfig(
     initialAnswers,
   );
   return {
-    areaCode: form.areaCode,
+    routeKey: options.routeKey ?? "preview",
+    customVariables: form.customVariables,
     activeStepIndex: 0,
     initialAnswers,
     previewMode,

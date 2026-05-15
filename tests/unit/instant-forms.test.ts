@@ -6,11 +6,17 @@ import { selectedScripts } from "../../src/authoring/scripts/registry";
 import { formRoutes } from "../../src/authoring/routes/registry";
 import { createFetchHandler } from "../../src/platform/app/server";
 import { registerScriptRoutes } from "../../src/platform/app/routes/scripts";
-import { autocompleteSource, defineFormFlow, getFormByAreaCode, getStepSlug, isCountedStep, step } from "../../src/platform/flow";
+import { autocompleteSource, defineFormFlow, getStepSlug, isCountedStep, step } from "../../src/platform/flow";
 import { encodeCheckpointAnswers, getCheckpointCookieName } from "../../src/platform/persistence/checkpoints";
 import { FORM_CONFIG_PLACEHOLDER_EXPRESSION, buildTransitionAsset, renderFormPage } from "../../src/platform/rendering";
 import { buildInlineCss, getInlineAssetMode } from "../../src/platform/rendering/inline-assets";
-import { defineFormRoutes, redirectTo, registerFormRoutePages, unavailable } from "../../src/platform/routing";
+import {
+  defineFormRoutes,
+  getFormRouteByRouteKey,
+  redirectTo,
+  registerFormRoutePages,
+  unavailable,
+} from "../../src/platform/routing";
 import { buildScriptProxyUpstreamUrl, proxySelectedScript } from "../../src/platform/scripts";
 import { createStateAutocompleteItems, rankAutocompleteItems } from "../../src/platform/steps/autocomplete/ranking";
 import { normalizeUsPhoneNumber } from "../../src/platform/steps/phone/us-phone";
@@ -59,6 +65,7 @@ const validAnswers = {
 };
 
 const trustedFormCertUrl = "https://cert.trustedform.com/454a35b802f3e7b63ffabb4efedb7c6ebe67886c";
+const routeKey = "tn_custom";
 
 const unavailableContent = {
   title: "404",
@@ -72,11 +79,16 @@ const unavailableContent = {
 const repoRoot = join(import.meta.dir, "../..");
 
 describe("form registry", () => {
-  it("resolves the Tennessee form by lowercase area code", () => {
-    const form = getFormByAreaCode("tn");
+  it("resolves the Tennessee form by route-derived key", () => {
+    const routeEntry = getRequiredTennesseeRoute();
 
-    expect(form?.areaCode).toBe("tn");
-    expect(form?.id).toBe("1011189481863371");
+    expect(routeEntry.routeKey).toBe(routeKey);
+    expect(routeEntry.routeSegments).toEqual(["tn", "custom"]);
+    expect(routeEntry.form.customVariables).toMatchObject({
+      areaCode: "TN",
+      areaName: "Tennessee",
+    });
+    expect(routeEntry.form.page.name).toBe("Seguros Aseguranza");
   });
 
   it("maps the public Tennessee route folder to the Tennessee flow", () => {
@@ -220,9 +232,9 @@ describe("form registry", () => {
   });
 
   it("keeps contact and consent fields at the end of the flow", () => {
-    const form = getFormByAreaCode("tn");
+    const form = getRequiredTennesseeForm();
 
-    expect(form?.steps.map((stepDefinition) => stepDefinition.key).slice(-4)).toEqual([
+    expect(form.steps.map((stepDefinition) => stepDefinition.key).slice(-4)).toEqual([
       "first_name",
       "last_name",
       "phone_number",
@@ -261,11 +273,13 @@ describe("form registry", () => {
 
   it("compiles declarative DSL steps with templates, behaviors, and success colors", () => {
     const flow = defineFormFlow({
-      areaCode: "XX",
-      id: "test-form",
       name: "Test Flow",
       status: "ACTIVE",
-      page: { id: "page", name: "Test Page" },
+      customVariables: {
+        areaCode: "XX",
+        areaName: "Example Area",
+      },
+      page: { name: "Test Page" },
       steps: [
         step.choice({
           key: "choice_key",
@@ -310,7 +324,11 @@ describe("form registry", () => {
       ],
     });
 
-    expect(flow.areaCode).toBe("xx");
+    expect(flow.customVariables).toEqual({
+      areaCode: "XX",
+      areaName: "Example Area",
+    });
+    expect(flow.steps[0]).not.toHaveProperty("id");
     expect(flow.steps.map((stepDefinition) => [stepDefinition.kind, stepDefinition.template])).toEqual([
       ["choice", "choice"],
       ["text", "text"],
@@ -345,11 +363,10 @@ describe("form registry", () => {
 
   it("uses the selected-script proxy for TrustedForm regardless of delivery mode", () => {
     const flow = defineFormFlow({
-      areaCode: "zz",
-      id: "proxy-test",
       name: "Proxy Test",
       status: "ACTIVE",
-      page: { id: "page", name: "Page" },
+      customVariables: {},
+      page: { name: "Page" },
       steps: [
         step.trustedFormConsent({
           key: "trustedform_consent",
@@ -434,7 +451,7 @@ describe("submission validation", () => {
   const form = getRequiredTennesseeForm();
 
   it("rejects missing answers", () => {
-    const result = validateSubmission(form, { answers: { ...validAnswers, has_license: "" } });
+    const result = validateSubmission(form, routeKey, { answers: { ...validAnswers, has_license: "" } });
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -446,7 +463,7 @@ describe("submission validation", () => {
   });
 
   it("rejects invalid choice option keys", () => {
-    const result = validateSubmission(form, { answers: { ...validAnswers, belongs_to_state: "maybe" } });
+    const result = validateSubmission(form, routeKey, { answers: { ...validAnswers, belongs_to_state: "maybe" } });
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -458,7 +475,7 @@ describe("submission validation", () => {
   });
 
   it("rejects phone numbers that cannot normalize to one US number", () => {
-    const result = validateSubmission(form, { answers: { ...validAnswers, phone_number: "615-555" } });
+    const result = validateSubmission(form, routeKey, { answers: { ...validAnswers, phone_number: "615-555" } });
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -472,6 +489,7 @@ describe("submission validation", () => {
   it("accepts formatted US phone numbers and normalizes them to E.164", () => {
     const result = validateSubmission(
       form,
+      routeKey,
       { answers: validAnswers, trustedFormCertUrl },
       "2026-05-13T00:00:00.000Z",
     );
@@ -479,25 +497,29 @@ describe("submission validation", () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.payload.answers.phone_number).toBe("+16155551234");
-      expect(result.payload.areaCode).toBe("tn");
-      expect(result.payload.formId).toBe("1011189481863371");
+      expect(result.payload.routeKey).toBe(routeKey);
+      expect(result.payload).not.toHaveProperty("areaCode");
+      expect(result.payload).not.toHaveProperty("formId");
+      expect(result.payload).not.toHaveProperty("pageId");
       expect(result.payload.trustedFormCertUrl).toBe(trustedFormCertUrl);
       expect(result.payload.answers.trustedform_consent).toBeUndefined();
     }
   });
 
   it("requires residence state only when the visitor does not live in Tennessee", () => {
-    const missingState = validateSubmission(form, { answers: { ...validAnswers, belongs_to_state: "no" } });
-    const invalidState = validateSubmission(form, {
+    const missingState = validateSubmission(form, routeKey, { answers: { ...validAnswers, belongs_to_state: "no" } });
+    const invalidState = validateSubmission(form, routeKey, {
       answers: { ...validAnswers, belongs_to_state: "no", residence_state: "Not a state" },
     });
     const validNoPath = validateSubmission(
       form,
+      routeKey,
       { answers: { ...validAnswers, belongs_to_state: "no", residence_state: "Texas" }, trustedFormCertUrl },
       "2026-05-13T00:00:00.000Z",
     );
     const staleYesPath = validateSubmission(
       form,
+      routeKey,
       { answers: { ...validAnswers, belongs_to_state: "yes", residence_state: "Not a state" }, trustedFormCertUrl },
       "2026-05-13T00:00:00.000Z",
     );
@@ -532,10 +554,11 @@ describe("submission validation", () => {
   it("accepts TrustedForm certificate URLs as top-level submission metadata", () => {
     const validResult = validateSubmission(
       form,
+      routeKey,
       { answers: validAnswers, trustedFormCertUrl },
       "2026-05-13T00:00:00.000Z",
     );
-    const invalidResult = validateSubmission(form, {
+    const invalidResult = validateSubmission(form, routeKey, {
       answers: validAnswers,
       trustedFormCertUrl: "https://example.com/not-a-cert",
     });
@@ -556,7 +579,21 @@ describe("submission validation", () => {
   });
 
   it("requires a TrustedForm certificate URL when the authored consent step disallows fallback submissions", () => {
-    const result = validateSubmission(form, { answers: validAnswers });
+    const strictForm = {
+      ...form,
+      steps: form.steps.map((stepDefinition) =>
+        stepDefinition.kind === "trusted_form_consent"
+          ? {
+              ...stepDefinition,
+              trustedForm: {
+                ...stepDefinition.trustedForm,
+                allowSubmitWithoutCert: false,
+              },
+            }
+          : stepDefinition,
+      ),
+    };
+    const result = validateSubmission(strictForm, routeKey, { answers: validAnswers });
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -1274,7 +1311,7 @@ describe("server routing", () => {
     expect(html).not.toContain('"slug":"nombre"');
   });
 
-  it("returns an unavailable page for unsupported area codes", async () => {
+  it("returns an unavailable page for unsupported form routes", async () => {
     const handler = createFetchHandler();
     const response = await handler(new Request("http://localhost/ga"));
     const html = await response.text();
@@ -1289,7 +1326,7 @@ describe("server routing", () => {
   it("sets a checkpoint cookie for valid partial answers", async () => {
     const handler = createFetchHandler();
     const response = await handler(
-      new Request("http://localhost/api/forms/tn/checkpoints", {
+      new Request("http://localhost/api/forms/tn_custom/checkpoints", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ questionKey: "belongs_to_state", answer: "yes" }),
@@ -1299,8 +1336,8 @@ describe("server routing", () => {
     const setCookie = response.headers.get("Set-Cookie") ?? "";
 
     expect(response.status).toBe(200);
-    expect(body).toMatchObject({ ok: true, nextUrl: "/tn/tiene-licencia" });
-    expect(setCookie).toContain(`${getCheckpointCookieName("tn")}=`);
+    expect(body).toMatchObject({ ok: true, nextUrl: "/tn/custom/tiene-licencia" });
+    expect(setCookie).toContain(`${getCheckpointCookieName(routeKey)}=`);
     expect(setCookie).toContain("HttpOnly");
     expect(setCookie).toContain("SameSite=Lax");
     expect(setCookie).toContain("Path=/");
@@ -1310,7 +1347,7 @@ describe("server routing", () => {
   it("routes completed pre-contact answers through the matching checkpoint", async () => {
     const handler = createFetchHandler();
     const carsResponse = await handler(
-      new Request("http://localhost/api/forms/tn/checkpoints", {
+      new Request("http://localhost/api/forms/tn_custom/checkpoints", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1327,7 +1364,7 @@ describe("server routing", () => {
     const carsBody = await carsResponse.json();
     const cookie = carsResponse.headers.get("Set-Cookie")?.split(";")[0] ?? "";
     const completedResponse = await handler(
-      new Request("http://localhost/api/forms/tn/checkpoints", {
+      new Request("http://localhost/api/forms/tn_custom/checkpoints", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1339,7 +1376,7 @@ describe("server routing", () => {
     const completedBody = await completedResponse.json();
     const completedCookie = completedResponse.headers.get("Set-Cookie")?.split(";")[0] ?? "";
     const matchingResponse = await handler(
-      new Request("http://localhost/api/forms/tn/checkpoints", {
+      new Request("http://localhost/api/forms/tn_custom/checkpoints", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1351,17 +1388,17 @@ describe("server routing", () => {
     const matchingBody = await matchingResponse.json();
 
     expect(carsResponse.status).toBe(200);
-    expect(carsBody).toMatchObject({ ok: true, nextUrl: "/tn/buscando-oferta" });
+    expect(carsBody).toMatchObject({ ok: true, nextUrl: "/tn/custom/buscando-oferta" });
     expect(completedResponse.status).toBe(200);
     expect(completedBody).toMatchObject({
       ok: true,
-      nextUrl: "/tn/buscando-oferta",
+      nextUrl: "/tn/custom/buscando-oferta",
       answers: completedMatchingAnswers,
     });
     expect(matchingResponse.status).toBe(200);
     expect(matchingBody).toMatchObject({
       ok: true,
-      nextUrl: "/tn/nombre",
+      nextUrl: "/tn/custom/nombre",
       answers: seenMatchingAnswers,
     });
   });
@@ -1369,7 +1406,7 @@ describe("server routing", () => {
   it("skips the matching route from previous-step checkpoints after it has been seen", async () => {
     const handler = createFetchHandler();
     const response = await handler(
-      new Request("http://localhost/api/forms/tn/checkpoints", {
+      new Request("http://localhost/api/forms/tn_custom/checkpoints", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1387,13 +1424,13 @@ describe("server routing", () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body).toMatchObject({ ok: true, nextUrl: "/tn/nombre" });
+    expect(body).toMatchObject({ ok: true, nextUrl: "/tn/custom/nombre" });
   });
 
   it("routes no Tennessee answers through the residence-state checkpoint", async () => {
     const handler = createFetchHandler();
     const noResponse = await handler(
-      new Request("http://localhost/api/forms/tn/checkpoints", {
+      new Request("http://localhost/api/forms/tn_custom/checkpoints", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ questionKey: "belongs_to_state", answer: "no" }),
@@ -1402,7 +1439,7 @@ describe("server routing", () => {
     const noBody = await noResponse.json();
     const cookie = noResponse.headers.get("Set-Cookie")?.split(";")[0] ?? "";
     const stateResponse = await handler(
-      new Request("http://localhost/api/forms/tn/checkpoints", {
+      new Request("http://localhost/api/forms/tn_custom/checkpoints", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1414,11 +1451,11 @@ describe("server routing", () => {
     const stateBody = await stateResponse.json();
 
     expect(noResponse.status).toBe(200);
-    expect(noBody).toMatchObject({ ok: true, nextUrl: "/tn/estado-donde-vive" });
+    expect(noBody).toMatchObject({ ok: true, nextUrl: "/tn/custom/estado-donde-vive" });
     expect(stateResponse.status).toBe(200);
     expect(stateBody).toMatchObject({
       ok: true,
-      nextUrl: "/tn/tiene-licencia",
+      nextUrl: "/tn/custom/tiene-licencia",
       answers: {
         belongs_to_state: "no",
         residence_state: "TX",
@@ -1429,7 +1466,7 @@ describe("server routing", () => {
   it("routes completed phone answers to the TrustedForm consent step", async () => {
     const handler = createFetchHandler();
     const response = await handler(
-      new Request("http://localhost/api/forms/tn/checkpoints", {
+      new Request("http://localhost/api/forms/tn_custom/checkpoints", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1447,7 +1484,7 @@ describe("server routing", () => {
     expect(response.status).toBe(200);
     expect(body).toMatchObject({
       ok: true,
-      nextUrl: "/tn/consentimiento",
+      nextUrl: "/tn/custom/consentimiento",
       answers: preConsentAnswers,
     });
   });
@@ -1455,7 +1492,7 @@ describe("server routing", () => {
   it("marks checkpoint cookies secure when served over HTTPS", async () => {
     const handler = createFetchHandler();
     const response = await handler(
-      new Request("https://localhost/api/forms/tn/checkpoints", {
+      new Request("https://localhost/api/forms/tn_custom/checkpoints", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ questionKey: "belongs_to_state", answer: "yes" }),
@@ -1468,21 +1505,21 @@ describe("server routing", () => {
   it("rejects invalid checkpoint answers", async () => {
     const handler = createFetchHandler();
     const invalidChoice = await handler(
-      new Request("http://localhost/api/forms/tn/checkpoints", {
+      new Request("http://localhost/api/forms/tn_custom/checkpoints", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ questionKey: "belongs_to_state", answer: "maybe" }),
       }),
     );
     const invalidPhone = await handler(
-      new Request("http://localhost/api/forms/tn/checkpoints", {
+      new Request("http://localhost/api/forms/tn_custom/checkpoints", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ questionKey: "phone_number", answer: "+52 55 1234 5678" }),
       }),
     );
     const invalidState = await handler(
-      new Request("http://localhost/api/forms/tn/checkpoints", {
+      new Request("http://localhost/api/forms/tn_custom/checkpoints", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1492,14 +1529,14 @@ describe("server routing", () => {
       }),
     );
     const hiddenState = await handler(
-      new Request("http://localhost/api/forms/tn/checkpoints", {
+      new Request("http://localhost/api/forms/tn_custom/checkpoints", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ questionKey: "residence_state", answer: "Texas" }),
       }),
     );
     const invalidMatching = await handler(
-      new Request("http://localhost/api/forms/tn/checkpoints", {
+      new Request("http://localhost/api/forms/tn_custom/checkpoints", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1509,7 +1546,7 @@ describe("server routing", () => {
       }),
     );
     const prematureSeenMatching = await handler(
-      new Request("http://localhost/api/forms/tn/checkpoints", {
+      new Request("http://localhost/api/forms/tn_custom/checkpoints", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1519,7 +1556,7 @@ describe("server routing", () => {
       }),
     );
     const tooEarlyMatching = await handler(
-      new Request("http://localhost/api/forms/tn/checkpoints", {
+      new Request("http://localhost/api/forms/tn_custom/checkpoints", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ questionKey: "matching_offer", answer: "seen" }),
@@ -1566,7 +1603,7 @@ describe("server routing", () => {
     const loggedPayloads: unknown[] = [];
     const handler = createFetchHandler({ logger: (payload) => loggedPayloads.push(payload) });
     const response = await handler(
-      new Request("http://localhost/api/forms/tn/submissions", {
+      new Request("http://localhost/api/forms/tn_custom/submissions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ answers: { ...validAnswers, matching_offer: "seen" }, trustedFormCertUrl }),
@@ -1576,11 +1613,13 @@ describe("server routing", () => {
     expect(response.status).toBe(201);
     expect(loggedPayloads).toHaveLength(1);
     expect(loggedPayloads[0]).toMatchObject({
-      areaCode: "tn",
-      formId: "1011189481863371",
+      routeKey,
       pageName: "Seguros Aseguranza",
       trustedFormCertUrl,
     });
+    expect(loggedPayloads[0]).not.toHaveProperty("areaCode");
+    expect(loggedPayloads[0]).not.toHaveProperty("formId");
+    expect(loggedPayloads[0]).not.toHaveProperty("pageId");
     expect((loggedPayloads[0] as { answers?: Record<string, string> }).answers?.matching_offer).toBeUndefined();
     expect((loggedPayloads[0] as { answers?: Record<string, string> }).answers?.trustedform_consent).toBeUndefined();
   });
@@ -1588,7 +1627,7 @@ describe("server routing", () => {
   it("clears the checkpoint cookie after a successful final submission", async () => {
     const handler = createFetchHandler();
     const response = await handler(
-      new Request("http://localhost/api/forms/tn/submissions", {
+      new Request("http://localhost/api/forms/tn_custom/submissions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1600,18 +1639,17 @@ describe("server routing", () => {
     const setCookie = response.headers.get("Set-Cookie") ?? "";
 
     expect(response.status).toBe(201);
-    expect(setCookie).toContain(`${getCheckpointCookieName("tn")}=`);
+    expect(setCookie).toContain(`${getCheckpointCookieName(routeKey)}=`);
     expect(setCookie).toContain("Max-Age=0");
   });
 });
 
 describe("form rendering", () => {
   it("keeps source inline assets in dev and serves built inline assets in production", async () => {
-    const form = getRequiredTennesseeForm();
-    const devHtml = await withNodeEnv("development", () => renderFormPage(form));
-    const productionHtml = await withNodeEnv("production", () => renderFormPage(form));
+    const devHtml = await withNodeEnv("development", () => renderTennesseeForm());
+    const productionHtml = await withNodeEnv("production", () => renderTennesseeForm());
     const productionTemplateHtml = await withNodeEnv("production", () =>
-      renderFormPage(form, { formConfigExpression: FORM_CONFIG_PLACEHOLDER_EXPRESSION }),
+      renderTennesseeForm({ formConfigExpression: FORM_CONFIG_PLACEHOLDER_EXPRESSION }),
     );
 
     expect(getInlineAssetMode("development")).toBe("source");
@@ -1649,11 +1687,11 @@ describe("form rendering", () => {
       ]),
     );
     const transitionAsset = await buildTransitionAsset(form, ["tn", "custom"], stepUrlOverrides);
-    const devHtml = await renderFormPage(form, {
+    const devHtml = await renderTennesseeForm({
       transitionAssetUrl: `/_instant/forms/${transitionAsset.hash}/transition.js`,
     });
     const productionHtml = await withNodeEnv("production", () =>
-      renderFormPage(form, {
+      renderTennesseeForm({
         transitionAssetUrl: `/_instant/forms/${transitionAsset.hash}/transition.js`,
       }),
     );
@@ -1696,7 +1734,7 @@ describe("form rendering", () => {
   });
 
   it("renders the logo and brand theme tokens", async () => {
-    const html = await renderFormPage(getRequiredTennesseeForm());
+    const html = await renderTennesseeForm();
 
     expect(html).toContain('src="/assets/logo.webp"');
     expect(html).not.toContain("Seguro para Latinos en Tennessee");
@@ -1707,7 +1745,7 @@ describe("form rendering", () => {
   });
 
   it("uses larger desktop controls while preserving mobile sizing rules", async () => {
-    const html = await renderFormPage(getRequiredTennesseeForm());
+    const html = await renderTennesseeForm();
 
     expect(html).toContain("max-width: 100%;");
     expect(html).toContain("font-size: clamp(2rem, 4vw, 2.75rem);");
@@ -1767,7 +1805,7 @@ describe("form rendering", () => {
   });
 
   it("wires choice answers to delayed auto-advance on click and number keys", async () => {
-    const html = await renderFormPage(getRequiredTennesseeForm());
+    const html = await renderTennesseeForm();
 
     expect(html).toContain('registerBehaviorModule("choice"');
     expect(html).toContain("function advanceAfterChoiceSelection(ctx, question, answer)");
@@ -1795,14 +1833,14 @@ describe("form rendering", () => {
   });
 
   it("renders the branded matching step with one-time auto-continue wiring", async () => {
-    const html = await renderFormPage(getRequiredTennesseeForm(), {
+    const html = await renderTennesseeForm( {
       activeStepIndex: 6,
       answers: preContactAnswers,
     });
 
     expect(html).toContain('"kind":"interstitial"');
     expect(html).toContain('"slug":"buscando-oferta"');
-    expect(html).toContain('"url":"/tn/buscando-oferta"');
+    expect(html).toContain('"url":"/tn/custom/buscando-oferta"');
     expect(html).not.toContain("Buscando opciones para ti...");
     expect(html).toContain("Estamos buscando su seguro ideal");
     expect(html).toContain("Revisando sus respuestas");
@@ -1909,15 +1947,15 @@ describe("form rendering", () => {
   });
 
   it("wires a forgiving US phone mask without blocking browser autofill", async () => {
-    const firstNameHtml = await renderFormPage(getRequiredTennesseeForm(), {
+    const firstNameHtml = await renderTennesseeForm( {
       activeStepIndex: 7,
       answers: seenMatchingAnswers,
     });
-    const lastNameHtml = await renderFormPage(getRequiredTennesseeForm(), {
+    const lastNameHtml = await renderTennesseeForm( {
       activeStepIndex: 8,
       answers: { ...seenMatchingAnswers, first_name: "Ana" },
     });
-    const html = await renderFormPage(getRequiredTennesseeForm(), {
+    const html = await renderTennesseeForm( {
       activeStepIndex: 9,
       answers: { ...seenMatchingAnswers, first_name: "Ana", last_name: "Lopez" },
     });
@@ -1947,11 +1985,11 @@ describe("form rendering", () => {
   });
 
   it("renders TrustedForm consent as an authored final step", async () => {
-    const phoneHtml = await renderFormPage(getRequiredTennesseeForm(), {
+    const phoneHtml = await renderTennesseeForm({
       activeStepIndex: 9,
       answers: { ...seenMatchingAnswers, first_name: "Ana", last_name: "Lopez" },
     });
-    const html = await renderFormPage(getRequiredTennesseeForm(), {
+    const html = await renderTennesseeForm({
       activeStepIndex: 10,
       answers: preConsentAnswers,
     });
@@ -1962,12 +2000,12 @@ describe("form rendering", () => {
     expect(html).toContain('"slug":"consentimiento"');
     expect(html).toContain('"submitLabel":"Enviar"');
     expect(html).toContain('"trustedForm":{"fieldName":"xxTrustedFormCertUrl"');
-    expect(html).toContain('"delivery":"main_thread"');
+    expect(html).toContain('"delivery":"partytown"');
     expect(html).toContain('"scriptProxyKey":"tfc"');
     expect(html).toContain('"scriptBaseUrl":"/_instant/scripts/trustedform.com/tfc.js"');
     expect(html).toContain('"partytownLib":"/~partytown/"');
     expect(html).toContain('"partytownScriptUrl":"/~partytown/partytown.js"');
-    expect(html).toContain('"allowSubmitWithoutCert":false');
+    expect(html).toContain('"allowSubmitWithoutCert":true');
     expect(html).toContain('data-step="10" data-step-kind="trusted_form_consent"');
     expect(html).toContain('data-tf-element-role="consent-language"');
     expect(html).toContain('data-tf-element-role="consent-opt-in"');
@@ -1996,7 +2034,7 @@ describe("form rendering", () => {
   });
 
   it("renders a lightweight error modal instead of inline form errors", async () => {
-    const html = await renderFormPage(getRequiredTennesseeForm());
+    const html = await renderTennesseeForm();
 
     expect(html).not.toContain('id="form-error"');
     expect(html).not.toContain('<p class="error"');
@@ -2019,7 +2057,7 @@ describe("form rendering", () => {
   });
 
   it("synthetically submits focused text fields on mobile blur", async () => {
-    const html = await renderFormPage(getRequiredTennesseeForm(), {
+    const html = await renderTennesseeForm( {
       activeStepIndex: 7,
       answers: seenMatchingAnswers,
     });
@@ -2047,21 +2085,22 @@ describe("form rendering", () => {
   });
 
   it("includes step URLs and browser history handling", async () => {
-    const html = await renderFormPage(getRequiredTennesseeForm());
+    const html = await renderTennesseeForm();
 
     expect(html).toContain('"activeStepIndex":0');
     expect(html).toContain('"initialAnswers":{}');
-    expect(html).toContain('"areaCode":"tn"');
+    expect(html).toContain('"routeKey":"tn_custom"');
+    expect(html).toContain('"customVariables":{"areaCode":"TN","areaName":"Tennessee"}');
     expect(html).not.toContain('"stateCode"');
     expect(html).toContain('"slug":"vive-en-tennessee"');
     expect(html).not.toContain('"slug":"estado-donde-vive"');
     expect(html).not.toContain('"slug":"buscando-oferta"');
-    expect(html).toContain('"url":"/tn/vive-en-tennessee"');
-    expect(html).not.toContain('"url":"/tn/estado-donde-vive"');
-    expect(html).not.toContain('"url":"/tn/buscando-oferta"');
-    expect(html).toContain('"stepUrlsBySlug":{"vive-en-tennessee":"/tn/vive-en-tennessee"');
-    expect(html).toContain('"estado-donde-vive":"/tn/estado-donde-vive"');
-    expect(html).toContain('"buscando-oferta":"/tn/buscando-oferta"');
+    expect(html).toContain('"url":"/tn/custom/vive-en-tennessee"');
+    expect(html).not.toContain('"url":"/tn/custom/estado-donde-vive"');
+    expect(html).not.toContain('"url":"/tn/custom/buscando-oferta"');
+    expect(html).toContain('"stepUrlsBySlug":{"vive-en-tennessee":"/tn/custom/vive-en-tennessee"');
+    expect(html).toContain('"estado-donde-vive":"/tn/custom/estado-donde-vive"');
+    expect(html).toContain('"buscando-oferta":"/tn/custom/buscando-oferta"');
     expect(html).not.toContain('"showWhen":{"questionKey":"belongs_to_state","answer":"no"}');
     expect(html).not.toContain('"autocompleteSources"');
     expect(html).toContain("window.history.replaceState");
@@ -2071,7 +2110,7 @@ describe("form rendering", () => {
   });
 
   it("renders the requested active step and saved answers", async () => {
-    const html = await renderFormPage(getRequiredTennesseeForm(), {
+    const html = await renderTennesseeForm( {
       activeStepIndex: 1,
       answers: { belongs_to_state: "no", residence_state: "TX" },
     });
@@ -2086,7 +2125,7 @@ describe("form rendering", () => {
   });
 
   it("renders the mobile-friendly state autocomplete wiring", async () => {
-    const html = await renderFormPage(getRequiredTennesseeForm(), {
+    const html = await renderTennesseeForm( {
       activeStepIndex: 1,
       answers: { belongs_to_state: "no" },
     });
@@ -2132,17 +2171,40 @@ describe("form rendering", () => {
 });
 
 function getRequiredTennesseeForm() {
-  const form = getFormByAreaCode("tn");
+  return getRequiredTennesseeRoute().form;
+}
 
-  if (!form) {
-    throw new Error("Expected Tennessee form to exist.");
+function getRequiredTennesseeRoute() {
+  const routeEntry = getFormRouteByRouteKey(formRoutes, routeKey);
+
+  if (!routeEntry) {
+    throw new Error("Expected Tennessee form route to exist.");
   }
 
-  return form;
+  return routeEntry;
+}
+
+function renderTennesseeForm(options: Parameters<typeof renderFormPage>[1] = {}): Promise<string> {
+  const form = getRequiredTennesseeForm();
+
+  return renderFormPage(form, {
+    routeKey,
+    stepUrlOverrides: createTennesseeStepUrlOverrides(form),
+    ...options,
+  });
+}
+
+function createTennesseeStepUrlOverrides(form = getRequiredTennesseeForm()): Record<string, string> {
+  return Object.fromEntries(
+    form.steps.map((stepDefinition) => [
+      stepDefinition.key,
+      `/tn/custom/${getStepSlug(stepDefinition)}`,
+    ]),
+  );
 }
 
 function createCheckpointCookie(answers: Record<string, string>): string {
-  return `${getCheckpointCookieName("tn")}=${encodeCheckpointAnswers(answers)}`;
+  return `${getCheckpointCookieName(routeKey)}=${encodeCheckpointAnswers(answers)}`;
 }
 
 function getBunFetchSelectedScriptRegistry() {

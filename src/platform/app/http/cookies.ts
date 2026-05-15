@@ -11,15 +11,15 @@ import {
 } from "../../persistence/checkpoints";
 import type { InstantForm } from "../../flow";
 
-export function readCheckpointAnswers(c: Context, form: InstantForm): CheckpointAnswers {
-  const cookieValue = getCookie(c, getCheckpointCookieName(form.areaCode));
+export function readCheckpointAnswers(c: Context, form: InstantForm, routeKey: string): CheckpointAnswers {
+  const cookieValue = getCookie(c, getCheckpointCookieName(routeKey));
   const decodedAnswers = decodeCheckpointAnswers(cookieValue);
 
   return sanitizeCheckpointAnswers(form, decodedAnswers);
 }
 
-export function setCheckpointAnswers(c: Context, form: InstantForm, answers: CheckpointAnswers): void {
-  setCookie(c, getCheckpointCookieName(form.areaCode), encodeCheckpointAnswers(answers), {
+export function setCheckpointAnswers(c: Context, routeKey: string, answers: CheckpointAnswers): void {
+  setCookie(c, getCheckpointCookieName(routeKey), encodeCheckpointAnswers(answers), {
     httpOnly: true,
     sameSite: "Lax",
     path: "/",
@@ -28,8 +28,8 @@ export function setCheckpointAnswers(c: Context, form: InstantForm, answers: Che
   });
 }
 
-export function clearCheckpointAnswers(c: Context, form: InstantForm): void {
-  deleteCookie(c, getCheckpointCookieName(form.areaCode), {
+export function clearCheckpointAnswers(c: Context, routeKey: string): void {
+  deleteCookie(c, getCheckpointCookieName(routeKey), {
     path: "/",
     secure: isSecureRequest(c.req.raw),
   });

@@ -51,6 +51,7 @@ export async function readPrebuiltFormPage(
     html,
     createRequestFormConfig(form, activeStepIndex, {
       ...options,
+      routeKey: options.routeKey,
       transitionAssetUrl: options.transitionAssetUrl ?? (await getPrebuiltTransitionAssetUrl(options.routeSegments)),
     }),
   );
@@ -126,6 +127,7 @@ function createRequestFormConfig(
     stepUrlOverrides[stepDefinition.key] ?? getStepUrl(form, stepDefinition);
 
   return createClientFormConfig(form, activeStepIndex, answers, options.previewMode ?? false, getClientStepUrl, {
+    routeKey: options.routeKey,
     transitionAssetUrl: options.transitionAssetUrl,
   });
 }

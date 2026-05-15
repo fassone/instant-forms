@@ -1,6 +1,10 @@
 export {
   defineFormRoutes,
+  getFormRouteByRouteKey,
   getFormRouteBuildEntries,
+  getFormRouteKey,
+  getFormRouteStepUrl,
+  getFormRouteStepUrlOverrides,
   redirectTo,
   registerFormRoutePages,
   renderFormRouteNotFound,

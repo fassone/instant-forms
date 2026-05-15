@@ -739,7 +739,7 @@ function getCoreRuntimeScript(): string {
       return config.steps[currentStep]?.url;
     }
 
-    const response = await fetch("/api/forms/" + encodeURIComponent(config.areaCode) + "/checkpoints", {
+    const response = await fetch("/api/forms/" + encodeURIComponent(config.routeKey) + "/checkpoints", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ questionKey, answer }),
@@ -845,7 +845,7 @@ function getCoreRuntimeScript(): string {
       await waitForPendingCheckpoints();
       const behavior = getActiveBehavior();
       const submitMetadata = behavior?.beforeSubmit ? await behavior.beforeSubmit(getContext(), getQuestion(), getStepElement()) : {};
-      const response = await fetch("/api/forms/" + encodeURIComponent(config.areaCode) + "/submissions", {
+      const response = await fetch("/api/forms/" + encodeURIComponent(config.routeKey) + "/submissions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ answers, ...submitMetadata }),
@@ -1533,9 +1533,10 @@ function getInterstitialBehaviorScript(registerExpression: string): string {
     }
 
     function getCoverageStateName(ctx) {
-      const areaCode = String(ctx.answers.residence_state || window.__FORM_CONFIG__.areaCode).toUpperCase();
+      const fallbackAreaCode = window.__FORM_CONFIG__.customVariables?.areaCode ?? window.__FORM_CONFIG__.routeKey;
+      const areaCode = String(ctx.answers.residence_state || fallbackAreaCode).toUpperCase();
       const state = (window.__FORM_CONFIG__.usStates ?? []).find((candidate) => candidate.code === areaCode);
-      return state ? state.name : areaCode;
+      return state ? state.name : window.__FORM_CONFIG__.customVariables?.areaName ?? areaCode;
     }
 
     function formatMatchingBenefit(ctx, benefit) {
