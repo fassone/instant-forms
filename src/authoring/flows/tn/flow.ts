@@ -64,7 +64,7 @@ export const tnFlow = defineFormFlow({
       autocomplete: "address-level1",
       source: autocompleteSource.usStates(),
       showWhen: {
-        questionKey: "has_license",
+        questionKey: "belongs_to_state",
         answer: "no",
       },
     }),

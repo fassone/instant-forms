@@ -325,6 +325,23 @@ export type InvalidShowWhenAnswers<
       : Exclude<NarrowString<TAnswer>, ContractAnswerValue<TContract, NarrowString<TQuestionKey>>>
     : never
   : never;
+export type PriorAnswerStepKeys<TSteps extends readonly FormStep[], TSeenAnswerKeys extends string = never> =
+  TSteps extends readonly [infer THead, ...infer TTail]
+    ? THead extends FormStep
+      ?
+          | Exclude<StepShowWhenQuestionKey<THead>, TSeenAnswerKeys>
+          | PriorAnswerStepKeys<
+              TTail extends readonly FormStep[] ? TTail : readonly [],
+              TSeenAnswerKeys | AnswerStepKey<THead>
+            >
+      : PriorAnswerStepKeys<TTail extends readonly FormStep[] ? TTail : readonly [], TSeenAnswerKeys>
+    : never;
+export type StepShowWhenQuestionKey<TStep> = StepShowWhenCondition<TStep> extends StepCondition<
+  infer TQuestionKey,
+  string
+>
+  ? NarrowString<TQuestionKey>
+  : never;
 export type EnforceAnswerStepKeys<TContract extends FormContract, TSteps extends readonly FormStep[]> =
   (UnknownAnswerStepKeys<TContract, TSteps> extends never
     ? unknown
@@ -343,7 +360,10 @@ export type EnforceAnswerStepKeys<TContract extends FormContract, TSteps extends
     : { readonly __unknownShowWhenQuestionKeys: UnknownShowWhenQuestionKeys<TContract, TSteps> }) &
   (InvalidShowWhenAnswers<TContract, TSteps> extends never
     ? unknown
-    : { readonly __invalidShowWhenAnswers: InvalidShowWhenAnswers<TContract, TSteps> });
+    : { readonly __invalidShowWhenAnswers: InvalidShowWhenAnswers<TContract, TSteps> }) &
+  (PriorAnswerStepKeys<TSteps> extends never
+    ? unknown
+    : { readonly __forwardShowWhenQuestionKeys: PriorAnswerStepKeys<TSteps> });
 
 export type FormFlowInput<
   TContract extends FormContract = FormContract,
