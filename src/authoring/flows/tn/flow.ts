@@ -132,7 +132,7 @@ export const tnFlow = defineFormFlow({
         scriptProxyKey: "tfc",
         scriptBaseUrl: "/_instant/scripts/trustedform.com/tfc.js",
         preloadOnPreviousStep: true,
-        allowSubmitWithoutCert: false,
+        allowSubmitWithoutCert: true,
       },
     }),
   ],
