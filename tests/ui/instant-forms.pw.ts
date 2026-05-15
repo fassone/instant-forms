@@ -35,21 +35,13 @@ test.describe("instant routed form UI", () => {
 
   test("production transition asset swaps steps without a document navigation", async ({ page }) => {
     await page.goto("/tn/custom/vive-en-tennessee");
-    const transitionAssetUrl = await page.evaluate(
-      "String(window.__FORM_CONFIG__?.transitionAssetUrl ?? '')",
-    );
+    const transitionAssetUrl = await getTransitionAssetUrl(page);
 
     if (!transitionAssetUrl) {
       return;
     }
 
-    await page.waitForFunction(
-      (assetUrl) =>
-        performance
-          .getEntriesByType("resource")
-          .some((entry) => entry.name.includes(String(assetUrl))),
-      transitionAssetUrl,
-    );
+    await waitForTransitionAsset(page, transitionAssetUrl);
 
     const documentRequests: string[] = [];
     page.on("request", (request) => {
@@ -61,6 +53,65 @@ test.describe("instant routed form UI", () => {
     await clickActiveOption(page, "Si");
     await expect(page).toHaveURL(/\/tn\/custom\/tiene-licencia$/u);
     expect(documentRequests.filter((url) => url.includes("/tn/custom/tiene-licencia"))).toHaveLength(0);
+  });
+
+  test("production optimistic transitions do not wait for slow checkpoint responses", async ({ page }) => {
+    await page.goto("/tn/custom/vive-en-tennessee");
+    const transitionAssetUrl = await getTransitionAssetUrl(page);
+
+    if (!transitionAssetUrl) {
+      return;
+    }
+
+    await waitForTransitionAsset(page, transitionAssetUrl);
+
+    let releasedCheckpoints = 0;
+    await page.route("**/api/forms/tn/checkpoints", async (route) => {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 1000);
+      });
+      releasedCheckpoints += 1;
+      await route.continue();
+    });
+
+    await clickActiveOption(page, "Si");
+    await expect(page).toHaveURL(/\/tn\/custom\/tiene-licencia$/u, { timeout: 700 });
+    expect(releasedCheckpoints).toBe(0);
+
+    await clickActiveOption(page, "Si");
+    await expect(page).toHaveURL(/\/tn\/custom\/tiene-seguro$/u, { timeout: 700 });
+    expect(releasedCheckpoints).toBe(0);
+
+    await expect.poll(() => releasedCheckpoints, { timeout: 2500 }).toBeGreaterThan(0);
+  });
+
+  test("checkpoint rejection rolls back the optimistic step and shows the modal", async ({ page }) => {
+    await page.goto("/tn/custom/vive-en-tennessee");
+    const transitionAssetUrl = await getTransitionAssetUrl(page);
+
+    if (!transitionAssetUrl) {
+      return;
+    }
+
+    await waitForTransitionAsset(page, transitionAssetUrl);
+    await page.route("**/api/forms/tn/checkpoints", async (route) => {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 250);
+      });
+      await route.fulfill({
+        status: 400,
+        contentType: "application/json",
+        body: JSON.stringify({
+          errors: [{ message: "No pudimos guardar esta respuesta." }],
+        }),
+      });
+    });
+
+    await clickActiveOption(page, "Si");
+    await expect(page).toHaveURL(/\/tn\/custom\/tiene-licencia$/u, { timeout: 700 });
+    await expect(page).toHaveURL(/\/tn\/custom\/vive-en-tennessee$/u);
+    await expect(page.getByRole("alertdialog")).toBeVisible();
+    await expect(page.getByText("No pudimos guardar esta respuesta.")).toBeVisible();
   });
 
   test("error modal appears without inline layout errors", async ({ page }) => {
@@ -251,6 +302,20 @@ test.describe("instant routed form UI", () => {
 
 function activeStep(page: Page) {
   return page.locator('[data-step][aria-hidden="false"]');
+}
+
+async function getTransitionAssetUrl(page: Page): Promise<string> {
+  return page.evaluate("String(window.__FORM_CONFIG__?.transitionAssetUrl ?? '')");
+}
+
+async function waitForTransitionAsset(page: Page, transitionAssetUrl: string): Promise<void> {
+  await page.waitForFunction(
+    (assetUrl) =>
+      performance
+        .getEntriesByType("resource")
+        .some((entry) => entry.name.includes(String(assetUrl))),
+    transitionAssetUrl,
+  );
 }
 
 async function clickActiveOption(page: Page, label: string): Promise<void> {

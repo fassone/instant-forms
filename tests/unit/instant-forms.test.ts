@@ -1343,7 +1343,16 @@ describe("form rendering", () => {
     expect(productionHtml).toContain("/_instant/forms/");
     expect(productionHtml).toContain("transition.js");
     expect(devHtml).toContain("function preloadTransitionAsset()");
+    expect(devHtml).toContain("void loadTransitionAsset();");
+    expect(devHtml).toContain("const transitionAssetWaitBudgetMs = 160");
+    expect(devHtml).toContain("async function waitForTransitionAssetBudget()");
+    expect(devHtml).toContain("Promise.race");
     expect(devHtml).toContain("function navigateWithTransitionAsset(url, mode)");
+    expect(devHtml).toContain("function queueCheckpoint(questionKey, answer, options = {})");
+    expect(devHtml).toContain("function waitForPendingCheckpoints()");
+    expect(devHtml).toContain("async function advanceOptimistically(question, answer, options = {})");
+    expect(devHtml).toContain("await waitForPendingCheckpoints()");
+    expect(devHtml).not.toContain("runAfterPageSettles");
   });
 
   it("renders the logo and brand theme tokens", async () => {
@@ -1422,7 +1431,8 @@ describe("form rendering", () => {
 
     expect(html).toContain('registerBehaviorModule("choice"');
     expect(html).toContain("function advanceAfterChoiceSelection(ctx, question, answer)");
-    expect(html).toContain("async function saveCheckpoint(questionKey, answer)");
+    expect(html).toContain("function saveCheckpoint(questionKey, answer)");
+    expect(html).toContain("ctx.advanceOptimistically(question, answer)");
     expect(html).toContain("/checkpoints");
     expect(html).not.toContain('registerBehaviorModule("phone"');
     expect(html).not.toContain("function normalizeUsPhoneNumber(value)");

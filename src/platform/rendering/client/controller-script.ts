@@ -64,6 +64,7 @@ function getCoreRuntimeScript(): string {
   const errorModalClose = document.getElementById("error-modal-close");
   const answers = { ...config.initialAnswers };
   const behaviorModules = {};
+  const transitionAssetWaitBudgetMs = 160;
   let currentStep = config.activeStepIndex;
   let mountedStepIndex = -1;
   let mountedBehavior;
@@ -73,6 +74,9 @@ function getCoreRuntimeScript(): string {
   let errorModalReturnFocusTarget;
   let transitionAssetLoaded = false;
   let transitionAssetPromise;
+  let checkpointQueue = Promise.resolve();
+  let checkpointQueueError;
+  let checkpointQueueFailedQuestionKey;
 
   function registerBehaviorModule(kind, module) {
     behaviorModules[kind] = module;
@@ -85,6 +89,7 @@ function getCoreRuntimeScript(): string {
 
     const currentQuestion = getQuestion();
     const currentPath = window.location.pathname;
+    const currentDraftAnswer = currentQuestion ? getCurrentAnswer() : "";
     config.steps = asset.steps.map((step) => step.config);
     config.stepUrlsBySlug = asset.stepUrlsBySlug || config.stepUrlsBySlug;
     if (asset.usStates) {
@@ -104,6 +109,7 @@ function getCoreRuntimeScript(): string {
     currentStep = pathStepIndex !== -1 ? pathStepIndex : keyStepIndex !== -1 ? keyStepIndex : 0;
     mountedStepIndex = -1;
     showStep(currentStep);
+    restoreStepDraft(currentQuestion, currentDraftAnswer);
   }
 
   window.__INSTANT_FORM_RUNTIME__ = {
@@ -127,6 +133,7 @@ function getCoreRuntimeScript(): string {
       get isActionPointerDown() {
         return isActionPointerDown;
       },
+      advanceOptimistically,
       setSubmitting,
       getQuestion,
       getStepElement,
@@ -140,6 +147,7 @@ function getCoreRuntimeScript(): string {
       isTextInputElement,
       isTypingTarget,
       navigateToUrl,
+      queueCheckpoint,
       replaceToUrl,
       saveCheckpoint,
       showErrorModal,
@@ -489,9 +497,7 @@ function getCoreRuntimeScript(): string {
       return;
     }
 
-    runAfterPageSettles(() => {
-      void loadTransitionAsset();
-    });
+    void loadTransitionAsset();
   }
 
   function loadTransitionAsset() {
@@ -518,6 +524,22 @@ function getCoreRuntimeScript(): string {
     });
 
     return transitionAssetPromise;
+  }
+
+  async function waitForTransitionAssetBudget() {
+    if (transitionAssetLoaded) {
+      return true;
+    }
+
+    if (!config.transitionAssetUrl || config.previewMode) {
+      return false;
+    }
+
+    const timeoutPromise = new Promise((resolve) => {
+      window.setTimeout(() => resolve(false), transitionAssetWaitBudgetMs);
+    });
+
+    return Boolean(await Promise.race([loadTransitionAsset().then(() => transitionAssetLoaded), timeoutPromise]));
   }
 
   function navigateWithTransitionAsset(url, mode) {
@@ -633,6 +655,28 @@ function getCoreRuntimeScript(): string {
     return input ? input.value.trim() : "";
   }
 
+  function restoreStepDraft(previousQuestion, draftAnswer) {
+    if (!previousQuestion || previousQuestion.key !== getQuestion()?.key || !draftAnswer || answers[previousQuestion.key]) {
+      return;
+    }
+
+    const step = getStepElement();
+    const input = step.querySelector("input");
+    if (!(input instanceof HTMLInputElement)) {
+      return;
+    }
+
+    if (input.type === "radio") {
+      const matchingInput = step.querySelector('input[type="radio"][value="' + CSS.escape(draftAnswer) + '"]');
+      if (matchingInput instanceof HTMLInputElement) {
+        matchingInput.checked = true;
+      }
+      return;
+    }
+
+    input.value = draftAnswer;
+  }
+
   function validateCurrentStep(options = {}) {
     const behavior = getActiveBehavior();
     if (behavior?.validate) {
@@ -689,7 +733,7 @@ function getCoreRuntimeScript(): string {
     }, 0);
   }
 
-  async function saveCheckpoint(questionKey, answer) {
+  async function writeCheckpointNow(questionKey, answer) {
     if (config.previewMode) {
       answers[questionKey] = answer;
       return config.steps[currentStep]?.url;
@@ -707,13 +751,76 @@ function getCoreRuntimeScript(): string {
     }
 
     if (body.answers && typeof body.answers === "object") {
-      Object.keys(answers).forEach((key) => {
-        delete answers[key];
-      });
       Object.assign(answers, body.answers);
     }
 
     return typeof body.nextUrl === "string" ? getRouteAwareNextUrl(body.nextUrl) : undefined;
+  }
+
+  function saveCheckpoint(questionKey, answer) {
+    return queueCheckpoint(questionKey, answer, { reconcile: false });
+  }
+
+  function queueCheckpoint(questionKey, answer, options = {}) {
+    if (config.previewMode) {
+      answers[questionKey] = answer;
+      return Promise.resolve(options.predictedUrl ?? config.steps[currentStep]?.url);
+    }
+
+    const checkpointTask = checkpointQueue.then(() => writeCheckpointNow(questionKey, answer));
+    checkpointQueue = checkpointTask.catch(() => undefined);
+
+    return checkpointTask.then((nextUrl) => {
+      if (checkpointQueueFailedQuestionKey === questionKey) {
+        checkpointQueueError = undefined;
+        checkpointQueueFailedQuestionKey = undefined;
+      }
+      reconcileCheckpointSuccess(nextUrl, options);
+      return nextUrl;
+    }).catch((checkpointError) => {
+      checkpointQueueError = checkpointError;
+      checkpointQueueFailedQuestionKey = questionKey;
+      reconcileCheckpointFailure(checkpointError, options);
+      throw checkpointError;
+    });
+  }
+
+  async function waitForPendingCheckpoints() {
+    await checkpointQueue;
+    if (checkpointQueueError) {
+      throw checkpointQueueError;
+    }
+  }
+
+  function reconcileCheckpointSuccess(nextUrl, options = {}) {
+    if (options.reconcile === false || !nextUrl || !options.predictedUrl) {
+      return;
+    }
+
+    const approvedPath = getPathname(nextUrl);
+    const predictedPath = getPathname(options.predictedUrl);
+    if (approvedPath === predictedPath || window.location.pathname !== predictedPath) {
+      return;
+    }
+
+    if (options.mode === "replace") {
+      replaceToUrl(nextUrl);
+      return;
+    }
+
+    navigateToUrl(nextUrl);
+  }
+
+  function reconcileCheckpointFailure(error, options = {}) {
+    if (options.reconcile === false) {
+      return;
+    }
+
+    const message = error instanceof Error ? error.message : "No pudimos guardar esta respuesta.";
+    if (options.stepUrl) {
+      replaceToUrl(options.stepUrl);
+    }
+    showErrorModal(message);
   }
 
   function getRouteAwareNextUrl(nextUrl) {
@@ -729,17 +836,13 @@ function getCoreRuntimeScript(): string {
     return matchingStepUrl ?? nextUrl;
   }
 
-  async function checkpointCurrentStep() {
-    const question = getQuestion();
-    return saveCheckpoint(question.key, getCurrentAnswer());
-  }
-
   async function submitForm() {
     isSubmitting = true;
     let submitErrorMessage;
     updateNextButton();
 
     try {
+      await waitForPendingCheckpoints();
       const behavior = getActiveBehavior();
       const submitMetadata = behavior?.beforeSubmit ? await behavior.beforeSubmit(getContext(), getQuestion(), getStepElement()) : {};
       const response = await fetch("/api/forms/" + encodeURIComponent(config.areaCode) + "/submissions", {
@@ -782,14 +885,40 @@ function getCoreRuntimeScript(): string {
       return;
     }
 
-    try {
-      const nextUrl = await checkpointCurrentStep();
-      if (isCurrentStepFinal()) {
-        await submitForm();
-        return;
-      }
+    await advanceOptimistically(question, answers[question.key] ?? getCurrentAnswer());
+  }
 
-      navigateToUrl(nextUrl ?? getRenderedNextUrl() ?? config.steps[getNextVisibleStepIndex()].url);
+  async function advanceOptimistically(question, answer, options = {}) {
+    answers[question.key] = answer;
+    const stepUrl = question.url;
+    const mode = options.mode ?? "push";
+    const isFinal = isCurrentStepFinal();
+
+    if (isFinal) {
+      try {
+        await queueCheckpoint(question.key, answer, { stepUrl, reconcile: false });
+        await submitForm();
+      } catch (checkpointError) {
+        reconcileCheckpointFailure(checkpointError, { stepUrl });
+      }
+      return;
+    }
+
+    const assetReady = await waitForTransitionAssetBudget();
+    const predictedUrl = getRenderedNextUrl() ?? config.steps[getNextVisibleStepIndex()]?.url;
+
+    if (!predictedUrl) {
+      return;
+    }
+
+    if (assetReady && navigateWithTransitionAsset(predictedUrl, mode)) {
+      void queueCheckpoint(question.key, answer, { stepUrl, predictedUrl, mode }).catch(() => undefined);
+      return;
+    }
+
+    try {
+      const nextUrl = await queueCheckpoint(question.key, answer, { stepUrl, predictedUrl, mode, reconcile: false });
+      navigateToUrl(nextUrl ?? predictedUrl);
     } catch (checkpointError) {
       showErrorModal(checkpointError instanceof Error ? checkpointError.message : "No pudimos guardar esta respuesta.");
     }
@@ -814,24 +943,6 @@ function getCoreRuntimeScript(): string {
 
   function isMobileViewport() {
     return window.matchMedia("(max-width: 560px)").matches;
-  }
-
-  function runAfterPageSettles(callback) {
-    const scheduleIdleCallback = () => {
-      if ("requestIdleCallback" in window) {
-        window.requestIdleCallback(callback, { timeout: 1500 });
-        return;
-      }
-
-      window.setTimeout(callback, 600);
-    };
-
-    if (document.readyState === "complete") {
-      scheduleIdleCallback();
-      return;
-    }
-
-    window.addEventListener("load", scheduleIdleCallback, { once: true });
   }
 `;
 }
@@ -902,17 +1013,7 @@ function getChoiceBehaviorScript(registerExpression: string): string {
         }
 
         void (async () => {
-          try {
-            const nextUrl = await ctx.saveCheckpoint(question.key, answer);
-            if (ctx.isCurrentStepFinal()) {
-              await ctx.submitForm();
-              return;
-            }
-
-            ctx.navigateToUrl(nextUrl ?? ctx.getRenderedNextUrl() ?? ctx.config?.steps?.[ctx.getNextVisibleStepIndex()]?.url);
-          } catch (checkpointError) {
-            ctx.showErrorModal(checkpointError instanceof Error ? checkpointError.message : "No pudimos guardar esta respuesta.");
-          }
+          await ctx.advanceOptimistically(question, answer);
         })();
       }, 180);
     }
@@ -1038,11 +1139,7 @@ function getTextBehaviorScript(registerExpression: string): string {
       },
       onFocusOut(event, ctx, question, step) {
         if (shouldSubmitTextInputOnMobileBlur(event, ctx, question, step) && validate(ctx, question, step, { focusInvalid: false })) {
-          void ctx.saveCheckpoint(question.key, getAnswer(ctx, question, step)).then((nextUrl) => {
-            if (!ctx.isCurrentStepFinal()) {
-              ctx.navigateToUrl(nextUrl ?? ctx.getRenderedNextUrl());
-            }
-          }).catch((error) => ctx.showErrorModal(error instanceof Error ? error.message : "No pudimos guardar esta respuesta."));
+          void ctx.advanceOptimistically(question, ctx.answers[question.key] ?? getAnswer(ctx, question, step));
         }
         if (event.target === focusedTextInput) {
           focusedTextInput = undefined;
@@ -1050,11 +1147,7 @@ function getTextBehaviorScript(registerExpression: string): string {
       },
       onDocumentPointerDown(event, ctx, question, step) {
         if (shouldSubmitTextInputOnMobileOutsidePointer(event, ctx, question, step) && validate(ctx, question, step, { focusInvalid: false })) {
-          void ctx.saveCheckpoint(question.key, getAnswer(ctx, question, step)).then((nextUrl) => {
-            if (!ctx.isCurrentStepFinal()) {
-              ctx.navigateToUrl(nextUrl ?? ctx.getRenderedNextUrl());
-            }
-          }).catch((error) => ctx.showErrorModal(error instanceof Error ? error.message : "No pudimos guardar esta respuesta."));
+          void ctx.advanceOptimistically(question, ctx.answers[question.key] ?? getAnswer(ctx, question, step));
         }
       },
     };
@@ -1173,11 +1266,7 @@ function getPhoneBehaviorScript(registerExpression: string): string {
       if (!validate(ctx, question, step, { focusInvalid: false })) {
         return;
       }
-      void ctx.saveCheckpoint(question.key, getAnswer(ctx, question, step)).then((nextUrl) => {
-        if (!ctx.isCurrentStepFinal()) {
-          ctx.navigateToUrl(nextUrl ?? ctx.getRenderedNextUrl());
-        }
-      }).catch((error) => ctx.showErrorModal(error instanceof Error ? error.message : "No pudimos guardar esta respuesta."));
+      void ctx.advanceOptimistically(question, ctx.answers[question.key] ?? getAnswer(ctx, question, step));
     }
 
     return {
