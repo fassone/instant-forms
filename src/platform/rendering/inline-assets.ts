@@ -137,6 +137,10 @@ export function applyProductionTokens(html: string): string {
   return tokenizeCssCustomProperties(tokenizeSelectors(html));
 }
 
+export function applyProductionTokensToScript(script: string): string {
+  return tokenizeCssCustomProperties(tokenizeScriptSelectorLiterals(script));
+}
+
 function tokenizeSelectors(html: string): string {
   const classEntries = getSortedEntries(productionClassTokenMap);
   const idEntries = getSortedEntries(productionIdTokenMap);
@@ -149,6 +153,41 @@ function tokenizeSelectors(html: string): string {
     (htmlWithClasses, [sourceClass, builtClass]) => replaceClassToken(htmlWithClasses, sourceClass, builtClass),
     htmlWithIds,
   );
+}
+
+function tokenizeScriptSelectorLiterals(script: string): string {
+  const idEntries = getSortedEntries(productionIdTokenMap);
+  const classEntries = getSortedEntries(productionClassTokenMap);
+  const scriptWithIdTokens = idEntries.reduce(
+    (scriptWithTokens, [sourceId, builtId]) => replaceScriptIdToken(scriptWithTokens, sourceId, builtId),
+    script,
+  );
+
+  return classEntries.reduce((scriptWithTokens, [sourceClass, builtClass]) => {
+    if (sourceClass === "button") {
+      return scriptWithTokens;
+    }
+
+    return replaceScriptClassToken(scriptWithTokens, sourceClass, builtClass);
+  }, scriptWithIdTokens);
+}
+
+function replaceScriptClassToken(script: string, sourceClass: string, builtClass: string): string {
+  return replaceScriptStringLiteralToken(script, sourceClass, builtClass)
+    .replace(new RegExp(`\\.${escapeRegExp(sourceClass)}(?=[^a-zA-Z0-9_-])`, "g"), `.${builtClass}`)
+    .replace(new RegExp(`class=\\\\\\"${escapeRegExp(sourceClass)}\\\\\\"`, "g"), `class=\\"${builtClass}\\"`)
+    .replace(new RegExp(`class="${escapeRegExp(sourceClass)}"`, "g"), `class="${builtClass}"`);
+}
+
+function replaceScriptIdToken(script: string, sourceId: string, builtId: string): string {
+  return replaceScriptStringLiteralToken(script, sourceId, builtId).replace(
+    new RegExp(`#${escapeRegExp(sourceId)}(?=[^a-zA-Z0-9_-])`, "g"),
+    `#${builtId}`,
+  );
+}
+
+function replaceScriptStringLiteralToken(script: string, sourceToken: string, builtToken: string): string {
+  return script.replace(new RegExp(`(["'])${escapeRegExp(sourceToken)}\\1`, "g"), `$1${builtToken}$1`);
 }
 
 function replaceClassToken(html: string, sourceClass: string, builtClass: string): string {

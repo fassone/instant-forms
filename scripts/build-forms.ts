@@ -8,12 +8,12 @@ import {
   DIST_FORMS_ROOT,
   FORM_CONFIG_JSON_PLACEHOLDER,
   FORM_CONFIG_PLACEHOLDER_EXPRESSION,
-  buildTransitionBundle,
+  buildTransitionAsset,
   getPrebuiltFormStepHtmlPath,
-  getPrebuiltTransitionBundlePath,
+  getPrebuiltTransitionAssetPath,
   getPrebuiltUnavailableHtmlPath,
-  getTransitionBundleManifestRouteKey,
-  getTransitionBundleUrl,
+  getTransitionAssetManifestRouteKey,
+  getTransitionAssetUrl,
   renderFormPage,
   renderUnavailablePage,
 } from "../src/platform/rendering";
@@ -32,16 +32,16 @@ if (getInlineAssetMode() !== "built") {
 await rm(path.join(process.cwd(), DIST_FORMS_ROOT), { recursive: true, force: true });
 
 const builtPages: BuiltPageRecord[] = [];
-const builtTransitionBundles: Record<string, string> = {};
+const builtTransitionAssets: Record<string, string> = {};
 
 for (const entry of getFormRouteBuildEntries(formRoutes)) {
   const stepUrlOverrides = createStepUrlOverrides(entry.routeSegments, entry.form);
-  const transitionBundle = await buildTransitionBundle(entry.form, entry.routeSegments, stepUrlOverrides);
-  const transitionBundleUrl = getTransitionBundleUrl(transitionBundle.hash);
-  const transitionBundlePath = getPrebuiltTransitionBundlePath(transitionBundle.hash);
+  const transitionAsset = await buildTransitionAsset(entry.form, entry.routeSegments, stepUrlOverrides);
+  const transitionAssetUrl = getTransitionAssetUrl(transitionAsset.hash);
+  const transitionAssetPath = getPrebuiltTransitionAssetPath(transitionAsset.hash);
 
-  await writePage(transitionBundlePath, transitionBundle.body);
-  builtTransitionBundles[getTransitionBundleManifestRouteKey(entry.routeSegments)] = transitionBundleUrl;
+  await writePage(transitionAssetPath, transitionAsset.body);
+  builtTransitionAssets[getTransitionAssetManifestRouteKey(entry.routeSegments)] = transitionAssetUrl;
 
   for (const [stepIndex, stepDefinition] of entry.form.steps.entries()) {
     const outputPath = getPrebuiltFormStepHtmlPath(entry.routeSegments, getStepSlug(stepDefinition));
@@ -50,7 +50,7 @@ for (const entry of getFormRouteBuildEntries(formRoutes)) {
       answers: {},
       formConfigExpression: FORM_CONFIG_PLACEHOLDER_EXPRESSION,
       stepUrlOverrides,
-      transitionBundleUrl,
+      transitionAssetUrl,
     });
 
     assertBuiltFormHtml(html, outputPath);
@@ -72,7 +72,7 @@ const unavailablePath = getPrebuiltUnavailableHtmlPath();
 
 assertBuiltInlineAssets(unavailableHtml, "unavailable page");
 await writePage(unavailablePath, unavailableHtml);
-await writeManifest(builtPages, builtTransitionBundles);
+await writeManifest(builtPages, builtTransitionAssets);
 
 const totalBytes = builtPages.reduce((total, page) => total + page.bytes, getByteLength(unavailableHtml));
 
@@ -80,7 +80,7 @@ console.log(
   [
     `Inline asset mode: ${getInlineAssetMode()}`,
     `Built form pages: ${builtPages.length}`,
-    `Built transition bundles: ${Object.keys(builtTransitionBundles).length}`,
+    `Built transition assets: ${Object.keys(builtTransitionAssets).length}`,
     `Built unavailable page: ${path.relative(process.cwd(), unavailablePath)}`,
     `Output: ${DIST_FORMS_ROOT}`,
     `Total HTML: ${totalBytes} bytes`,
@@ -103,12 +103,12 @@ async function writePage(outputPath: string, html: string): Promise<void> {
 
 async function writeManifest(
   pages: readonly BuiltPageRecord[],
-  transitionBundles: Record<string, string>,
+  transitionAssets: Record<string, string>,
 ): Promise<void> {
   const manifestPath = path.join(process.cwd(), DIST_FORMS_ROOT, "manifest.json");
   const manifest = {
     generatedAt: new Date().toISOString(),
-    transitionBundles,
+    transitionAssets,
     pages: pages.map((page) => ({
       route: page.route,
       path: path.relative(process.cwd(), page.path),

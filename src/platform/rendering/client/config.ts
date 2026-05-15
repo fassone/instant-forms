@@ -83,11 +83,11 @@ export type ClientFormConfig = {
   autocompleteSources?: {
     usStates: ReturnType<typeof createStateAutocompleteItems>;
   };
-  transitionBundleUrl?: string;
+  transitionAssetUrl?: string;
 };
 
 export type ClientFormConfigOptions = {
-  transitionBundleUrl?: string;
+  transitionAssetUrl?: string;
 };
 
 export function createClientFormConfig(
@@ -127,7 +127,7 @@ export function createClientFormConfig(
     stepUrlsBySlug,
     countedStepNumber,
     countedStepCount: Math.max(countedStepIndexes.length, 1),
-    ...(currentStepDefinition.kind === "autocomplete"
+    ...(currentStepDefinition.kind === "autocomplete" || currentStepDefinition.kind === "interstitial"
       ? {
           usStates: US_STATES,
           autocompleteSources: {
@@ -135,7 +135,7 @@ export function createClientFormConfig(
           },
         }
       : {}),
-    ...(options.transitionBundleUrl ? { transitionBundleUrl: options.transitionBundleUrl } : {}),
+    ...(options.transitionAssetUrl ? { transitionAssetUrl: options.transitionAssetUrl } : {}),
   };
 }
 

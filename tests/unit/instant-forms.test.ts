@@ -6,7 +6,7 @@ import { formRoutes } from "../../src/authoring/routes/registry";
 import { createFetchHandler } from "../../src/platform/app/server";
 import { autocompleteSource, defineFormFlow, getFormByAreaCode, getStepSlug, isCountedStep, step } from "../../src/platform/flow";
 import { encodeCheckpointAnswers, getCheckpointCookieName } from "../../src/platform/persistence/checkpoints";
-import { FORM_CONFIG_PLACEHOLDER_EXPRESSION, buildTransitionBundle, renderFormPage } from "../../src/platform/rendering";
+import { FORM_CONFIG_PLACEHOLDER_EXPRESSION, buildTransitionAsset, renderFormPage } from "../../src/platform/rendering";
 import { buildInlineCss, getInlineAssetMode } from "../../src/platform/rendering/inline-assets";
 import { defineFormRoutes, redirectTo, registerFormRoutePages, unavailable } from "../../src/platform/routing";
 import { createStateAutocompleteItems, rankAutocompleteItems } from "../../src/platform/steps/autocomplete/ranking";
@@ -1300,7 +1300,7 @@ describe("form rendering", () => {
     expect(productionHtml).not.toContain("\n      (() => {");
   });
 
-  it("builds a static non-PII transition bundle for snappy production step changes", async () => {
+  it("builds a static non-PII transition JS asset for snappy production step changes", async () => {
     const form = getRequiredTennesseeForm();
     const stepUrlOverrides = Object.fromEntries(
       form.steps.map((stepDefinition) => [
@@ -1308,29 +1308,42 @@ describe("form rendering", () => {
         `/tn/custom/${getStepSlug(stepDefinition)}`,
       ]),
     );
-    const transitionBundle = await buildTransitionBundle(form, ["tn", "custom"], stepUrlOverrides);
+    const transitionAsset = await buildTransitionAsset(form, ["tn", "custom"], stepUrlOverrides);
     const devHtml = await renderFormPage(form, {
-      transitionBundleUrl: `/_instant/forms/${transitionBundle.hash}/transition.json`,
+      transitionAssetUrl: `/_instant/forms/${transitionAsset.hash}/transition.js`,
     });
     const productionHtml = await withNodeEnv("production", () =>
       renderFormPage(form, {
-        transitionBundleUrl: `/_instant/forms/${transitionBundle.hash}/transition.json`,
+        transitionAssetUrl: `/_instant/forms/${transitionAsset.hash}/transition.js`,
       }),
     );
 
-    expect(transitionBundle.hash).toMatch(/^[a-f0-9]{16}$/u);
-    expect(transitionBundle.bundle.steps).toHaveLength(form.steps.length);
-    expect(transitionBundle.body).toContain('"route":"/tn/custom"');
-    expect(transitionBundle.body).toContain('"html":"<article');
-    expect(transitionBundle.body).toContain('"config":{"key":"belongs_to_state"');
-    expect(transitionBundle.body).toContain('"trustedForm":{"fieldName":"xxTrustedFormCertUrl"');
-    expect(transitionBundle.body).not.toContain("Ana");
-    expect(transitionBundle.body).not.toContain("Lopez");
-    expect(transitionBundle.body).not.toContain("6155551234");
-    expect(transitionBundle.body).not.toContain('class="form-panel"');
+    expect(transitionAsset.hash).toMatch(/^[a-f0-9]{16}$/u);
+    expect(transitionAsset.asset.steps).toHaveLength(form.steps.length);
+    expect(transitionAsset.asset.route).toBe("/tn/custom");
+    expect(transitionAsset.body).toContain("__INSTANT_FORM_RUNTIME__");
+    expect(transitionAsset.body).toContain("registerTransitionAsset");
+    expect(transitionAsset.body).toContain("registerBehaviorModule");
+    expect(transitionAsset.body).toContain("/tn/custom");
+    expect(transitionAsset.body).toContain("trustedForm");
+    expect(transitionAsset.body).not.toContain("Ana");
+    expect(transitionAsset.body).not.toContain("Lopez");
+    expect(transitionAsset.body).not.toContain("6155551234");
+    expect(transitionAsset.body).not.toContain('class="form-panel"');
+    expect(transitionAsset.body).not.toContain('className="autocomplete-suggestion"');
+    expect(transitionAsset.body).toContain('className="f"');
+    expect(transitionAsset.body).not.toContain('class="autocomplete-suggestion-value"');
+    expect(transitionAsset.body).toContain('class="e"');
+    expect(transitionAsset.body).not.toContain('".option"');
+    expect(transitionAsset.body).not.toContain('".text-input"');
+    expect(transitionAsset.body).not.toContain('".actions"');
+    expect(transitionAsset.body).not.toContain('".consent-card"');
+    expect(transitionAsset.body).toContain('".ae"');
+    expect(transitionAsset.body).toContain('".ar"');
     expect(productionHtml).toContain("/_instant/forms/");
-    expect(devHtml).toContain("function preloadTransitionBundle()");
-    expect(devHtml).toContain("function navigateWithTransitionBundle(url, mode)");
+    expect(productionHtml).toContain("transition.js");
+    expect(devHtml).toContain("function preloadTransitionAsset()");
+    expect(devHtml).toContain("function navigateWithTransitionAsset(url, mode)");
   });
 
   it("renders the logo and brand theme tokens", async () => {
@@ -1407,24 +1420,27 @@ describe("form rendering", () => {
   it("wires choice answers to delayed auto-advance on click and number keys", async () => {
     const html = await renderFormPage(getRequiredTennesseeForm());
 
-    expect(html).toContain("function advanceAfterChoiceSelection(answer)");
+    expect(html).toContain('registerBehaviorModule("choice"');
+    expect(html).toContain("function advanceAfterChoiceSelection(ctx, question, answer)");
     expect(html).toContain("async function saveCheckpoint(questionKey, answer)");
     expect(html).toContain("/checkpoints");
-    expect(html).toContain("function normalizeUsPhoneNumber(value)");
+    expect(html).not.toContain('registerBehaviorModule("phone"');
+    expect(html).not.toContain("function normalizeUsPhoneNumber(value)");
+    expect(html).not.toContain('registerBehaviorModule("autocomplete"');
+    expect(html).not.toContain('registerBehaviorModule("interstitial"');
+    expect(html).not.toContain('registerBehaviorModule("trusted_form_consent"');
     expect(html).toContain('form.addEventListener("change"');
-    expect(html).toContain("advanceAfterChoiceSelection(target.value)");
-    expect(html).toContain("function getClickedChoiceInput(target)");
-    expect(html).toContain("function advanceAfterChoiceClick(event)");
+    expect(html).toContain("advanceAfterChoiceSelection(ctx, question, target.value)");
+    expect(html).toContain("function getClickedChoiceInput(target, step)");
     expect(html).toContain('target.closest(".option")');
     expect(html).toContain("option.querySelector(\"input[type='radio']\")");
-    expect(html).toContain("advanceAfterChoiceSelection(input.value)");
-    expect(html).toContain("function selectChoiceByNumberKey(event)");
+    expect(html).toContain("advanceAfterChoiceSelection(ctx, question, input.value)");
     expect(html).toContain("function isTypingTarget(value)");
     expect(html).toContain('document.addEventListener("keydown"');
-    expect(html).toContain("selectChoiceByNumberKey(event)");
+    expect(html).toContain("getActiveBehavior()?.onDocumentKeyDown?.");
     expect(html).toContain("event.preventDefault()");
     expect(html).toContain("option.checked = true");
-    expect(html).toContain("advanceAfterChoiceSelection(option.value)");
+    expect(html).toContain("advanceAfterChoiceSelection(ctx, question, option.value)");
     expect(html).toContain("}, 180);");
   });
 
@@ -1446,13 +1462,14 @@ describe("form rendering", () => {
     expect(html).toContain("Encontramos agentes listos para cotizarle.");
     expect(html).toContain("Descubra cuánto puede ahorrar.");
     expect(html).toContain('"successLines":[{"text":"Encontramos agentes listos para cotizarle.","color":"brand-navy"}');
-    expect(html).toContain("function runMatchingStep()");
+    expect(html).toContain('registerBehaviorModule("interstitial"');
+    expect(html).not.toContain('registerBehaviorModule("phone"');
+    expect(html).not.toContain('registerBehaviorModule("trusted_form_consent"');
     expect(html).toContain("function showMatchingSuccess(question, elements, options = {})");
     expect(html).toContain('"countsAsStep":false');
-    expect(html).toContain("function isCountedStep(question)");
-    expect(html).toContain("return question.countsAsStep !== false");
+    expect(html).toContain("return question && question.countsAsStep !== false");
     expect(html).toContain("function getCountedVisibleStepIndexes()");
-    expect(html).toContain("function getCurrentCountedStepNumber()");
+    expect(html).toContain("function getRenderedCountedStepNumber()");
     expect(html).toContain("progressBar.style.width = (countedStepNumber / countedStepCount) * 100 + \"%\"");
     expect(html).toContain("let matchingTextTransitionId = 0;");
     expect(html).toContain("matchingTextTransitionId += 1;");
@@ -1471,15 +1488,12 @@ describe("form rendering", () => {
     expect(html).toContain("Math.floor(Math.random() * (index + 1))");
     expect(html).toContain("function getRandomMatchingBenefitCount(availableBenefitCount)");
     expect(html).toContain("Math.random() * (maxBenefitCount - minBenefitCount + 1)");
-    expect(html).toContain("function getMatchingBenefitSequence(benefits)");
-    expect(html).toContain("return shuffledBenefits.slice(0, getRandomMatchingBenefitCount(shuffledBenefits.length))");
     expect(html).toContain("function getMatchingBenefitTimeline(benefits)");
-    expect(html).toContain("function getMatchingBenefitTimelineDuration(benefitTimeline)");
-    expect(html).toContain("const benefitTimeline = getMatchingBenefitTimeline(question.benefits.map(formatMatchingBenefit))");
+    expect(html).toContain("const benefitTimeline = getMatchingBenefitTimeline(question.benefits.map((benefit) => formatMatchingBenefit(ctx, benefit)))");
     expect(html).toContain("duration: matchingBenefitDisplayMs");
     expect(html).toContain("startsAt += matchingBenefitDisplayMs");
     expect(html).toContain("benefitTiming.startsAt");
-    expect(html).toContain("const successDelay = getMatchingBenefitTimelineDuration(benefitTimeline) || matchingBenefitDisplayMs");
+    expect(html).toContain("const successDelay = benefitTimeline.reduce((totalDuration, benefitTiming) => totalDuration + benefitTiming.duration, 0) || matchingBenefitDisplayMs");
     expect(html).toContain("is-fading-out");
     expect(html).toContain("is-fading-in");
     expect(html).toContain("is-visible");
@@ -1508,12 +1522,12 @@ describe("form rendering", () => {
     expect(html).toContain("function renderMatchingBenefitContent(element, content, className)");
     expect(html).toContain("element.replaceChildren()");
     expect(html).toContain('if (className !== "is-success")');
-    expect(html).toContain('String(content)\n                .split("\\n")');
+    expect(html).toContain('String(content).split("\\n")');
     expect(html).toContain('lineElement.className = "matching-success-line"');
     expect(html).toContain("lineElement.dataset.color = line.color");
     expect(html).toContain("setMatchingBenefitText(elements, benefitTimeline[0]?.text ?? \"\", \"\", { initial: true })");
     expect(html).not.toContain("onTextShown");
-    expect(html).not.toContain("getContext");
+    expect(html).toContain("getContext");
     expect(html).not.toContain("cancelAnimationFrame");
     expect(html).not.toContain("HTMLCanvasElement");
     expect(html).not.toContain("drawCanvas");
@@ -1530,14 +1544,14 @@ describe("form rendering", () => {
     expect(html).toContain("window.location.reload()");
     expect(html).toContain("function isStepAnswered(question)");
     expect(html).toContain("const completedMatchingSteps = new Set();");
-    expect(html).toContain("function completeMatchingStep(question, runId)");
+    expect(html).toContain("function completeMatchingStep(ctx, question, runId)");
     expect(html).toContain("function replaceToUrl(url)");
     expect(html).toContain("completedMatchingSteps.add(question.key)");
     expect(html).toContain("!completedMatchingSteps.has(question.key)");
-    expect(html).toContain('saveCheckpoint(question.key, question.completionAnswer)');
-    expect(html).toContain('saveCheckpoint(question.key, question.seenAnswer)');
-    expect(html).toContain("replaceToUrl(nextUrl ?? getRenderedNextUrl() ?? config.steps[getNextVisibleStepIndex()].url)");
-    expect(html).toContain('nextButton.textContent = "Siguiente"');
+    expect(html).toContain('ctx.saveCheckpoint(question.key, question.completionAnswer)');
+    expect(html).toContain('ctx.saveCheckpoint(question.key, question.seenAnswer)');
+    expect(html).toContain("ctx.replaceToUrl(nextUrl ?? ctx.getRenderedNextUrl())");
+    expect(html).toContain('ctx.updateNextButton("Siguiente", false)');
     expect(html).not.toContain("matching-loader");
     expect(html).not.toContain("data-matching-retry");
     expect(html).not.toContain('.form-panel[data-active-kind="interstitial"] footer');
@@ -1566,6 +1580,9 @@ describe("form rendering", () => {
     expect(html).toContain('placeholder="Escriba su telefono aquí"');
     expect(html).toContain('form.addEventListener("input"');
     expect(html).toContain('form.addEventListener("beforeinput"');
+    expect(html).toContain('registerBehaviorModule("phone"');
+    expect(html).not.toContain('registerBehaviorModule("autocomplete"');
+    expect(html).not.toContain('registerBehaviorModule("trusted_form_consent"');
     expect(html).toContain("function parseUsPhoneInput(value)");
     expect(html).toContain("function formatUsPhoneForDisplay(value)");
     expect(html).toContain("function isUnsupportedInternationalPhone(value)");
@@ -1607,12 +1624,12 @@ describe("form rendering", () => {
     expect(html).not.toContain("function preloadTrustedFormSdk(trustedForm)");
     expect(html).toContain("function ensureTrustedFormReady(trustedForm)");
     expect(html).toContain("function waitForTrustedFormCertUrl(trustedForm)");
-    expect(html).toContain("function getTrustedFormCertUrl(trustedForm = config.currentStep.trustedForm)");
-    expect(html).toContain('nextButton.textContent = "Preparando..."');
+    expect(html).toContain("function getTrustedFormCertUrl(trustedForm = window.__FORM_CONFIG__.currentStep.trustedForm)");
+    expect(html).toContain('ctx.updateNextButton("Preparando...", true)');
     expect(html).toContain("No pudimos preparar el certificado de consentimiento");
     expect(html).toContain("trustedFormCertUrl");
-    expect(html).toContain('nextButton.setAttribute("data-tf-element-role", "submit")');
-    expect(html).toContain('form.setAttribute("data-tf-element-role", "offer")');
+    expect(html).toContain('document.getElementById("next-button")?.setAttribute("data-tf-element-role", "submit")');
+    expect(html).toContain('ctx.form.setAttribute("data-tf-element-role", "offer")');
     expect(html).toContain("https://api.trustedform.com/trustedform.js");
   });
 
@@ -1647,17 +1664,17 @@ describe("form rendering", () => {
 
     expect(html).toContain("function isMobileViewport()");
     expect(html).toContain('window.matchMedia("(max-width: 560px)").matches');
-    expect(html).toContain("function shouldSubmitTextInputOnMobileBlur(event)");
-    expect(html).toContain("function shouldSubmitTextInputOnMobileOutsidePointer(event)");
+    expect(html).toContain("function shouldSubmitTextInputOnMobileBlur(event, ctx, question, step)");
+    expect(html).toContain("function shouldSubmitTextInputOnMobileOutsidePointer(event, ctx, question, step)");
     expect(html).toContain("function validateCurrentStep(options = {})");
-    expect(html).toContain("const shouldFocusInvalid = options.focusInvalid !== false;");
+    expect(html).toContain("options.focusInvalid !== false");
     expect(html).toContain("async function handleNext(options = {})");
     expect(html).toContain("const shouldFocusInvalid = options.focusInvalid ?? !isMobileViewport();");
     expect(html).toContain("validateCurrentStep({ focusInvalid: shouldFocusInvalid })");
-    expect(html).toContain("void handleNext({ focusInvalid: false });");
+    expect(html).toContain("validate(ctx, question, step, { focusInvalid: false })");
     expect(html).toContain("function getCurrentTextInput()");
     expect(html).toContain("function getValidationErrorReturnFocusTarget(shouldFocusInvalid)");
-    expect(html).toContain("returnFocusTarget: getValidationErrorReturnFocusTarget(shouldFocusInvalid)");
+    expect(html).toContain("returnFocusTarget: getValidationErrorReturnFocusTarget(options.focusInvalid !== false)");
     expect(html).toContain("let focusedTextInput");
     expect(html).toContain('form.addEventListener("focusin"');
     expect(html).toContain('form.addEventListener("focusout"');
@@ -1715,7 +1732,7 @@ describe("form rendering", () => {
     expect(html).toContain('data-autocomplete-input="true"');
     expect(html).toContain('placeholder="Escriba su estado aquí"');
     expect(html).toContain("data-autocomplete-suggestions");
-    expect(html).toContain("function normalizeUsState(value)");
+    expect(html).toContain("function normalizeUsState(ctx, value)");
     expect(html).toContain("class=\"autocomplete-suggestions-shell\"");
     expect(html).toContain("data-autocomplete-suggestions-shell");
     expect(html).toContain('"source":"usStates"');
@@ -1744,9 +1761,10 @@ describe("form rendering", () => {
     expect(html).toContain("data-can-scroll-up");
     expect(html).toContain("data-can-scroll-down");
     expect(html).toContain('target.matches("[data-autocomplete-suggestions]")');
-    expect(html).toContain("function updateAutocompleteSuggestions(input)");
-    expect(html).toContain("isAutocompleteSuggestionPointerDown");
-    expect(html).toContain('target.closest("[data-autocomplete-suggestions-shell]")');
+    expect(html).toContain("function updateAutocompleteSuggestions(input, question)");
+    expect(html).toContain('target.closest("[data-autocomplete-suggestion]")');
+    expect(html).toContain("void ctx.handleNext()");
+    expect(html).toContain('step?.querySelector("[data-autocomplete-suggestions-shell]")');
     expect(html).toContain("Ingrese un estado válido de Estados Unidos.");
   });
 });

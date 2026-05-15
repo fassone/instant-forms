@@ -14,10 +14,10 @@ const BUILT_FORM_CONFIG_TOKEN = JSON.stringify(FORM_CONFIG_JSON_PLACEHOLDER);
 export const DIST_ROOT = "_dist";
 export const DIST_FORMS_ROOT = path.join(DIST_ROOT, "forms");
 export const INSTANT_FORM_ASSET_URL_PREFIX = "/_instant/forms";
-export const TRANSITION_BUNDLE_MANIFEST_ROUTE_KEY_SEPARATOR = "/";
+export const TRANSITION_ASSET_MANIFEST_ROUTE_KEY_SEPARATOR = "/";
 
 type PrebuiltFormsManifest = {
-  transitionBundles?: Record<string, string>;
+  transitionAssets?: Record<string, string>;
 };
 
 let prebuiltFormsManifestPromise: Promise<PrebuiltFormsManifest | undefined> | undefined;
@@ -51,7 +51,7 @@ export async function readPrebuiltFormPage(
     html,
     createRequestFormConfig(form, activeStepIndex, {
       ...options,
-      transitionBundleUrl: options.transitionBundleUrl ?? (await getPrebuiltTransitionBundleUrl(options.routeSegments)),
+      transitionAssetUrl: options.transitionAssetUrl ?? (await getPrebuiltTransitionAssetUrl(options.routeSegments)),
     }),
   );
 }
@@ -76,22 +76,22 @@ export function getPrebuiltUnavailableHtmlPath(name = "not-found"): string {
   return path.join(process.cwd(), DIST_FORMS_ROOT, `__${name}`, "index.html");
 }
 
-export function getPrebuiltTransitionBundlePath(hash: string): string {
-  return path.join(process.cwd(), DIST_FORMS_ROOT, "_instant", "forms", hash, "transition.json");
+export function getPrebuiltTransitionAssetPath(hash: string): string {
+  return path.join(process.cwd(), DIST_FORMS_ROOT, "_instant", "forms", hash, "transition.js");
 }
 
-export function getTransitionBundleUrl(hash: string): string {
-  return `${INSTANT_FORM_ASSET_URL_PREFIX}/${hash}/transition.json`;
+export function getTransitionAssetUrl(hash: string): string {
+  return `${INSTANT_FORM_ASSET_URL_PREFIX}/${hash}/transition.js`;
 }
 
-export function getTransitionBundleManifestRouteKey(routeSegments: readonly string[]): string {
-  return routeSegments.join(TRANSITION_BUNDLE_MANIFEST_ROUTE_KEY_SEPARATOR);
+export function getTransitionAssetManifestRouteKey(routeSegments: readonly string[]): string {
+  return routeSegments.join(TRANSITION_ASSET_MANIFEST_ROUTE_KEY_SEPARATOR);
 }
 
-async function getPrebuiltTransitionBundleUrl(routeSegments: readonly string[]): Promise<string | undefined> {
+async function getPrebuiltTransitionAssetUrl(routeSegments: readonly string[]): Promise<string | undefined> {
   const manifest = await readPrebuiltFormsManifest();
 
-  return manifest?.transitionBundles?.[getTransitionBundleManifestRouteKey(routeSegments)];
+  return manifest?.transitionAssets?.[getTransitionAssetManifestRouteKey(routeSegments)];
 }
 
 async function readPrebuiltFormsManifest(): Promise<PrebuiltFormsManifest | undefined> {
@@ -126,7 +126,7 @@ function createRequestFormConfig(
     stepUrlOverrides[stepDefinition.key] ?? getStepUrl(form, stepDefinition);
 
   return createClientFormConfig(form, activeStepIndex, answers, options.previewMode ?? false, getClientStepUrl, {
-    transitionBundleUrl: options.transitionBundleUrl,
+    transitionAssetUrl: options.transitionAssetUrl,
   });
 }
 

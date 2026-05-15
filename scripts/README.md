@@ -23,4 +23,4 @@ Keep scripts deterministic and side-effect-light. `build-forms.ts` is allowed to
 
 `bun run build:forms` renders every authored public form step, minifies the HTML/CSS/JS with the rendering platform, and writes the result to `/_dist/forms`. The generated files keep a small config placeholder so production requests can inject checkpoint-specific answers without running HTML minification during the request.
 
-The build also creates a hashed transition bundle for each public form route. That bundle contains static step templates and non-PII step metadata only; request-specific answers stay in cookies and the per-request config injection.
+The build also creates a hashed transition JS asset for each public form route. That asset contains static step templates, non-PII step metadata, and registered behavior modules only; request-specific answers stay in cookies and the per-request config injection.

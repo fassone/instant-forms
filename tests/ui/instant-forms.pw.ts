@@ -33,22 +33,22 @@ test.describe("instant routed form UI", () => {
     await expect(page).toHaveURL(/\/tn\/custom\/tiene-licencia$/u);
   });
 
-  test("production transition bundle swaps steps without a document navigation", async ({ page }) => {
+  test("production transition asset swaps steps without a document navigation", async ({ page }) => {
     await page.goto("/tn/custom/vive-en-tennessee");
-    const transitionBundleUrl = await page.evaluate(
-      "String(window.__FORM_CONFIG__?.transitionBundleUrl ?? '')",
+    const transitionAssetUrl = await page.evaluate(
+      "String(window.__FORM_CONFIG__?.transitionAssetUrl ?? '')",
     );
 
-    if (!transitionBundleUrl) {
+    if (!transitionAssetUrl) {
       return;
     }
 
     await page.waitForFunction(
-      (bundleUrl) =>
+      (assetUrl) =>
         performance
           .getEntriesByType("resource")
-          .some((entry) => entry.name.includes(String(bundleUrl))),
-      transitionBundleUrl,
+          .some((entry) => entry.name.includes(String(assetUrl))),
+      transitionAssetUrl,
     );
 
     const documentRequests: string[] = [];

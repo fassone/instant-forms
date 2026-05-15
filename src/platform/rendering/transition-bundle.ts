@@ -1,11 +1,14 @@
 import { createHash } from "node:crypto";
 
+import { US_STATES } from "../../shared/data/us-states";
 import { getStepSlug, type FormStep, type InstantForm } from "../flow";
 import { createClientTransitionSteps, type ClientStep } from "./client/config";
-import { applyProductionTokens } from "./inline-assets";
+import { getTransitionAssetScript, type TransitionAssetPayload } from "./client/controller-script";
+import { applyProductionTokens, applyProductionTokensToScript } from "./inline-assets";
 import { renderTransitionStepHtml } from "./render-form-page";
+import { createStateAutocompleteItems } from "../steps/autocomplete/ranking";
 
-export type TransitionBundleStep = {
+export type TransitionAssetStep = {
   index: number;
   key: string;
   slug: string;
@@ -14,27 +17,25 @@ export type TransitionBundleStep = {
   config: ClientStep;
 };
 
-export type TransitionBundle = {
-  version: 1;
-  route: string;
-  steps: readonly TransitionBundleStep[];
-  stepUrlsBySlug: Record<string, string>;
+export type TransitionAsset = TransitionAssetPayload & {
+  steps: readonly TransitionAssetStep[];
 };
 
-export type TransitionBundleBuildResult = {
-  bundle: TransitionBundle;
+export type TransitionAssetBuildResult = {
+  asset: TransitionAsset;
   body: string;
   hash: string;
 };
 
-export async function buildTransitionBundle(
+export async function buildTransitionAsset(
   form: InstantForm,
   routeSegments: readonly string[],
   stepUrlOverrides: Record<string, string>,
-): Promise<TransitionBundleBuildResult> {
+): Promise<TransitionAssetBuildResult> {
   const getClientStepUrl = (stepDefinition: FormStep) => stepUrlOverrides[stepDefinition.key] ?? "";
   const clientSteps = createClientTransitionSteps(form, getClientStepUrl);
-  const bundle: TransitionBundle = {
+  const hasAutocompleteStep = form.steps.some((stepDefinition) => stepDefinition.kind === "autocomplete");
+  const asset: TransitionAsset = {
     version: 1,
     route: `/${routeSegments.join("/")}`,
     steps: await Promise.all(
@@ -50,11 +51,19 @@ export async function buildTransitionBundle(
     stepUrlsBySlug: Object.fromEntries(
       form.steps.map((stepDefinition) => [getStepSlug(stepDefinition), getClientStepUrl(stepDefinition)]),
     ),
+    ...(hasAutocompleteStep
+      ? {
+          usStates: US_STATES,
+          autocompleteSources: {
+            usStates: createStateAutocompleteItems(US_STATES),
+          },
+        }
+      : {}),
   };
-  const body = `${JSON.stringify(bundle)}\n`;
+  const body = await minifyTransitionScript(getTransitionAssetScript(asset, applyProductionTokensToScript));
 
   return {
-    bundle,
+    asset,
     body,
     hash: createHash("sha256").update(body).digest("hex").slice(0, 16),
   };
@@ -74,6 +83,20 @@ async function minifyTransitionHtml(html: string): Promise<string> {
     sortAttributes: true,
     sortClassName: true,
   });
+}
+
+async function minifyTransitionScript(script: string): Promise<string> {
+  const { minify } = await import("html-minifier-terser");
+  const html = await minify(`<script>${script}</script>`, {
+    collapseWhitespace: true,
+    minifyJS: {
+      compress: true,
+      mangle: true,
+    },
+    removeComments: true,
+  });
+
+  return `${html.replace(/^<script>/u, "").replace(/<\/script>$/u, "")}\n`;
 }
 
 function getClientStepAt(clientSteps: readonly ClientStep[], index: number): ClientStep {

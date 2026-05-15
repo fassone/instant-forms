@@ -66,7 +66,7 @@ Build production form HTML:
 bun run build:forms
 ```
 
-The build writes minified route HTML into `/_dist/forms`. Each step page still ships CSS and JavaScript inline for speed, but production requests read the prebuilt shell and only inject the request-specific checkpoint config from the HttpOnly cookie. The build also emits a hashed, cacheable transition bundle under `/_dist/forms/_instant/forms/<hash>/transition.json`; after the first page settles, the browser fetches that static bundle so approved next/back transitions can swap step HTML without a full document load. Development keeps readable CSS/JS and uses the same active-step-only SSR shape.
+The build writes minified route HTML into `/_dist/forms`. Each step page still ships CSS and the minimum active-step JavaScript inline for speed, but production requests read the prebuilt shell and only inject the request-specific checkpoint config from the HttpOnly cookie. The build also emits a hashed, cacheable transition JS asset under `/_dist/forms/_instant/forms/<hash>/transition.js`; after the first page settles, the browser loads that static asset so approved next/back transitions can swap step HTML without a full document load. Development keeps readable CSS/JS and uses the same active-step-only SSR shape.
 
 ## Project Structure
 
@@ -123,7 +123,7 @@ Current visible order:
 
 The `matching_offer` step is routed and checkpointed, but not counted in `Paso X de Y`. Its success copy uses separate colored lines so each phrase can use a distinct brand color.
 
-The `trustedform_consent` step is authored like any other flow step. It renders the consent disclosure, opt-in checkbox, TrustedForm consent tags, and loads the TrustedForm Certify SDK only on that step. The previous step can preconnect/preload the SDK after the page settles.
+The `trustedform_consent` step is authored like any other flow step. It renders the consent disclosure, opt-in checkbox, TrustedForm consent tags, and loads the TrustedForm Certify SDK only when that step is mounted. Transition assets may register the TrustedForm behavior module ahead of time, but they must not request or execute the external SDK until the visitor reaches the consent step.
 
 ## Checkpoints
 
