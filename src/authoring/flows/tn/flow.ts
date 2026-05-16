@@ -1,5 +1,5 @@
 import { defineFormFlow } from "../../../platform/flow/dsl/define-form-flow";
-import { autocompleteSource, resolve, step } from "../../../platform/flow/dsl/step-builders";
+import { autocompleteSource } from "../../../platform/flow/dsl/step-builders";
 import { z } from "../../../platform/flow";
 
 export const tnFlow = defineFormFlow({
@@ -47,7 +47,7 @@ export const tnFlow = defineFormFlow({
   page: {
     name: "Seguros Aseguranza",
   },
-  steps: [
+  steps: ({ step, resolve, text }) => [
     step.choice({
       key: "belongs_to_state",
       slug: "vive-en-tennessee",
@@ -110,10 +110,10 @@ export const tnFlow = defineFormFlow({
       label: "Estamos buscando su seguro ideal",
       countsAsStep: false,
       benefits: resolve([], ({ context }) => [
-        "Revisando sus respuestas",
-        "Buscando agentes disponibles",
-        "Priorizando atención en español",
-        `Preparando opciones en ${context.areaName}`,
+        text("Revisando sus respuestas"),
+        text("Buscando agentes disponibles"),
+        text("Priorizando atención en español"),
+        text("Preparando opciones en ", context.areaName ?? context.areaCode),
       ]),
       successLines: [
         { text: "Encontramos agentes listos para cotizarle.", color: "brand-navy" },
@@ -148,9 +148,9 @@ export const tnFlow = defineFormFlow({
         "Al seleccionar esta casilla, autorizo a Seguros Aseguranza y a sus agentes a contactarme por teléfono o mensaje de texto sobre opciones de seguro de auto.",
       checkboxLabel: "Acepto continuar y enviar mi solicitud.",
       submitLabel: "Enviar",
-      grantorSummary: resolve(["first_name", "last_name", "phone_number"], ({ answers }) => ({
-        name: [answers.first_name, answers.last_name].filter(Boolean).join(" "),
-        phone: answers.phone_number,
+      grantorSummary: resolve(["first_name", "last_name", "phone_number", "residence_state"], ({ context, answers }) => ({
+        name: text(answers.first_name, " ", answers.last_name, " ", answers.residence_state ?? context.areaCode),
+        phone: text(answers.phone_number),
       })),
       trustedForm: {
         fieldName: "xxTrustedFormCertUrl",

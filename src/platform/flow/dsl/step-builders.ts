@@ -6,14 +6,21 @@ import type {
   CheckpointMode,
   ChoiceOptionInput,
   ChoiceStep,
+  ContractAnswerKey,
+  ContractAnswers,
+  ContractContext,
   DynamicResolverContext,
+  FormContract,
   InterstitialStep,
   PhoneStep,
+  ResolverTrustedFormGrantorSummary,
   ResolvableValue,
   StepBehavior,
   StepCondition,
   StepTemplateKey,
   TextStep,
+  TextPart,
+  TextValue,
   TrustedFormConsentStep,
   TrustedFormConsentStepInput,
   TrustedFormGrantorSummary,
@@ -50,7 +57,7 @@ type RawInterstitialStepInput = RawBaseStepInput & {
   successLines: readonly InterstitialStep["successLines"][number][];
   completionAnswer?: "completed";
   seenAnswer?: "seen";
-  benefits: ResolvableValue<readonly string[]>;
+  benefits: ResolvableValue<readonly string[], readonly TextValue[]>;
 };
 type RawTrustedFormConsentStepInput = RawBaseStepInput & {
   disclosure: string;
@@ -59,7 +66,7 @@ type RawTrustedFormConsentStepInput = RawBaseStepInput & {
   acceptedAnswer?: "accepted";
   validationMessage?: string;
   trustedForm?: TrustedFormConsentStepInput["trustedForm"];
-  grantorSummary?: ResolvableValue<TrustedFormGrantorSummary>;
+  grantorSummary?: ResolvableValue<TrustedFormGrantorSummary, ResolverTrustedFormGrantorSummary>;
 };
 
 type InputShowWhen<TInput> = TInput extends { readonly showWhen: infer TShowWhen }
@@ -67,8 +74,30 @@ type InputShowWhen<TInput> = TInput extends { readonly showWhen: infer TShowWhen
   : undefined;
 type ChoiceOptionKey<TOptions extends readonly ChoiceOptionInput[]> = TOptions[number]["key"];
 type InputGrantorSummary<TInput> = TInput extends { readonly grantorSummary: infer TGrantorSummary }
-  ? Extract<TGrantorSummary, ResolvableValue<TrustedFormGrantorSummary>>
+  ? Extract<TGrantorSummary, ResolvableValue<TrustedFormGrantorSummary, ResolverTrustedFormGrantorSummary>>
   : undefined;
+type ResolverAnswerValue<TContract extends FormContract, TKey extends ContractAnswerKey<TContract>> = Extract<
+  ContractAnswers<TContract>[TKey],
+  string | undefined | null
+>;
+type ResolverAnswerMap<
+  TContract extends FormContract,
+  TDependencies extends readonly ContractAnswerKey<TContract>[],
+> = Readonly<{
+  [TKey in TDependencies[number]]: ResolverAnswerValue<TContract, TKey>;
+}>;
+
+export type FlowAuthoringHelpers<TContract extends FormContract> = {
+  readonly step: typeof step;
+  readonly resolve: <const TDependencies extends readonly ContractAnswerKey<TContract>[], TResult>(
+    dependencies: TDependencies,
+    resolver: (input: {
+      context: Readonly<ContractContext<TContract>>;
+      answers: ResolverAnswerMap<TContract, TDependencies>;
+    }) => TResult,
+  ) => DynamicResolverContext<TDependencies[number], TResult>;
+  readonly text: typeof text;
+};
 
 export const autocompleteSource = {
   usStates(): AutocompleteSourceDefinition {
@@ -81,10 +110,14 @@ export const autocompleteSource = {
   },
 } as const;
 
+export function text<const TParts extends readonly TextPart[]>(...parts: TParts): TextValue {
+  return parts.join("") as TextValue;
+}
+
 export function resolve<const TDependencies extends readonly string[], TResult>(
   dependencies: TDependencies,
   resolver: (input: {
-    context: Readonly<Record<string, string>>;
+    context: Readonly<Record<string, string | undefined>>;
     answers: Readonly<Record<TDependencies[number], string>>;
   }) => TResult,
 ): DynamicResolverContext<TDependencies[number], TResult> {
@@ -92,6 +125,16 @@ export function resolve<const TDependencies extends readonly string[], TResult>(
     __kind: "dynamic_resolver",
     dependencies,
     resolve: resolver,
+  };
+}
+
+export function createFlowAuthoringHelpers<TContract extends FormContract>(
+  _contract: TContract,
+): FlowAuthoringHelpers<TContract> {
+  return {
+    step,
+    resolve: resolve as unknown as FlowAuthoringHelpers<TContract>["resolve"],
+    text,
   };
 }
 

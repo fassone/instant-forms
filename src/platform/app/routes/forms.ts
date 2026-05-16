@@ -94,7 +94,7 @@ export function registerFormRoutes(app: Hono, routes: FormRoutes, logger: Submis
           : getNextStepIndex(form, stepIndex, sanitizedAnswers);
     const nextStep = getStepAt(form, nextIndex);
     const nextStepPayload =
-      hasStepDynamicResolvers(nextStep) && canResolveStepDynamicValues(nextStep, sanitizedAnswers)
+      hasStepDynamicResolvers(nextStep) && canResolveStepDynamicValues(form, nextStep, sanitizedAnswers)
         ? createResolvedStepPayload(form, nextIndex, sanitizedAnswers, (step) =>
             getFormRouteStepUrl(routeEntry.routeSegments, step),
           )
@@ -145,7 +145,7 @@ export function registerFormRoutes(app: Hono, routes: FormRoutes, logger: Submis
       return jsonResponse(c, { ok: false, errors: [{ field: stepDefinition.key, message: "Question is not available yet." }] }, 400);
     }
 
-    if (hasStepDynamicResolvers(stepDefinition) && !canResolveStepDynamicValues(stepDefinition, sanitizedAnswers)) {
+    if (hasStepDynamicResolvers(stepDefinition) && !canResolveStepDynamicValues(routeEntry.form, stepDefinition, sanitizedAnswers)) {
       return jsonResponse(c, { ok: false, errors: [{ field: stepDefinition.key, message: "Question is not ready yet." }] }, 400);
     }
 

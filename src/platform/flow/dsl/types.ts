@@ -107,6 +107,14 @@ export type InterstitialSuccessLine = {
   color: SuccessLineColor;
 };
 
+declare const textValueBrand: unique symbol;
+
+export type TextValue = string & {
+  readonly [textValueBrand]: "TextValue";
+};
+
+export type TextPart = string | number | boolean | TextValue;
+
 export type DynamicResolverContext<
   TDependency extends string = string,
   TResult = unknown,
@@ -114,19 +122,24 @@ export type DynamicResolverContext<
   readonly __kind: "dynamic_resolver";
   readonly dependencies: readonly TDependency[];
   readonly resolve: (input: {
-    context: Readonly<Record<string, string>>;
+    context: Readonly<Record<string, string | undefined>>;
     answers: Readonly<Record<TDependency, string>>;
   }) => TResult;
 };
 
-export type ResolvableValue<TValue, TDependency extends string = string> =
-  | TValue
-  | DynamicResolverContext<TDependency, TValue>;
+export type ResolvableValue<
+  TStaticValue,
+  TResolvedValue = TStaticValue,
+  TDependency extends string = string,
+> = TStaticValue | DynamicResolverContext<TDependency, TResolvedValue>;
 
 export type InterstitialStep<
   TKey extends string = string,
   TShowWhen extends StepCondition | undefined = StepCondition | undefined,
-  TBenefits extends ResolvableValue<readonly string[]> = ResolvableValue<readonly string[]>,
+  TBenefits extends ResolvableValue<readonly string[], readonly TextValue[]> = ResolvableValue<
+    readonly string[],
+    readonly TextValue[]
+  >,
 > = BaseStep<TKey, TShowWhen> & {
   kind: "interstitial";
   type: "INTERSTITIAL";
@@ -155,11 +168,18 @@ export type TrustedFormGrantorSummary = {
   phone?: string;
 };
 
+export type ResolverTrustedFormGrantorSummary = {
+  name?: TextValue;
+  phone?: TextValue;
+};
+
 export type TrustedFormConsentStep<
   TKey extends string = string,
   TShowWhen extends StepCondition | undefined = StepCondition | undefined,
-  TGrantorSummary extends ResolvableValue<TrustedFormGrantorSummary> | undefined =
-    | ResolvableValue<TrustedFormGrantorSummary>
+  TGrantorSummary extends
+    | ResolvableValue<TrustedFormGrantorSummary, ResolverTrustedFormGrantorSummary>
+    | undefined =
+    | ResolvableValue<TrustedFormGrantorSummary, ResolverTrustedFormGrantorSummary>
     | undefined,
 > = BaseStep<TKey, TShowWhen> & {
   kind: "trusted_form_consent";
@@ -178,11 +198,11 @@ export type FormStep<TKey extends string = string> =
   | TextStep<TKey, StepCondition | undefined>
   | PhoneStep<TKey, StepCondition | undefined>
   | AutocompleteStep<TKey, StepCondition | undefined>
-  | InterstitialStep<TKey, StepCondition | undefined, ResolvableValue<readonly string[]>>
+  | InterstitialStep<TKey, StepCondition | undefined, ResolvableValue<readonly string[], readonly TextValue[]>>
   | TrustedFormConsentStep<
       TKey,
       StepCondition | undefined,
-      ResolvableValue<TrustedFormGrantorSummary> | undefined
+      ResolvableValue<TrustedFormGrantorSummary, ResolverTrustedFormGrantorSummary> | undefined
     >;
 
 export type AnswerStep<TKey extends string = string> =
@@ -278,7 +298,10 @@ export type AutocompleteStepInput<
 export type InterstitialStepInput<
   TKey extends string = string,
   TShowWhen extends StepCondition | undefined = StepCondition | undefined,
-  TBenefits extends ResolvableValue<readonly string[]> = ResolvableValue<readonly string[]>,
+  TBenefits extends ResolvableValue<readonly string[], readonly TextValue[]> = ResolvableValue<
+    readonly string[],
+    readonly TextValue[]
+  >,
 > = BaseStepInput<TKey, TShowWhen> & {
   loadingLabel?: string;
   successLines: readonly InterstitialSuccessLine[];
@@ -290,8 +313,10 @@ export type InterstitialStepInput<
 export type TrustedFormConsentStepInput<
   TKey extends string = string,
   TShowWhen extends StepCondition | undefined = StepCondition | undefined,
-  TGrantorSummary extends ResolvableValue<TrustedFormGrantorSummary> | undefined =
-    | ResolvableValue<TrustedFormGrantorSummary>
+  TGrantorSummary extends
+    | ResolvableValue<TrustedFormGrantorSummary, ResolverTrustedFormGrantorSummary>
+    | undefined =
+    | ResolvableValue<TrustedFormGrantorSummary, ResolverTrustedFormGrantorSummary>
     | undefined,
 > = BaseStepInput<TKey, TShowWhen> & {
   disclosure: string;
@@ -428,10 +453,7 @@ export type EnforceAnswerStepKeys<TContract extends FormContract, TSteps extends
     ? unknown
     : { readonly __forwardDynamicResolverDependencyKeys: ForwardDynamicResolverDependencyKeys<TSteps> });
 
-export type FormFlowInput<
-  TContract extends FormContract = FormContract,
-  TSteps extends readonly FormStep[] = readonly FormStep[],
-> = {
+export type FormFlowDefinitionBase<TContract extends FormContract = FormContract> = {
   name: string;
   status: FormStatus;
   contract: TContract;
@@ -440,5 +462,11 @@ export type FormFlowInput<
   page: {
     name: string;
   };
+};
+
+export type FormFlowInput<
+  TContract extends FormContract = FormContract,
+  TSteps extends readonly FormStep[] = readonly FormStep[],
+> = FormFlowDefinitionBase<TContract> & {
   steps: TSteps;
 } & EnforceAnswerStepKeys<TContract, TSteps>;

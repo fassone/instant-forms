@@ -1,23 +1,55 @@
-import type { AnswerStep, FormContract, FormFlowInput, FormStep, InstantForm } from "./types";
+import type {
+  AnswerStep,
+  EnforceAnswerStepKeys,
+  FormContract,
+  FormFlowDefinitionBase,
+  FormFlowInput,
+  FormStep,
+  InstantForm,
+} from "./types";
 import { getStepDynamicResolverDependencies, isDynamicResolver } from "./dynamic-resolvers";
+import { createFlowAuthoringHelpers, type FlowAuthoringHelpers } from "./step-builders";
 
 type AnswerSchema = Record<string, unknown> & {
   safeParse: (input: unknown) => { success: boolean };
 };
 
+type FormFlowCallbackInput<
+  TContract extends FormContract,
+  TSteps extends readonly FormStep[],
+> = FormFlowDefinitionBase<TContract> & {
+  steps: (helpers: FlowAuthoringHelpers<TContract>) => TSteps & EnforceAnswerStepKeys<TContract, TSteps>;
+};
+
 export function defineFormFlow<
   const TContract extends FormContract,
   const TSteps extends readonly FormStep[],
->(input: FormFlowInput<TContract, TSteps>): InstantForm {
+>(input: FormFlowInput<TContract, TSteps>): InstantForm;
+
+export function defineFormFlow<
+  const TContract extends FormContract,
+  const TSteps extends readonly FormStep[],
+>(input: FormFlowCallbackInput<TContract, TSteps>): InstantForm;
+
+export function defineFormFlow<const TContract extends FormContract, const TSteps extends readonly FormStep[]>(
+  input: FormFlowInput<TContract, TSteps> | FormFlowCallbackInput<TContract, TSteps>,
+): InstantForm {
   const context = parsePartialObject(input.contract.context, input.context, "context");
-  const steps = input.steps;
+  const steps =
+    typeof input.steps === "function"
+      ? input.steps(createFlowAuthoringHelpers(input.contract))
+      : input.steps;
   assertAnswerStepContract(input.contract, steps);
-  assertKnownTemplateVariables(input.contract, input);
+  assertKnownTemplateVariables(input.contract, { name: input.name, page: input.page, steps });
 
   return {
-    ...input,
+    name: input.name,
+    status: input.status,
+    contract: input.contract,
     context,
     customVariables: context,
+    payload: input.payload,
+    page: input.page,
     steps,
   };
 }

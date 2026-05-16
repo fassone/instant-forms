@@ -6,7 +6,17 @@ import { selectedScripts } from "../../src/authoring/scripts/registry";
 import { formRoutes } from "../../src/authoring/routes/registry";
 import { createFetchHandler } from "../../src/platform/app/server";
 import { registerScriptRoutes } from "../../src/platform/app/routes/scripts";
-import { autocompleteSource, defineFormFlow, getStepSlug, isCountedStep, resolve, step, z } from "../../src/platform/flow";
+import {
+  autocompleteSource,
+  defineFormFlow,
+  getStepSlug,
+  isCountedStep,
+  resolve,
+  resolveStepDynamicValues,
+  step,
+  text,
+  z,
+} from "../../src/platform/flow";
 import { encodeCheckpointAnswers, getCheckpointCookieName } from "../../src/platform/persistence/checkpoints";
 import { FORM_CONFIG_PLACEHOLDER_EXPRESSION, buildTransitionAsset, renderFormPage } from "../../src/platform/rendering";
 import { buildInlineCss, getInlineAssetMode } from "../../src/platform/rendering/inline-assets";
@@ -897,8 +907,8 @@ describe("form registry", () => {
           label: "Buscando",
           successLines: [{ text: "Listo", color: "accent" }],
           benefits: resolve(["first_answer", "second_answer"], ({ context, answers }) => [
-            `${context.areaName}: ${answers.first_answer}`,
-            answers.second_answer,
+            text(context.areaName ?? "Unknown", ": ", answers.first_answer),
+            text(answers.second_answer),
           ]),
         }),
       ],
@@ -929,7 +939,7 @@ describe("form registry", () => {
             slug: "buscando",
             label: "Buscando",
             successLines: [{ text: "Listo", color: "accent" }],
-            benefits: resolve(["second_answer"], ({ answers }) => [answers.second_answer]),
+            benefits: resolve(["second_answer"], ({ answers }) => [text(answers.second_answer)]),
           }),
           step.text({
             key: "second_answer",
@@ -967,11 +977,181 @@ describe("form registry", () => {
             slug: "buscando",
             label: "Buscando",
             successLines: [{ text: "Listo", color: "accent" }],
-            benefits: resolve(["unknown_answer"], ({ answers }) => [answers.unknown_answer]),
+            benefits: resolve(["unknown_answer"], ({ answers }) => [text(answers.unknown_answer)]),
           }),
         ],
       } as any),
     ).toThrow('Resolver for step "matching_offer" references unknown contract.answers key "unknown_answer"');
+  });
+
+  it("resolves dynamic text values and rejects unsafe resolver output", () => {
+    const matchingFlow = defineFormFlow({
+      name: "Safe Resolver Flow",
+      status: "ACTIVE",
+      contract: {
+        context: z.object({ areaName: z.string().optional(), areaCode: z.string() }),
+        answers: z.object({ first_answer: z.enum(["yes"]) }),
+        payload: z.object({ first: z.string() }),
+      },
+      context: { areaCode: "TN", areaName: "Tennessee" },
+      payload: {
+        method: "POST",
+        encoding: "json",
+        mapping: ({ answers }: { answers: { first_answer: string } }) => ({ first: answers.first_answer }),
+      },
+      page: { name: "Page" },
+      steps: ({ step, resolve, text }) => [
+        step.choice({
+          key: "first_answer",
+          slug: "primera",
+          label: "Primera",
+          options: [{ key: "yes", label: "Si" }],
+        }),
+        step.interstitial({
+          key: "matching_offer",
+          slug: "buscando",
+          label: "Buscando",
+          successLines: [{ text: "Listo", color: "accent" }],
+          benefits: resolve(["first_answer"], ({ context, answers }) => [
+            text("Preparando opciones en ", context.areaName ?? context.areaCode),
+            text("Respuesta: ", answers.first_answer),
+          ]),
+        }),
+      ],
+    });
+
+    const resolvedMatchingStep = resolveStepDynamicValues(matchingFlow, matchingFlow.steps[1]!, {
+      first_answer: "yes",
+    });
+
+    expect(resolvedMatchingStep).toMatchObject({
+      kind: "interstitial",
+      benefits: ["Preparando opciones en Tennessee", "Respuesta: yes"],
+    });
+
+    const consentFlow = defineFormFlow({
+      name: "Safe Summary Flow",
+      status: "ACTIVE",
+      contract: {
+        context: z.object({}),
+        answers: z.object({
+          first_name: z.string(),
+          last_name: z.string(),
+          phone_number: z.string(),
+        }),
+        payload: z.object({ phone: z.string() }),
+      },
+      context: {},
+      payload: {
+        method: "POST",
+        encoding: "json",
+        mapping: ({ answers }: { answers: { phone_number: string } }) => ({ phone: answers.phone_number }),
+      },
+      page: { name: "Page" },
+      steps: ({ step, resolve, text }) => [
+        step.text({ key: "first_name", slug: "nombre", label: "Nombre", autocomplete: "given-name" }),
+        step.text({ key: "last_name", slug: "apellido", label: "Apellido", autocomplete: "family-name" }),
+        step.phone({ key: "phone_number", slug: "telefono", label: "Telefono" }),
+        step.trustedFormConsent({
+          key: "trustedform_consent",
+          slug: "consentimiento",
+          label: "Consentimiento",
+          disclosure: "Texto de consentimiento.",
+          grantorSummary: resolve(["first_name", "last_name", "phone_number"], ({ answers }) => ({
+            name: text(answers.first_name, " ", answers.last_name),
+            phone: text(answers.phone_number),
+          })),
+        }),
+      ],
+    });
+
+    const resolvedConsentStep = resolveStepDynamicValues(consentFlow, consentFlow.steps[3]!, {
+      first_name: "Ana",
+      last_name: "Lopez",
+      phone_number: "+16155551234",
+    });
+
+    expect(resolvedConsentStep).toMatchObject({
+      kind: "trusted_form_consent",
+      grantorSummary: {
+        name: "Ana Lopez",
+        phone: "+16155551234",
+      },
+    });
+
+    const undefinedFlow = defineFormFlow({
+      name: "Unsafe Resolver Flow",
+      status: "ACTIVE",
+      contract: {
+        context: z.object({}),
+        answers: z.object({ first_answer: z.enum(["yes"]) }),
+        payload: z.object({ first: z.string() }),
+      },
+      context: {},
+      payload: {
+        method: "POST",
+        encoding: "json",
+        mapping: ({ answers }: { answers: { first_answer: string } }) => ({ first: answers.first_answer }),
+      },
+      page: { name: "Page" },
+      steps: [
+        step.choice({
+          key: "first_answer",
+          slug: "primera",
+          label: "Primera",
+          options: [{ key: "yes", label: "Si" }],
+        }),
+        step.interstitial({
+          key: "matching_offer",
+          slug: "buscando",
+          label: "Buscando",
+          successLines: [{ text: "Listo", color: "accent" }],
+          benefits: resolve(["first_answer"], () => [undefined as unknown as ReturnType<typeof text>]),
+        }),
+      ],
+    });
+
+    expect(() =>
+      resolveStepDynamicValues(undefinedFlow, undefinedFlow.steps[1]!, { first_answer: "yes" }),
+    ).toThrow('Resolver for step "matching_offer" field "benefits"[0] returned undefined');
+
+    const unresolvedStringFlow = defineFormFlow({
+      name: "Unsafe Text Resolver Flow",
+      status: "ACTIVE",
+      contract: {
+        context: z.object({}),
+        answers: z.object({ first_answer: z.enum(["yes"]) }),
+        payload: z.object({ first: z.string() }),
+      },
+      context: {},
+      payload: {
+        method: "POST",
+        encoding: "json",
+        mapping: ({ answers }: { answers: { first_answer: string } }) => ({ first: answers.first_answer }),
+      },
+      page: { name: "Page" },
+      steps: [
+        step.choice({
+          key: "first_answer",
+          slug: "primera",
+          label: "Primera",
+          options: [{ key: "yes", label: "Si" }],
+        }),
+        step.interstitial({
+          key: "matching_offer",
+          slug: "buscando",
+          label: "Buscando",
+          successLines: [{ text: "Listo", color: "accent" }],
+          benefits: resolve(["first_answer"], () => [
+            "Preparando opciones en undefined" as unknown as ReturnType<typeof text>,
+          ]),
+        }),
+      ],
+    });
+
+    expect(() =>
+      resolveStepDynamicValues(unresolvedStringFlow, unresolvedStringFlow.steps[1]!, { first_answer: "yes" }),
+    ).toThrow('Resolver for step "matching_offer" field "benefits"[0] returned unresolved text');
   });
 
   it("validates mapped delivery payloads against the payload contract", () => {
@@ -2126,9 +2306,9 @@ describe("server routing", () => {
         url: "/tn/custom/consentimiento",
         config: {
           kind: "trusted_form_consent",
-          dynamicResolverDependencies: ["first_name", "last_name", "phone_number"],
+          dynamicResolverDependencies: ["first_name", "last_name", "phone_number", "residence_state"],
           grantorSummary: {
-            name: "Ana Lopez",
+            name: "Ana Lopez TN",
             phone: "(615) 555-1234",
           },
         },
@@ -2159,9 +2339,9 @@ describe("server routing", () => {
         url: "/tn/custom/consentimiento",
         config: {
           kind: "trusted_form_consent",
-          dynamicResolverDependencies: ["first_name", "last_name", "phone_number"],
+          dynamicResolverDependencies: ["first_name", "last_name", "phone_number", "residence_state"],
           grantorSummary: {
-            name: "Ana Lopez",
+            name: "Ana Lopez TN",
             phone: "(615) 555-1234",
           },
         },
@@ -2403,7 +2583,7 @@ describe("form rendering", () => {
     const transitionSteps = transitionAsset.asset.steps as readonly { key: string; config: Record<string, unknown> }[];
     expect(transitionSteps.find((stepDefinition) => stepDefinition.key === "trustedform_consent")?.config).toMatchObject({
       kind: "trusted_form_consent",
-      dynamicResolverDependencies: ["first_name", "last_name", "phone_number"],
+      dynamicResolverDependencies: ["first_name", "last_name", "phone_number", "residence_state"],
     });
     expect(transitionSteps.find((stepDefinition) => stepDefinition.key === "trustedform_consent")?.config).not.toHaveProperty(
       "grantorSummary",
@@ -2708,14 +2888,14 @@ describe("form rendering", () => {
     expect(html).toContain('"slug":"consentimiento"');
     expect(html).toContain('"submitLabel":"Enviar"');
     expect(html).toContain('"trustedForm":{"fieldName":"xxTrustedFormCertUrl"');
-    expect(html).toContain('"delivery":"partytown"');
+    expect(html).toContain('"delivery":"main_thread"');
     expect(html).toContain('"scriptProxyKey":"tfc"');
     expect(html).toContain('"scriptBaseUrl":"/_instant/scripts/trustedform.com/tfc.js"');
     expect(html).toContain('"partytownLib":"/~partytown/"');
     expect(html).toContain('"partytownScriptUrl":"/~partytown/partytown.js"');
     expect(html).toContain('"allowSubmitWithoutCert":true');
-    expect(html).toContain('"dynamicResolverDependencies":["first_name","last_name","phone_number"]');
-    expect(html).toContain('"grantorSummary":{"name":"Ana Lopez","phone":"(615) 555-1234"}');
+    expect(html).toContain('"dynamicResolverDependencies":["first_name","last_name","phone_number","residence_state"]');
+    expect(html).toContain('"grantorSummary":{"name":"Ana Lopez TN","phone":"(615) 555-1234"}');
     expect(html).not.toContain('"nameKeys"');
     expect(html).not.toContain('"phoneKey"');
     expect(html).toContain('data-step="10" data-step-kind="trusted_form_consent"');

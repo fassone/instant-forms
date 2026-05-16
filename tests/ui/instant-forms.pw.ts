@@ -209,7 +209,7 @@ test.describe("instant routed form UI", () => {
     await expect(page.getByRole("button", { name: "Enviar" })).toBeEnabled();
   });
 
-  test("TrustedForm script preload does not execute before the consent step", async ({ page }) => {
+  test("TrustedForm script does not execute before the consent step", async ({ page }) => {
     let partytownRequests = 0;
     let trustedFormProxyRequests = 0;
     let trustedFormDirectRequests = 0;
@@ -256,7 +256,7 @@ test.describe("instant routed form UI", () => {
     }
 
     await expect(page).toHaveURL(/\/tn\/custom\/consentimiento$/u);
-    await expect.poll(() => partytownRequests).toBeGreaterThan(0);
+    expect(partytownRequests).toBe(0);
     await expect.poll(() => trustedFormProxyRequests).toBeGreaterThan(0);
     expect(trustedFormDirectRequests).toBe(0);
     await expect
