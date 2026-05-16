@@ -70,6 +70,8 @@ function getCoreRuntimeScript(): string {
   let mountedBehavior;
   let mountedCleanup;
   let isSubmitting = false;
+  const nextButtonLoadingReasons = new Set();
+  let nextButtonLoadingSize;
   let isActionPointerDown = false;
   let errorModalReturnFocusTarget;
   let transitionAssetLoaded = false;
@@ -145,6 +147,7 @@ function getCoreRuntimeScript(): string {
       },
       advanceOptimistically,
       setSubmitting,
+      setNextButtonLoading,
       getQuestion,
       getStepElement,
       getRenderedNextUrl,
@@ -352,9 +355,83 @@ function getCoreRuntimeScript(): string {
   function updateNextButton(labelOverride, disabledOverride) {
     const question = getQuestion();
     const behavior = getActiveBehavior();
-    nextButton.textContent = labelOverride ?? behavior?.getNextLabel?.(getContext(), question, getStepElement()) ?? (isCurrentStepFinal() ? "Enviar" : "Siguiente");
-    nextButton.disabled = disabledOverride ?? (isSubmitting || Boolean(behavior?.isNextDisabled?.(getContext(), question, getStepElement())));
-    backButton.disabled = !getRenderedPreviousUrl() || isSubmitting;
+    const isLoading = isNextButtonLoading();
+    const label = labelOverride ?? behavior?.getNextLabel?.(getContext(), question, getStepElement()) ?? (isCurrentStepFinal() ? "Enviar" : "Siguiente");
+    const accessibleLoadingLabel = "Enviando...";
+    if (isLoading) {
+      freezeNextButtonSize();
+      renderNextButtonContent(accessibleLoadingLabel, true);
+      nextButton.setAttribute("aria-label", accessibleLoadingLabel);
+    } else {
+      releaseNextButtonSize();
+      renderNextButtonContent(label, false);
+      nextButton.removeAttribute("aria-label");
+    }
+    nextButton.disabled = isLoading;
+    nextButton.dataset.loading = String(isLoading);
+    if (isLoading) {
+      nextButton.setAttribute("aria-busy", "true");
+    } else {
+      nextButton.removeAttribute("aria-busy");
+    }
+    backButton.disabled = !getRenderedPreviousUrl() || isLoading;
+  }
+
+  function renderNextButtonContent(label, isLoading) {
+    nextButton.replaceChildren();
+
+    if (isLoading) {
+      const spinner = document.createElement("span");
+      spinner.className = "button-spinner";
+      spinner.setAttribute("aria-hidden", "true");
+      nextButton.appendChild(spinner);
+    }
+
+    if (isLoading) {
+      return;
+    }
+
+    const labelElement = document.createElement("span");
+    labelElement.className = "button-label";
+    labelElement.textContent = label;
+    nextButton.appendChild(labelElement);
+  }
+
+  function freezeNextButtonSize() {
+    if (nextButtonLoadingSize) {
+      return;
+    }
+
+    const rect = nextButton.getBoundingClientRect();
+    nextButtonLoadingSize = {
+      minWidth: nextButton.style.minWidth,
+      minHeight: nextButton.style.minHeight,
+    };
+    nextButton.style.minWidth = Math.ceil(rect.width) + "px";
+    nextButton.style.minHeight = Math.ceil(rect.height) + "px";
+  }
+
+  function releaseNextButtonSize() {
+    if (!nextButtonLoadingSize) {
+      return;
+    }
+
+    nextButton.style.minWidth = nextButtonLoadingSize.minWidth;
+    nextButton.style.minHeight = nextButtonLoadingSize.minHeight;
+    nextButtonLoadingSize = undefined;
+  }
+
+  function isNextButtonLoading() {
+    return isSubmitting || nextButtonLoadingReasons.size > 0;
+  }
+
+  function setNextButtonLoading(reason, isLoading) {
+    if (isLoading) {
+      nextButtonLoadingReasons.add(reason);
+    } else {
+      nextButtonLoadingReasons.delete(reason);
+    }
+    updateNextButton();
   }
 
   function getActiveBehavior() {
@@ -1014,10 +1091,12 @@ function getCoreRuntimeScript(): string {
     const isFinal = isCurrentStepFinal();
 
     if (isFinal) {
+      setSubmitting(true);
       try {
         await queueCheckpoint(question.key, answer, { stepUrl, reconcile: false });
         await submitForm();
       } catch (checkpointError) {
+        setSubmitting(false);
         reconcileCheckpointFailure(checkpointError, { stepUrl });
       }
       return;
@@ -1042,11 +1121,14 @@ function getCoreRuntimeScript(): string {
       return;
     }
 
+    setNextButtonLoading("navigation", true);
     try {
       const nextUrl = await queueCheckpoint(question.key, answer, { stepUrl, predictedUrl, mode, reconcile: false });
       navigateToUrl(nextUrl ?? predictedUrl);
     } catch (checkpointError) {
       showErrorModal(checkpointError instanceof Error ? checkpointError.message : "No pudimos guardar esta respuesta.");
+    } finally {
+      setNextButtonLoading("navigation", false);
     }
   }
 
@@ -1631,11 +1713,18 @@ function getInterstitialBehaviorScript(registerExpression: string): string {
     let matchingTextTransitionId = 0;
     const completedMatchingSteps = new Set();
 
-    function clearMatchingTimers() {
+    function getMatchingLoadingReason(question) {
+      return "interstitial:" + question.key;
+    }
+
+    function clearMatchingTimers(ctx, question) {
       activeMatchingRunId += 1;
       matchingTextTransitionId += 1;
       matchingTimers.forEach((timer) => window.clearTimeout(timer));
       matchingTimers = [];
+      if (ctx && question) {
+        ctx.setNextButtonLoading(getMatchingLoadingReason(question), false);
+      }
     }
 
     function scheduleMatchingTimer(callback, delay) {
@@ -1757,6 +1846,7 @@ function getInterstitialBehaviorScript(registerExpression: string): string {
       const elements = getMatchingElements(step);
       if (!elements.status || !elements.benefit) return;
       if (ctx.answers[question.key] === question.seenAnswer) {
+        ctx.setNextButtonLoading(getMatchingLoadingReason(question), false);
         showMatchingSuccess(question, elements, { immediate: true });
         scheduleMatchingTimer(() => {
           if (runId === activeMatchingRunId) ctx.replaceToUrl(ctx.getRenderedNextUrl() ?? question.url);
@@ -1764,9 +1854,11 @@ function getInterstitialBehaviorScript(registerExpression: string): string {
         return;
       }
       if (ctx.answers[question.key] === question.completionAnswer || completedMatchingSteps.has(question.key)) {
+        ctx.setNextButtonLoading(getMatchingLoadingReason(question), false);
         showMatchingSuccess(question, elements, { immediate: true });
         return;
       }
+      ctx.setNextButtonLoading(getMatchingLoadingReason(question), true);
       const benefitTimeline = getMatchingBenefitTimeline(question.benefits);
       elements.status.textContent = question.loadingLabel;
       setMatchingBenefitText(elements, benefitTimeline[0]?.text ?? "", "", { initial: true });
@@ -1794,6 +1886,7 @@ function getInterstitialBehaviorScript(registerExpression: string): string {
       }
       if (runId !== activeMatchingRunId) return;
       completedMatchingSteps.add(question.key);
+      ctx.setNextButtonLoading(getMatchingLoadingReason(question), false);
       ctx.updateNextButton("Siguiente", false);
     }
 
@@ -1817,10 +1910,12 @@ function getInterstitialBehaviorScript(registerExpression: string): string {
         if (ctx.answers[question.key] !== question.completionAnswer && !completedMatchingSteps.has(question.key)) {
           return true;
         }
+        ctx.setNextButtonLoading(getMatchingLoadingReason(question), true);
         try {
           const nextUrl = await ctx.saveCheckpoint(question.key, question.seenAnswer);
           ctx.replaceToUrl(nextUrl ?? ctx.getRenderedNextUrl());
         } catch (checkpointError) {
+          ctx.setNextButtonLoading(getMatchingLoadingReason(question), false);
           ctx.showErrorModal(checkpointError instanceof Error ? checkpointError.message : "No pudimos guardar este paso.");
         }
         return true;
@@ -1840,7 +1935,6 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
     let trustedFormSdkLoadPromise;
     let trustedFormReadyPromise;
     let trustedFormReadyFieldName;
-    let trustedFormReadinessRunId = 0;
     let partytownLoadPromise;
     let partytownLoaded = false;
 
@@ -1882,7 +1976,6 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
     }
 
     function unmount(ctx) {
-      trustedFormReadinessRunId += 1;
       ctx.form.removeAttribute("data-tf-element-role");
       document.getElementById("next-button")?.removeAttribute("data-tf-element-role");
     }
@@ -1932,22 +2025,8 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
     }
 
     function startTrustedFormStepReadiness(ctx, question) {
-      const runId = (trustedFormReadinessRunId += 1);
-      if (getTrustedFormCertUrl(question.trustedForm)) {
-        ctx.updateNextButton(question.submitLabel, ctx.isSubmitting);
-        return;
-      }
-      ctx.updateNextButton("Preparando...", true);
-      ensureTrustedFormReady(question.trustedForm).then(() => {
-        if (runId !== trustedFormReadinessRunId || ctx.getQuestion().kind !== "trusted_form_consent") return;
-        ctx.updateNextButton(question.submitLabel, ctx.isSubmitting);
-      }).catch((trustedFormError) => {
-        if (runId !== trustedFormReadinessRunId || ctx.getQuestion().kind !== "trusted_form_consent") return;
-        ctx.updateNextButton(question.submitLabel, ctx.isSubmitting);
-        if (!question.trustedForm.allowSubmitWithoutCert) {
-          ctx.showErrorModal(getTrustedFormReadyErrorMessage(trustedFormError));
-        }
-      });
+      if (getTrustedFormCertUrl(question.trustedForm)) return;
+      ensureTrustedFormReady(question.trustedForm).catch(() => undefined);
     }
 
     function ensureTrustedFormReady(trustedForm) {

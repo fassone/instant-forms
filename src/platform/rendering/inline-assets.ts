@@ -39,6 +39,8 @@ const productionClassTokenMap = {
   brand: "m",
   "button-primary": "n",
   "button-secondary": "o",
+  "button-label": "bb",
+  "button-spinner": "bc",
   button: "p",
   "error-modal-close": "q",
   "error-modal-message": "r",

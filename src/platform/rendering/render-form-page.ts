@@ -564,7 +564,11 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
       }
 
       .button {
+        display: inline-flex;
         min-height: 48px;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
         border: 1px solid transparent;
         border-radius: 8px;
         cursor: pointer;
@@ -575,6 +579,20 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
       .button:disabled {
         cursor: not-allowed;
         opacity: 0.45;
+      }
+
+      .button-spinner {
+        width: 1em;
+        height: 1em;
+        flex: 0 0 auto;
+        border: 2px solid rgba(255, 255, 255, 0.42);
+        border-top-color: #ffffff;
+        border-radius: 999px;
+        animation: button-spinner-spin 720ms linear infinite;
+      }
+
+      .button-label {
+        min-width: 0;
       }
 
       .button-secondary {
@@ -590,6 +608,12 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
 
       .button-primary:hover {
         background: #d9004d;
+      }
+
+      @keyframes button-spinner-spin {
+        to {
+          transform: rotate(360deg);
+        }
       }
 
       .error-modal {

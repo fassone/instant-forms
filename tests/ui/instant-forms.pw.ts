@@ -116,12 +116,39 @@ test.describe("instant routed form UI", () => {
 
   test("error modal appears without inline layout errors", async ({ page }) => {
     await page.goto("/tn/custom/vive-en-tennessee");
+    await expect(page.getByRole("button", { name: "Siguiente" })).toBeEnabled();
     await page.getByRole("button", { name: "Siguiente" }).click();
 
     await expect(page.getByRole("alertdialog")).toBeVisible();
     await expect(page.getByText("Esta respuesta es requerida.")).toBeVisible();
     await expect(page.locator("#form-error")).toHaveCount(0);
     await expect(page).toHaveScreenshot("error-modal.png");
+  });
+
+  test("matching step uses the shared spinner while the offer is loading", async ({ page }) => {
+    await seedCheckpoint(page, preContactAnswers);
+    await page.goto("/tn/custom/buscando-oferta");
+
+    await assertSpinnerOnlyLoadingButton(page);
+    await expect(page.getByRole("button", { name: "Siguiente" })).toBeEnabled({ timeout: 8000 });
+    await expect(page.getByRole("button", { name: "Siguiente" })).toHaveText("Siguiente");
+  });
+
+  test("fallback navigation waits show the shared spinner", async ({ page }) => {
+    await page.route("**/_instant/forms/**/transition.js", async (route) => {
+      await route.abort();
+    });
+    await page.goto("/tn/custom/vive-en-tennessee");
+    await page.route("**/api/forms/tn_custom/checkpoints", async (route) => {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 1000);
+      });
+      await route.continue();
+    });
+
+    await clickActiveOption(page, "Si");
+    await assertSpinnerOnlyLoadingButton(page);
+    await expect(page).toHaveURL(/\/tn\/custom\/tiene-licencia$/u);
   });
 
   test("autocomplete suggestions scroll internally and select a normalized state", async ({ page }) => {
@@ -195,7 +222,7 @@ test.describe("instant routed form UI", () => {
     await expect(page.getByRole("heading", { name: "Gracias." })).toBeVisible();
   });
 
-  test("TrustedForm consent waits for the certificate before submit", async ({ page }) => {
+  test("TrustedForm consent accepts submit while the certificate is still preparing", async ({ page }) => {
     await mockTrustedFormCertify(page, { delayMs: 1000 });
     await seedCheckpoint(page, {
       ...seenMatchingAnswers,
@@ -205,8 +232,57 @@ test.describe("instant routed form UI", () => {
     });
     await page.goto("/tn/custom/consentimiento");
 
-    await expect(page.getByRole("button", { name: "Preparando..." })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Preparando..." })).toBeHidden();
     await expect(page.getByRole("button", { name: "Enviar" })).toBeEnabled();
+
+    await activeStep(page).locator("[data-trusted-form-consent]").check();
+    const submissionRequest = page.waitForRequest(/\/api\/forms\/tn_custom\/submissions/u);
+    const submissionResponse = page.waitForResponse(/\/api\/forms\/tn_custom\/submissions/u);
+    const submitButton = page.getByRole("button", { name: "Enviar" });
+    const buttonBoxBeforeLoading = await submitButton.boundingBox();
+    if (!buttonBoxBeforeLoading) {
+      throw new Error("Expected the submit button to have a visible bounding box before loading.");
+    }
+    await submitButton.click();
+
+    const loadingButton = await assertSpinnerOnlyLoadingButton(page);
+    const buttonBoxWhileLoading = await loadingButton.boundingBox();
+    if (!buttonBoxWhileLoading) {
+      throw new Error("Expected the loading button to keep a visible bounding box.");
+    }
+    expect(Math.abs(buttonBoxWhileLoading.width - buttonBoxBeforeLoading.width)).toBeLessThanOrEqual(1);
+    expect(Math.abs(buttonBoxWhileLoading.height - buttonBoxBeforeLoading.height)).toBeLessThanOrEqual(1);
+
+    expect(JSON.parse((await submissionRequest).postData() ?? "{}")).toMatchObject({
+      trustedFormCertUrl,
+    });
+    await expect((await submissionResponse).status()).toBe(201);
+    await expect(page.getByRole("heading", { name: "Gracias." })).toBeVisible();
+  });
+
+  test("unchecked TrustedForm consent stays clickable and shows the modal", async ({ page }) => {
+    await mockTrustedFormCertify(page);
+    await seedCheckpoint(page, {
+      ...seenMatchingAnswers,
+      first_name: "Ana",
+      last_name: "Lopez",
+      phone_number: "+16155551234",
+    });
+    let submissionRequests = 0;
+    await page.route("**/api/forms/tn_custom/submissions", async (route) => {
+      submissionRequests += 1;
+      await route.continue();
+    });
+    await page.goto("/tn/custom/consentimiento");
+
+    const submitButton = page.getByRole("button", { name: "Enviar" });
+    await expect(submitButton).toBeEnabled();
+    await submitButton.click();
+
+    await expect(page.getByRole("alertdialog")).toBeVisible();
+    await expect(page.getByText("Debe aceptar el consentimiento para enviar la solicitud.")).toBeVisible();
+    expect(submissionRequests).toBe(0);
+    await expect(submitButton).toBeEnabled();
   });
 
   test("TrustedForm script does not execute before the consent step", async ({ page }) => {
@@ -336,6 +412,20 @@ async function waitForTransitionAsset(page: Page, transitionAssetUrl: string): P
 
 async function clickActiveOption(page: Page, label: string): Promise<void> {
   await activeStep(page).locator("[data-option]", { hasText: label }).first().click();
+}
+
+async function assertSpinnerOnlyLoadingButton(page: Page) {
+  const loadingButton = page.getByRole("button", { name: "Enviando..." });
+  await expect(loadingButton).toBeDisabled();
+  await expect(loadingButton).toHaveAttribute("aria-busy", "true");
+  await expect(loadingButton).toHaveAttribute("data-loading", "true");
+  await expect(loadingButton).toHaveText("");
+  await expect(loadingButton).toHaveCSS("opacity", "0.45");
+  const loadingSpinner = loadingButton.locator("span[aria-hidden='true']");
+  await expect(loadingSpinner).toBeVisible();
+  await expect(loadingSpinner).toHaveCSS("animation-name", "button-spinner-spin");
+  await expect(loadingSpinner).not.toHaveCSS("animation-duration", "0s");
+  return loadingButton;
 }
 
 async function seedCheckpoint(page: Page, answers: Record<string, string>): Promise<void> {
