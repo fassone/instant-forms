@@ -1,5 +1,5 @@
 import { defineFormFlow } from "../../../platform/flow/dsl/define-form-flow";
-import { autocompleteSource, step } from "../../../platform/flow/dsl/step-builders";
+import { autocompleteSource, resolve, step } from "../../../platform/flow/dsl/step-builders";
 import { z } from "../../../platform/flow";
 
 export const tnFlow = defineFormFlow({
@@ -109,12 +109,12 @@ export const tnFlow = defineFormFlow({
       slug: "buscando-oferta",
       label: "Estamos buscando su seguro ideal",
       countsAsStep: false,
-      benefits: [
+      benefits: resolve([], ({ context }) => [
         "Revisando sus respuestas",
         "Buscando agentes disponibles",
         "Priorizando atención en español",
-        "Preparando opciones en {{areaName}}",
-      ],
+        `Preparando opciones en ${context.areaName}`,
+      ]),
       successLines: [
         { text: "Encontramos agentes listos para cotizarle.", color: "brand-navy" },
         { text: "Descubra cuánto puede ahorrar.", color: "accent" },
@@ -148,13 +148,13 @@ export const tnFlow = defineFormFlow({
         "Al seleccionar esta casilla, autorizo a Seguros Aseguranza y a sus agentes a contactarme por teléfono o mensaje de texto sobre opciones de seguro de auto.",
       checkboxLabel: "Acepto continuar y enviar mi solicitud.",
       submitLabel: "Enviar",
-      grantorSummary: {
-        nameKeys: ["first_name", "last_name"],
-        phoneKey: "phone_number",
-      },
+      grantorSummary: resolve(["first_name", "last_name", "phone_number"], ({ answers }) => ({
+        name: [answers.first_name, answers.last_name].filter(Boolean).join(" "),
+        phone: answers.phone_number,
+      })),
       trustedForm: {
         fieldName: "xxTrustedFormCertUrl",
-        delivery: "partytown",
+        delivery: "main_thread",
         scriptProxyKey: "tfc",
         scriptBaseUrl: "/_instant/scripts/trustedform.com/tfc.js",
         preloadOnPreviousStep: true,

@@ -1,4 +1,5 @@
 import type { AnswerStep, FormContract, FormFlowInput, FormStep, InstantForm } from "./types";
+import { getStepDynamicResolverDependencies, isDynamicResolver } from "./dynamic-resolvers";
 
 type AnswerSchema = Record<string, unknown> & {
   safeParse: (input: unknown) => { success: boolean };
@@ -45,7 +46,8 @@ function assertAnswerStepContract(
   const seenAnswerKeys = new Set<string>();
 
   for (const stepDefinition of steps) {
-    assertShowWhenContract(contract, stepDefinition);
+    assertShowWhenContract(contract, stepDefinition, seenAnswerKeys);
+    assertDynamicResolverDependencies(contract, stepDefinition, seenAnswerKeys);
 
     if (!isAnswerStep(stepDefinition)) {
       continue;
@@ -70,6 +72,26 @@ function assertAnswerStepContract(
 
   if (missingAnswerKeys.length > 0) {
     throw new Error(`contract.answers includes keys without answer-producing steps: ${missingAnswerKeys.join(", ")}.`);
+  }
+}
+
+function assertDynamicResolverDependencies(
+  contract: FormContract,
+  stepDefinition: FormStep,
+  previousAnswerKeys: ReadonlySet<string>,
+): void {
+  for (const dependencyKey of getStepDynamicResolverDependencies(stepDefinition)) {
+    if (!getAnswerSchema(contract, dependencyKey)) {
+      throw new Error(
+        `Resolver for step "${stepDefinition.key}" references unknown contract.answers key "${dependencyKey}".`,
+      );
+    }
+
+    if (!previousAnswerKeys.has(dependencyKey)) {
+      throw new Error(
+        `Resolver for step "${stepDefinition.key}" references "${dependencyKey}" before that answer is available.`,
+      );
+    }
   }
 }
 
@@ -110,7 +132,11 @@ function assertChoiceOptionContract(contract: FormContract, stepDefinition: Form
   }
 }
 
-function assertShowWhenContract(contract: FormContract, stepDefinition: FormStep): void {
+function assertShowWhenContract(
+  contract: FormContract,
+  stepDefinition: FormStep,
+  previousAnswerKeys: ReadonlySet<string>,
+): void {
   if (!stepDefinition.showWhen) {
     return;
   }
@@ -120,6 +146,12 @@ function assertShowWhenContract(contract: FormContract, stepDefinition: FormStep
   if (!answerSchema) {
     throw new Error(
       `showWhen for step "${stepDefinition.key}" references unknown contract.answers key "${stepDefinition.showWhen.questionKey}".`,
+    );
+  }
+
+  if (!previousAnswerKeys.has(stepDefinition.showWhen.questionKey)) {
+    throw new Error(
+      `showWhen for step "${stepDefinition.key}" references "${stepDefinition.showWhen.questionKey}" before that answer is available.`,
     );
   }
 
@@ -160,7 +192,7 @@ function getStepTemplateStrings(stepDefinition: FormStep): string[] {
   if (stepDefinition.kind === "interstitial") {
     values.push(
       stepDefinition.loadingLabel,
-      ...stepDefinition.benefits,
+      ...(isDynamicResolver(stepDefinition.benefits) ? [] : stepDefinition.benefits),
       ...stepDefinition.successLines.map((line) => line.text),
     );
   }

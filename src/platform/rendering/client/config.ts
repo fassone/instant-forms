@@ -1,8 +1,10 @@
 import { US_STATES } from "../../../shared/data/us-states";
 import {
   getStepSlug,
+  getStepDynamicResolverDependencies,
   isCountedStep,
   isStepVisible,
+  resolveStepDynamicValues,
   type AutocompleteStep,
   type FormStep,
   type InstantForm,
@@ -10,6 +12,7 @@ import {
   type PhoneStep,
   type TextStep,
   type TrustedFormConsentStep,
+  type TrustedFormGrantorSummary,
 } from "../../flow";
 import { createStateAutocompleteItems } from "../../steps/autocomplete/ranking";
 
@@ -25,6 +28,7 @@ type ClientStepBase = {
   countsAsStep: boolean;
   behavior: FormStep["behavior"];
   showWhen?: ClientStepCondition;
+  dynamicResolverDependencies?: readonly string[];
 };
 
 export type ClientStep =
@@ -63,7 +67,7 @@ export type ClientStep =
       acceptedAnswer: TrustedFormConsentStep["acceptedAnswer"];
       validationMessage: string;
       trustedForm: TrustedFormConsentStep["trustedForm"];
-      grantorSummary?: TrustedFormConsentStep["grantorSummary"];
+      grantorSummary?: TrustedFormGrantorSummary;
     });
 
 export type ClientFormConfig = {
@@ -149,6 +153,15 @@ export function createClientTransitionSteps(
   return form.steps.map((stepDefinition) => createClientStep(stepDefinition, getClientStepUrl(stepDefinition), form, {}));
 }
 
+export function createClientResolvedStep(
+  form: InstantForm,
+  stepDefinition: FormStep,
+  url: string,
+  answers: Record<string, string>,
+): ClientStep {
+  return createClientStep(stepDefinition, url, form, answers);
+}
+
 function createClientStep(
   stepDefinition: FormStep,
   url: string,
@@ -162,7 +175,9 @@ function createClientStep(
     countsAsStep: isCountedStep(stepDefinition),
     behavior: stepDefinition.behavior,
     showWhen: stepDefinition.showWhen,
+    ...getDynamicResolverDependencyConfig(stepDefinition),
   };
+  const resolvedStepDefinition = resolveStepDynamicValues(form, stepDefinition, answers);
 
   if (stepDefinition.kind === "choice") {
     return {
@@ -191,29 +206,41 @@ function createClientStep(
   }
 
   if (stepDefinition.kind === "interstitial") {
+    const resolvedInterstitialStep = resolvedStepDefinition as InterstitialStep<
+      string,
+      undefined,
+      readonly string[]
+    >;
+
     return {
       ...baseStep,
       kind: "interstitial",
-      type: stepDefinition.type,
-      loadingLabel: stepDefinition.loadingLabel,
-      successLines: stepDefinition.successLines,
-      completionAnswer: stepDefinition.completionAnswer,
-      seenAnswer: stepDefinition.seenAnswer,
-      benefits: stepDefinition.benefits,
+      type: resolvedInterstitialStep.type,
+      loadingLabel: resolvedInterstitialStep.loadingLabel,
+      successLines: resolvedInterstitialStep.successLines,
+      completionAnswer: resolvedInterstitialStep.completionAnswer,
+      seenAnswer: resolvedInterstitialStep.seenAnswer,
+      benefits: resolvedInterstitialStep.benefits,
     };
   }
 
   if (stepDefinition.kind === "trusted_form_consent") {
+    const resolvedTrustedFormStep = resolvedStepDefinition as TrustedFormConsentStep<
+      string,
+      undefined,
+      TrustedFormGrantorSummary | undefined
+    >;
+
     return {
       ...baseStep,
       kind: "trusted_form_consent",
-      type: stepDefinition.type,
-      checkboxLabel: stepDefinition.checkboxLabel,
-      submitLabel: stepDefinition.submitLabel,
-      acceptedAnswer: stepDefinition.acceptedAnswer,
-      validationMessage: stepDefinition.validationMessage,
-      trustedForm: stepDefinition.trustedForm,
-      grantorSummary: stepDefinition.grantorSummary,
+      type: resolvedTrustedFormStep.type,
+      checkboxLabel: resolvedTrustedFormStep.checkboxLabel,
+      submitLabel: resolvedTrustedFormStep.submitLabel,
+      acceptedAnswer: resolvedTrustedFormStep.acceptedAnswer,
+      validationMessage: resolvedTrustedFormStep.validationMessage,
+      trustedForm: resolvedTrustedFormStep.trustedForm,
+      ...(resolvedTrustedFormStep.grantorSummary ? { grantorSummary: resolvedTrustedFormStep.grantorSummary } : {}),
     };
   }
 
@@ -222,6 +249,12 @@ function createClientStep(
     kind: "text",
     type: stepDefinition.type,
   };
+}
+
+function getDynamicResolverDependencyConfig(stepDefinition: FormStep): Pick<ClientStepBase, "dynamicResolverDependencies"> {
+  const dependencies = getStepDynamicResolverDependencies(stepDefinition);
+
+  return dependencies.length > 0 ? { dynamicResolverDependencies: dependencies } : {};
 }
 
 function getVisibleStepIndexes(form: InstantForm, answers: Record<string, string>, previewMode: boolean): number[] {

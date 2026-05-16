@@ -77,6 +77,8 @@ function getCoreRuntimeScript(): string {
   let checkpointQueue = Promise.resolve();
   let checkpointQueueError;
   let checkpointQueueFailedQuestionKey;
+  const resolvedStepCache = new Map();
+  const resolvedStepRequests = new Map();
 
   function registerBehaviorModule(kind, module) {
     behaviorModules[kind] = module;
@@ -90,6 +92,10 @@ function getCoreRuntimeScript(): string {
     const currentQuestion = getQuestion();
     const currentPath = window.location.pathname;
     const currentDraftAnswer = currentQuestion ? getCurrentAnswer() : "";
+    const currentResolvedStepPayload =
+      currentQuestion && requiresResolvedStepPayload(currentQuestion) && steps[currentStep]
+        ? { key: currentQuestion.key, url: currentQuestion.url, html: steps[currentStep].outerHTML, config: currentQuestion }
+        : undefined;
     config.steps = asset.steps.map((step) => step.config);
     config.stepUrlsBySlug = asset.stepUrlsBySlug || config.stepUrlsBySlug;
     if (asset.usStates) {
@@ -103,6 +109,9 @@ function getCoreRuntimeScript(): string {
       steps = Array.from(document.querySelectorAll("[data-step]"));
     }
     transitionAssetLoaded = true;
+    if (currentResolvedStepPayload) {
+      cacheResolvedStepPayload(currentResolvedStepPayload);
+    }
 
     const pathStepIndex = getStepIndexForPath(currentPath);
     const keyStepIndex = config.steps.findIndex((question) => question.key === currentQuestion?.key);
@@ -110,6 +119,7 @@ function getCoreRuntimeScript(): string {
     mountedStepIndex = -1;
     showStep(currentStep);
     restoreStepDraft(currentQuestion, currentDraftAnswer);
+    preloadResolvedDynamicSteps();
   }
 
   window.__INSTANT_FORM_RUNTIME__ = {
@@ -553,6 +563,7 @@ function getCoreRuntimeScript(): string {
       return false;
     }
 
+    applyCachedResolvedStepPayload(config.steps[stepIndex]);
     showStep(stepIndex);
     if (window.location.pathname !== nextPath) {
       if (mode === "replace") {
@@ -567,7 +578,7 @@ function getCoreRuntimeScript(): string {
 
   function canRenderStepFromTransitionAsset(stepIndex) {
     const question = config.steps[stepIndex];
-    return Boolean(question) && isQuestionVisible(question);
+    return Boolean(question) && isQuestionVisible(question) && (!requiresResolvedStepPayload(question) || hasCachedResolvedStepPayload(question));
   }
 
   function navigateToStep(nextStep) {
@@ -753,6 +764,10 @@ function getCoreRuntimeScript(): string {
     if (body.answers && typeof body.answers === "object") {
       Object.assign(answers, body.answers);
     }
+    if (body.nextStep && typeof body.nextStep === "object") {
+      cacheResolvedStepPayload(body.nextStep);
+    }
+    preloadResolvedDynamicSteps();
 
     return typeof body.nextUrl === "string" ? getRouteAwareNextUrl(body.nextUrl) : undefined;
   }
@@ -809,6 +824,109 @@ function getCoreRuntimeScript(): string {
     }
 
     navigateToUrl(nextUrl);
+  }
+
+  function requiresResolvedStepPayload(question) {
+    return Array.isArray(question?.dynamicResolverDependencies) && question.dynamicResolverDependencies.length > 0;
+  }
+
+  function canRequestResolvedStepPayload(question) {
+    return requiresResolvedStepPayload(question) && question.dynamicResolverDependencies.every((dependency) => Boolean(answers[dependency]));
+  }
+
+  function getResolvedStepCacheKey(question) {
+    return JSON.stringify({
+      url: question.url,
+      dependencies: (question.dynamicResolverDependencies || []).map((dependency) => [dependency, answers[dependency] ?? ""]),
+    });
+  }
+
+  function hasCachedResolvedStepPayload(question) {
+    return resolvedStepCache.has(getResolvedStepCacheKey(question));
+  }
+
+  function getCachedResolvedStepPayload(question) {
+    return resolvedStepCache.get(getResolvedStepCacheKey(question));
+  }
+
+  function cacheResolvedStepPayload(stepPayload) {
+    if (!stepPayload || typeof stepPayload !== "object" || !stepPayload.config) {
+      return;
+    }
+
+    const question = stepPayload.config;
+    resolvedStepCache.set(getResolvedStepCacheKey(question), stepPayload);
+    applyResolvedStepPayload(stepPayload);
+  }
+
+  function applyCachedResolvedStepPayload(question) {
+    const stepPayload = getCachedResolvedStepPayload(question);
+    if (stepPayload) {
+      applyResolvedStepPayload(stepPayload);
+    }
+  }
+
+  function applyResolvedStepPayload(stepPayload) {
+    const stepIndex = config.steps.findIndex((question) => question.url === stepPayload.url || question.key === stepPayload.key);
+    if (stepIndex === -1) {
+      return;
+    }
+
+    config.steps[stepIndex] = stepPayload.config;
+    const existingStep = steps[stepIndex];
+    if (existingStep && stepPayload.html) {
+      existingStep.outerHTML = stepPayload.html;
+      steps = Array.from(document.querySelectorAll("[data-step]"));
+      if (stepIndex === currentStep) {
+        mountedStepIndex = -1;
+      }
+    }
+  }
+
+  function preloadResolvedDynamicSteps() {
+    if (!transitionAssetLoaded || config.previewMode) {
+      return;
+    }
+
+    config.steps.forEach((question) => {
+      if (canRequestResolvedStepPayload(question) && !hasCachedResolvedStepPayload(question)) {
+        void requestResolvedStepPayload(question).catch(() => undefined);
+      }
+    });
+  }
+
+  async function requestResolvedStepPayload(question) {
+    const cacheKey = getResolvedStepCacheKey(question);
+    const cachedStepPayload = resolvedStepCache.get(cacheKey);
+    if (cachedStepPayload) {
+      return cachedStepPayload;
+    }
+
+    if (resolvedStepRequests.has(cacheKey)) {
+      return resolvedStepRequests.get(cacheKey);
+    }
+
+    const request = fetch("/api/forms/" + encodeURIComponent(config.routeKey) + "/resolutions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stepKey: question.key, answers }),
+    }).then(async (response) => {
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const firstError = Array.isArray(body.errors) ? body.errors[0] : undefined;
+        throw new Error(firstError && firstError.message ? firstError.message : "No pudimos preparar este paso.");
+      }
+      if (!body.step) {
+        throw new Error("No pudimos preparar este paso.");
+      }
+      cacheResolvedStepPayload(body.step);
+      return body.step;
+    }).finally(() => {
+      resolvedStepRequests.delete(cacheKey);
+    });
+
+    resolvedStepRequests.set(cacheKey, request);
+    return request;
   }
 
   function reconcileCheckpointFailure(error, options = {}) {
@@ -890,6 +1008,7 @@ function getCoreRuntimeScript(): string {
 
   async function advanceOptimistically(question, answer, options = {}) {
     answers[question.key] = answer;
+    preloadResolvedDynamicSteps();
     const stepUrl = question.url;
     const mode = options.mode ?? "push";
     const isFinal = isCurrentStepFinal();
@@ -911,7 +1030,14 @@ function getCoreRuntimeScript(): string {
       return;
     }
 
-    if (assetReady && navigateWithTransitionAsset(predictedUrl, mode)) {
+    const predictedStepIndex = getStepIndexForPath(getPathname(predictedUrl));
+    const predictedStep = config.steps[predictedStepIndex];
+    const resolvedStepReady =
+      assetReady &&
+      predictedStep &&
+      (!requiresResolvedStepPayload(predictedStep) || hasCachedResolvedStepPayload(predictedStep));
+
+    if (assetReady && resolvedStepReady && navigateWithTransitionAsset(predictedUrl, mode)) {
       void queueCheckpoint(question.key, answer, { stepUrl, predictedUrl, mode }).catch(() => undefined);
       return;
     }
@@ -1532,23 +1658,6 @@ function getInterstitialBehaviorScript(registerExpression: string): string {
       return question.seenAnswer;
     }
 
-    function getCoverageStateName(ctx) {
-      const fallbackAreaCode = window.__FORM_CONFIG__.customVariables?.areaCode ?? window.__FORM_CONFIG__.routeKey;
-      const areaCode = String(ctx.answers.residence_state || fallbackAreaCode).toUpperCase();
-      const state = (window.__FORM_CONFIG__.usStates ?? []).find((candidate) => candidate.code === areaCode);
-      return state ? state.name : window.__FORM_CONFIG__.customVariables?.areaName ?? areaCode;
-    }
-
-    function formatMatchingBenefit(ctx, benefit) {
-      return benefit.replace(/\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g, (_match, variableName) => {
-        if (variableName === "areaName") {
-          return getCoverageStateName(ctx);
-        }
-
-        return String(window.__FORM_CONFIG__.customVariables?.[variableName] ?? "");
-      });
-    }
-
     function shuffleMatchingBenefits(benefits) {
       const shuffledBenefits = [...benefits];
       for (let index = shuffledBenefits.length - 1; index > 0; index -= 1) {
@@ -1658,7 +1767,7 @@ function getInterstitialBehaviorScript(registerExpression: string): string {
         showMatchingSuccess(question, elements, { immediate: true });
         return;
       }
-      const benefitTimeline = getMatchingBenefitTimeline(question.benefits.map((benefit) => formatMatchingBenefit(ctx, benefit)));
+      const benefitTimeline = getMatchingBenefitTimeline(question.benefits);
       elements.status.textContent = question.loadingLabel;
       setMatchingBenefitText(elements, benefitTimeline[0]?.text ?? "", "", { initial: true });
       benefitTimeline.slice(1).forEach((benefitTiming) => {
@@ -1792,8 +1901,8 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
       if (!grantorSummary) return;
       const card = step.querySelector(".consent-card");
       if (!(card instanceof HTMLElement)) return;
-      const name = (grantorSummary.nameKeys || []).map((key) => ctx.answers[key]).filter(Boolean).join(" ").trim();
-      const phone = grantorSummary.phoneKey ? ctx.answers[grantorSummary.phoneKey] : "";
+      const name = String(grantorSummary.name || "").trim();
+      const phone = String(grantorSummary.phone || "").trim();
       const displayPhone = phone ? formatUsPhoneForDisplay(phone) : "";
       let summary = card.querySelector("[data-consent-summary]");
       if (!name && !displayPhone) {

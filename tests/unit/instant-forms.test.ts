@@ -6,7 +6,7 @@ import { selectedScripts } from "../../src/authoring/scripts/registry";
 import { formRoutes } from "../../src/authoring/routes/registry";
 import { createFetchHandler } from "../../src/platform/app/server";
 import { registerScriptRoutes } from "../../src/platform/app/routes/scripts";
-import { autocompleteSource, defineFormFlow, getStepSlug, isCountedStep, step, z } from "../../src/platform/flow";
+import { autocompleteSource, defineFormFlow, getStepSlug, isCountedStep, resolve, step, z } from "../../src/platform/flow";
 import { encodeCheckpointAnswers, getCheckpointCookieName } from "../../src/platform/persistence/checkpoints";
 import { FORM_CONFIG_PLACEHOLDER_EXPRESSION, buildTransitionAsset, renderFormPage } from "../../src/platform/rendering";
 import { buildInlineCss, getInlineAssetMode } from "../../src/platform/rendering/inline-assets";
@@ -794,6 +794,184 @@ describe("form registry", () => {
         ],
       } as any),
     ).toThrow('showWhen for step "first_name" uses answer "nreo" that does not match contract.answers.belongs_to_state');
+  });
+
+  it("rejects showWhen conditions that reference later answers", () => {
+    expect(() =>
+      defineFormFlow({
+        name: "Forward ShowWhen",
+        status: "ACTIVE",
+        contract: {
+          context: z.object({ areaCode: z.string() }),
+          answers: z.object({
+            belongs_to_state: z.enum(["yes", "no"]),
+            residence_state: z.string().optional(),
+            has_license: z.enum(["yes", "no"]),
+          }),
+          payload: z.object({ marketState: z.string() }),
+        },
+        context: { areaCode: "TX" },
+        payload: {
+          method: "POST",
+          encoding: "json",
+          mapping: ({ context }: { context: { areaCode: string } }) => ({ marketState: context.areaCode }),
+        },
+        page: { name: "Page" },
+        steps: [
+          step.choice({
+            key: "belongs_to_state",
+            slug: "vive",
+            label: "Vive aqui?",
+            options: [
+              { key: "yes", label: "Si" },
+              { key: "no", label: "No" },
+            ],
+          }),
+          step.autocomplete({
+            key: "residence_state",
+            slug: "estado",
+            label: "Estado",
+            autocomplete: "address-level1",
+            source: autocompleteSource.usStates(),
+            showWhen: {
+              questionKey: "has_license",
+              answer: "no",
+            },
+          }),
+          step.choice({
+            key: "has_license",
+            slug: "licencia",
+            label: "Tiene licencia?",
+            options: [
+              { key: "yes", label: "Si" },
+              { key: "no", label: "No" },
+            ],
+          }),
+        ],
+      } as any),
+    ).toThrow('showWhen for step "residence_state" references "has_license" before that answer is available');
+  });
+
+  it("validates dynamic resolver dependencies against upstream answer steps", () => {
+    const contract = {
+      context: z.object({ areaName: z.string() }),
+      answers: z.object({
+        first_answer: z.enum(["yes"]),
+        second_answer: z.string(),
+      }),
+      payload: z.object({ first: z.string(), second: z.string() }),
+    };
+    const context = { areaName: "Tennessee" };
+    const payload = {
+      method: "POST" as const,
+      encoding: "json" as const,
+      mapping: ({ answers }: { answers: { first_answer: string; second_answer: string } }) => ({
+        first: answers.first_answer,
+        second: answers.second_answer,
+      }),
+    };
+
+    const validFlow = defineFormFlow({
+      name: "Resolver Flow",
+      status: "ACTIVE",
+      contract,
+      context,
+      payload,
+      page: { name: "Page" },
+      steps: [
+        step.choice({
+          key: "first_answer",
+          slug: "primera",
+          label: "Primera",
+          options: [{ key: "yes", label: "Si" }],
+        }),
+        step.text({
+          key: "second_answer",
+          slug: "segunda",
+          label: "Segunda",
+          autocomplete: "off",
+        }),
+        step.interstitial({
+          key: "matching_offer",
+          slug: "buscando",
+          label: "Buscando",
+          successLines: [{ text: "Listo", color: "accent" }],
+          benefits: resolve(["first_answer", "second_answer"], ({ context, answers }) => [
+            `${context.areaName}: ${answers.first_answer}`,
+            answers.second_answer,
+          ]),
+        }),
+      ],
+    });
+
+    expect(validFlow.steps[2]).toMatchObject({
+      kind: "interstitial",
+      checkpointMode: "checkpoint_only",
+    });
+
+    expect(() =>
+      defineFormFlow({
+        name: "Future Resolver",
+        status: "ACTIVE",
+        contract,
+        context,
+        payload,
+        page: { name: "Page" },
+        steps: [
+          step.choice({
+            key: "first_answer",
+            slug: "primera",
+            label: "Primera",
+            options: [{ key: "yes", label: "Si" }],
+          }),
+          step.interstitial({
+            key: "matching_offer",
+            slug: "buscando",
+            label: "Buscando",
+            successLines: [{ text: "Listo", color: "accent" }],
+            benefits: resolve(["second_answer"], ({ answers }) => [answers.second_answer]),
+          }),
+          step.text({
+            key: "second_answer",
+            slug: "segunda",
+            label: "Segunda",
+            autocomplete: "off",
+          }),
+        ],
+      } as any),
+    ).toThrow('Resolver for step "matching_offer" references "second_answer" before that answer is available');
+
+    expect(() =>
+      defineFormFlow({
+        name: "Unknown Resolver",
+        status: "ACTIVE",
+        contract,
+        context,
+        payload,
+        page: { name: "Page" },
+        steps: [
+          step.choice({
+            key: "first_answer",
+            slug: "primera",
+            label: "Primera",
+            options: [{ key: "yes", label: "Si" }],
+          }),
+          step.text({
+            key: "second_answer",
+            slug: "segunda",
+            label: "Segunda",
+            autocomplete: "off",
+          }),
+          step.interstitial({
+            key: "matching_offer",
+            slug: "buscando",
+            label: "Buscando",
+            successLines: [{ text: "Listo", color: "accent" }],
+            benefits: resolve(["unknown_answer"], ({ answers }) => [answers.unknown_answer]),
+          }),
+        ],
+      } as any),
+    ).toThrow('Resolver for step "matching_offer" references unknown contract.answers key "unknown_answer"');
   });
 
   it("validates mapped delivery payloads against the payload contract", () => {
@@ -1943,7 +2121,55 @@ describe("server routing", () => {
       ok: true,
       nextUrl: "/tn/custom/consentimiento",
       answers: preConsentAnswers,
+      nextStep: {
+        key: "trustedform_consent",
+        url: "/tn/custom/consentimiento",
+        config: {
+          kind: "trusted_form_consent",
+          dynamicResolverDependencies: ["first_name", "last_name", "phone_number"],
+          grantorSummary: {
+            name: "Ana Lopez",
+            phone: "(615) 555-1234",
+          },
+        },
+      },
     });
+  });
+
+  it("resolves dynamic step payloads without mutating checkpoint cookies", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(
+      new Request("http://localhost/api/forms/tn_custom/resolutions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          stepKey: "trustedform_consent",
+          answers: preConsentAnswers,
+        }),
+      }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Set-Cookie")).toBeNull();
+    expect(body).toMatchObject({
+      ok: true,
+      step: {
+        key: "trustedform_consent",
+        url: "/tn/custom/consentimiento",
+        config: {
+          kind: "trusted_form_consent",
+          dynamicResolverDependencies: ["first_name", "last_name", "phone_number"],
+          grantorSummary: {
+            name: "Ana Lopez",
+            phone: "(615) 555-1234",
+          },
+        },
+      },
+    });
+    const resolvedStep = (body as { step: { html: string } }).step;
+    expect(resolvedStep.html).toContain("Ana Lopez");
+    expect(resolvedStep.html).toContain("(615) 555-1234");
   });
 
   it("marks checkpoint cookies secure when served over HTTPS", async () => {
@@ -2171,6 +2397,17 @@ describe("form rendering", () => {
     expect(transitionAsset.body).toContain("registerBehaviorModule");
     expect(transitionAsset.body).toContain("/tn/custom");
     expect(transitionAsset.body).toContain("trustedForm");
+    expect(transitionAsset.body).toContain("dynamicResolverDependencies");
+    expect(transitionAsset.body).not.toContain("nameKeys");
+    expect(transitionAsset.body).not.toContain("phoneKey");
+    const transitionSteps = transitionAsset.asset.steps as readonly { key: string; config: Record<string, unknown> }[];
+    expect(transitionSteps.find((stepDefinition) => stepDefinition.key === "trustedform_consent")?.config).toMatchObject({
+      kind: "trusted_form_consent",
+      dynamicResolverDependencies: ["first_name", "last_name", "phone_number"],
+    });
+    expect(transitionSteps.find((stepDefinition) => stepDefinition.key === "trustedform_consent")?.config).not.toHaveProperty(
+      "grantorSummary",
+    );
     expect(transitionAsset.body).not.toContain("Ana");
     expect(transitionAsset.body).not.toContain("Lopez");
     expect(transitionAsset.body).not.toContain("6155551234");
@@ -2196,6 +2433,9 @@ describe("form rendering", () => {
     expect(devHtml).toContain("function queueCheckpoint(questionKey, answer, options = {})");
     expect(devHtml).toContain("function waitForPendingCheckpoints()");
     expect(devHtml).toContain("async function advanceOptimistically(question, answer, options = {})");
+    expect(devHtml).toContain("function preloadResolvedDynamicSteps()");
+    expect(devHtml).toContain("async function requestResolvedStepPayload(question)");
+    expect(devHtml).toContain('"/resolutions"');
     expect(devHtml).toContain("await waitForPendingCheckpoints()");
     expect(devHtml).not.toContain("runAfterPageSettles");
   });
@@ -2313,7 +2553,8 @@ describe("form rendering", () => {
     expect(html).toContain("Revisando sus respuestas");
     expect(html).toContain("Buscando agentes disponibles");
     expect(html).toContain("Priorizando atención en español");
-    expect(html).toContain("Preparando opciones en {{areaName}}");
+    expect(html).toContain("Preparando opciones en Tennessee");
+    expect(html).not.toContain("{{areaName}}");
     expect(html).toContain("Encontramos agentes listos para cotizarle.");
     expect(html).toContain("Descubra cuánto puede ahorrar.");
     expect(html).toContain('"successLines":[{"text":"Encontramos agentes listos para cotizarle.","color":"brand-navy"}');
@@ -2344,7 +2585,7 @@ describe("form rendering", () => {
     expect(html).toContain("function getRandomMatchingBenefitCount(availableBenefitCount)");
     expect(html).toContain("Math.random() * (maxBenefitCount - minBenefitCount + 1)");
     expect(html).toContain("function getMatchingBenefitTimeline(benefits)");
-    expect(html).toContain("const benefitTimeline = getMatchingBenefitTimeline(question.benefits.map((benefit) => formatMatchingBenefit(ctx, benefit)))");
+    expect(html).toContain("const benefitTimeline = getMatchingBenefitTimeline(question.benefits)");
     expect(html).toContain("duration: matchingBenefitDisplayMs");
     expect(html).toContain("startsAt += matchingBenefitDisplayMs");
     expect(html).toContain("benefitTiming.startsAt");
@@ -2473,6 +2714,10 @@ describe("form rendering", () => {
     expect(html).toContain('"partytownLib":"/~partytown/"');
     expect(html).toContain('"partytownScriptUrl":"/~partytown/partytown.js"');
     expect(html).toContain('"allowSubmitWithoutCert":true');
+    expect(html).toContain('"dynamicResolverDependencies":["first_name","last_name","phone_number"]');
+    expect(html).toContain('"grantorSummary":{"name":"Ana Lopez","phone":"(615) 555-1234"}');
+    expect(html).not.toContain('"nameKeys"');
+    expect(html).not.toContain('"phoneKey"');
     expect(html).toContain('data-step="10" data-step-kind="trusted_form_consent"');
     expect(html).toContain('data-tf-element-role="consent-language"');
     expect(html).toContain('data-tf-element-role="consent-opt-in"');

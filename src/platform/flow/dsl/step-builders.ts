@@ -6,14 +6,17 @@ import type {
   CheckpointMode,
   ChoiceOptionInput,
   ChoiceStep,
+  DynamicResolverContext,
   InterstitialStep,
   PhoneStep,
+  ResolvableValue,
   StepBehavior,
   StepCondition,
   StepTemplateKey,
   TextStep,
   TrustedFormConsentStep,
   TrustedFormConsentStepInput,
+  TrustedFormGrantorSummary,
 } from "./types";
 
 type RawStepCondition = {
@@ -47,7 +50,7 @@ type RawInterstitialStepInput = RawBaseStepInput & {
   successLines: readonly InterstitialStep["successLines"][number][];
   completionAnswer?: "completed";
   seenAnswer?: "seen";
-  benefits: readonly string[];
+  benefits: ResolvableValue<readonly string[]>;
 };
 type RawTrustedFormConsentStepInput = RawBaseStepInput & {
   disclosure: string;
@@ -56,13 +59,16 @@ type RawTrustedFormConsentStepInput = RawBaseStepInput & {
   acceptedAnswer?: "accepted";
   validationMessage?: string;
   trustedForm?: TrustedFormConsentStepInput["trustedForm"];
-  grantorSummary?: TrustedFormConsentStepInput["grantorSummary"];
+  grantorSummary?: ResolvableValue<TrustedFormGrantorSummary>;
 };
 
 type InputShowWhen<TInput> = TInput extends { readonly showWhen: infer TShowWhen }
   ? Extract<TShowWhen, StepCondition>
   : undefined;
 type ChoiceOptionKey<TOptions extends readonly ChoiceOptionInput[]> = TOptions[number]["key"];
+type InputGrantorSummary<TInput> = TInput extends { readonly grantorSummary: infer TGrantorSummary }
+  ? Extract<TGrantorSummary, ResolvableValue<TrustedFormGrantorSummary>>
+  : undefined;
 
 export const autocompleteSource = {
   usStates(): AutocompleteSourceDefinition {
@@ -74,6 +80,20 @@ export const autocompleteSource = {
     };
   },
 } as const;
+
+export function resolve<const TDependencies extends readonly string[], TResult>(
+  dependencies: TDependencies,
+  resolver: (input: {
+    context: Readonly<Record<string, string>>;
+    answers: Readonly<Record<TDependencies[number], string>>;
+  }) => TResult,
+): DynamicResolverContext<TDependencies[number], TResult> {
+  return {
+    __kind: "dynamic_resolver",
+    dependencies,
+    resolve: resolver,
+  };
+}
 
 export const step = {
   choice<const TInput extends RawChoiceStepInput>(
@@ -124,7 +144,7 @@ export const step = {
 
   interstitial<const TInput extends RawInterstitialStepInput>(
     input: TInput,
-  ): InterstitialStep<TInput["key"], InputShowWhen<TInput>> {
+  ): InterstitialStep<TInput["key"], InputShowWhen<TInput>, TInput["benefits"]> {
     return {
       ...baseStep(input, "interstitial", "checkpoint_only", { interstitialTiming: "matching_offer" }),
       kind: "interstitial",
@@ -139,7 +159,7 @@ export const step = {
 
   trustedFormConsent<const TInput extends RawTrustedFormConsentStepInput>(
     input: TInput,
-  ): TrustedFormConsentStep<TInput["key"], InputShowWhen<TInput>> {
+  ): TrustedFormConsentStep<TInput["key"], InputShowWhen<TInput>, InputGrantorSummary<TInput>> {
     return {
       ...baseStep(input, "trusted_form_consent", "checkpoint_only", { trustedForm: "certify" }),
       kind: "trusted_form_consent",
@@ -165,7 +185,7 @@ export const step = {
         preloadOnPreviousStep: input.trustedForm?.preloadOnPreviousStep ?? true,
         allowSubmitWithoutCert: input.trustedForm?.allowSubmitWithoutCert ?? true,
       },
-      grantorSummary: input.grantorSummary,
+      grantorSummary: input.grantorSummary as InputGrantorSummary<TInput>,
     };
   },
 } as const;

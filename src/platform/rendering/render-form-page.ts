@@ -1,4 +1,11 @@
-import { getStepSlug, getStepUrl, isCountedStep, isStepVisible as isServerStepVisible } from "../flow";
+import {
+  getStepSlug,
+  getStepUrl,
+  isCountedStep,
+  isDynamicResolver,
+  isStepVisible as isServerStepVisible,
+  resolveStepDynamicValues,
+} from "../flow";
 import type {
   AutocompleteStep,
   ChoiceStep,
@@ -44,7 +51,8 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
     stepUrlOverrides[stepDefinition.key] ?? getStepUrl(form, stepDefinition);
   const initialStepCountLabels = form.steps.map((_, index) => getStepCountLabel(form, index, initialAnswers));
   const initialProgressPercent = getStepProgressPercent(form, activeStepIndex, initialAnswers);
-  const activeStep = form.steps[activeStepIndex] ?? form.steps[0];
+  const activeStepSource = form.steps[activeStepIndex] ?? form.steps[0];
+  const activeStep = activeStepSource ? resolveStepDynamicValues(form, activeStepSource, initialAnswers) : undefined;
   const activeStepKind = activeStep?.kind ?? "choice";
   const routeKey = options.routeKey ?? "preview";
   const displayAreaCode = getDisplayAreaCode(form, routeKey);
@@ -1003,8 +1011,9 @@ export function renderTransitionStepHtml(
   stepDefinition: FormStep,
   index: number,
   answers: Record<string, string> = {},
+  form?: InstantForm,
 ): string {
-  return renderQuestion(stepDefinition, index, index, answers);
+  return renderQuestion(form ? resolveStepDynamicValues(form, stepDefinition, answers) : stepDefinition, index, index, answers);
 }
 
 function renderQuestion(
@@ -1027,9 +1036,10 @@ function renderInterstitial(stepDefinition: InterstitialStep, answers: Record<st
   const answer = answers[stepDefinition.key];
   const isComplete = answer === stepDefinition.completionAnswer || answer === stepDefinition.seenAnswer;
   const benefitClass = isComplete ? "matching-benefit is-success is-visible" : "matching-benefit";
+  const benefits = Array.isArray(stepDefinition.benefits) ? stepDefinition.benefits : [];
   const benefitContent = isComplete
     ? renderInterstitialSuccessLines(stepDefinition.successLines)
-    : escapeHtml(stepDefinition.benefits[0] ?? "");
+    : escapeHtml(benefits[0] ?? "");
 
   return `<div class="matching-content">
     <p class="matching-status" data-matching-status></p>
@@ -1101,16 +1111,12 @@ function renderTrustedFormGrantorSummary(
   answers: Record<string, string>,
 ): string {
   const summary = stepDefinition.grantorSummary;
-  if (!summary) {
+  if (!summary || isDynamicResolver(summary)) {
     return "";
   }
 
-  const name = summary.nameKeys
-    .map((key) => answers[key])
-    .filter(Boolean)
-    .join(" ")
-    .trim();
-  const phone = summary.phoneKey ? answers[summary.phoneKey] : "";
+  const name = summary.name?.trim() ?? "";
+  const phone = summary.phone?.trim() ?? "";
 
   if (!name && !phone) {
     return "";

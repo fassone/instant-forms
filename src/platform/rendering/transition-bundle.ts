@@ -44,7 +44,7 @@ export async function buildTransitionAsset(
         key: stepDefinition.key,
         slug: getStepSlug(stepDefinition),
         url: getClientStepUrl(stepDefinition),
-        html: await minifyTransitionHtml(applyProductionTokens(renderTransitionStepHtml(stepDefinition, index, {}))),
+        html: await minifyTransitionHtml(applyProductionTokens(renderTransitionStepHtml(stepDefinition, index, {}, form))),
         config: getClientStepAt(clientSteps, index),
       })),
     ),

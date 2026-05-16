@@ -9,6 +9,8 @@ import {
 } from "../../persistence/checkpoints";
 import {
   getStepByKey,
+  canResolveStepDynamicValues,
+  hasStepDynamicResolvers,
   isStepVisible,
   type FormStep,
   type InstantForm,
@@ -19,6 +21,7 @@ import {
   type FormRoutes,
 } from "../../routing";
 import { validateSubmission, type SubmissionPayload } from "../../submissions/validation";
+import { createResolvedStepPayload } from "../../rendering";
 import { clearCheckpointAnswers, readCheckpointAnswers, setCheckpointAnswers } from "../http/cookies";
 import { jsonResponse } from "../http/responses";
 
@@ -90,6 +93,12 @@ export function registerFormRoutes(app: Hono, routes: FormRoutes, logger: Submis
           ? getResumeStepIndex(form, sanitizedAnswers)
           : getNextStepIndex(form, stepIndex, sanitizedAnswers);
     const nextStep = getStepAt(form, nextIndex);
+    const nextStepPayload =
+      hasStepDynamicResolvers(nextStep) && canResolveStepDynamicValues(nextStep, sanitizedAnswers)
+        ? createResolvedStepPayload(form, nextIndex, sanitizedAnswers, (step) =>
+            getFormRouteStepUrl(routeEntry.routeSegments, step),
+          )
+        : undefined;
 
     return jsonResponse(
       c,
@@ -97,9 +106,75 @@ export function registerFormRoutes(app: Hono, routes: FormRoutes, logger: Submis
         ok: true,
         nextUrl: getFormRouteStepUrl(routeEntry.routeSegments, nextStep),
         answers: sanitizedAnswers,
+        ...(nextStepPayload ? { nextStep: nextStepPayload } : {}),
       },
       200,
     );
+  });
+
+  app.post("/api/forms/:routeKey/resolutions", async (c) => {
+    const routeKey = c.req.param("routeKey");
+    const routeEntry = getFormRouteByRouteKey(routes, routeKey);
+
+    if (!routeEntry) {
+      return jsonResponse(
+        c,
+        { ok: false, errors: [{ field: "routeKey", message: "Form route is not available." }] },
+        404,
+      );
+    }
+
+    const body = await parseJsonBody(c.req.raw);
+
+    if (!body.ok || !isRecord(body.value)) {
+      return jsonResponse(c, { ok: false, errors: [{ field: "body", message: "Request body must be valid JSON." }] }, 400);
+    }
+
+    const stepKey = typeof body.value.stepKey === "string" ? body.value.stepKey : "";
+    const stepDefinition = getStepByKey(routeEntry.form, stepKey);
+
+    if (!stepDefinition) {
+      return jsonResponse(c, { ok: false, errors: [{ field: "stepKey", message: "Question is not available." }] }, 404);
+    }
+
+    const answerSnapshot = isRecord(body.value.answers) ? body.value.answers : {};
+    const sanitizedAnswers = sanitizeCheckpointAnswers(routeEntry.form, answerSnapshot);
+    const stepIndex = routeEntry.form.steps.findIndex((candidate) => candidate.key === stepDefinition.key);
+
+    if (stepIndex === -1 || !canAccessStep(routeEntry.form, stepIndex, sanitizedAnswers)) {
+      return jsonResponse(c, { ok: false, errors: [{ field: stepDefinition.key, message: "Question is not available yet." }] }, 400);
+    }
+
+    if (hasStepDynamicResolvers(stepDefinition) && !canResolveStepDynamicValues(stepDefinition, sanitizedAnswers)) {
+      return jsonResponse(c, { ok: false, errors: [{ field: stepDefinition.key, message: "Question is not ready yet." }] }, 400);
+    }
+
+    try {
+      return jsonResponse(
+        c,
+        {
+          ok: true,
+          step: createResolvedStepPayload(routeEntry.form, stepIndex, sanitizedAnswers, (step) =>
+            getFormRouteStepUrl(routeEntry.routeSegments, step),
+          ),
+        },
+        200,
+      );
+    } catch (error) {
+      return jsonResponse(
+        c,
+        {
+          ok: false,
+          errors: [
+            {
+              field: stepDefinition.key,
+              message: error instanceof Error ? error.message : "No pudimos preparar este paso.",
+            },
+          ],
+        },
+        400,
+      );
+    }
   });
 
   app.post("/api/forms/:routeKey/submissions", async (c) => {

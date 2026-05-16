@@ -20,3 +20,4 @@ export {
   readPrebuiltUnavailablePage,
 } from "./prebuilt-pages";
 export { buildTransitionAsset, type TransitionAsset } from "./transition-bundle";
+export { createResolvedStepPayload, type ResolvedStepPayload } from "./resolved-step-payload";
