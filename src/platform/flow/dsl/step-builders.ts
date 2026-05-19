@@ -13,7 +13,7 @@ import type {
   FormContract,
   InterstitialStep,
   PhoneStep,
-  ResolverTrustedFormGrantorSummary,
+  ResolverTrustedFormConfirmationField,
   ResolvableValue,
   StepBehavior,
   StepCondition,
@@ -21,9 +21,9 @@ import type {
   TextStep,
   TextPart,
   TextValue,
+  TrustedFormConfirmationField,
   TrustedFormConsentStep,
   TrustedFormConsentStepInput,
-  TrustedFormGrantorSummary,
 } from "./types";
 
 type RawStepCondition = {
@@ -60,22 +60,27 @@ type RawInterstitialStepInput = RawBaseStepInput & {
   benefits: ResolvableValue<readonly string[], readonly TextValue[]>;
 };
 type RawTrustedFormConsentStepInput = RawBaseStepInput & {
+  confirmation: TrustedFormConsentStepInput["confirmation"];
   disclosure: string;
   checkboxLabel?: string;
   submitLabel?: string;
   acceptedAnswer?: "accepted";
   validationMessage?: string;
   trustedForm?: TrustedFormConsentStepInput["trustedForm"];
-  grantorSummary?: ResolvableValue<TrustedFormGrantorSummary, ResolverTrustedFormGrantorSummary>;
 };
 
 type InputShowWhen<TInput> = TInput extends { readonly showWhen: infer TShowWhen }
   ? Extract<TShowWhen, StepCondition>
   : undefined;
 type ChoiceOptionKey<TOptions extends readonly ChoiceOptionInput[]> = TOptions[number]["key"];
-type InputGrantorSummary<TInput> = TInput extends { readonly grantorSummary: infer TGrantorSummary }
-  ? Extract<TGrantorSummary, ResolvableValue<TrustedFormGrantorSummary, ResolverTrustedFormGrantorSummary>>
-  : undefined;
+type InputConfirmationFields<TInput> = TInput extends {
+  readonly confirmation: { readonly fields: infer TConfirmationFields };
+}
+  ? Extract<
+      TConfirmationFields,
+      ResolvableValue<readonly TrustedFormConfirmationField[], readonly ResolverTrustedFormConfirmationField[]>
+    >
+  : never;
 type ResolverAnswerValue<TContract extends FormContract, TKey extends ContractAnswerKey<TContract>> = Extract<
   ContractAnswers<TContract>[TKey],
   string | undefined | null
@@ -202,11 +207,16 @@ export const step = {
 
   trustedFormConsent<const TInput extends RawTrustedFormConsentStepInput>(
     input: TInput,
-  ): TrustedFormConsentStep<TInput["key"], InputShowWhen<TInput>, InputGrantorSummary<TInput>> {
+  ): TrustedFormConsentStep<TInput["key"], InputShowWhen<TInput>, InputConfirmationFields<TInput>> {
     return {
       ...baseStep(input, "trusted_form_consent", "checkpoint_only", { trustedForm: "certify" }),
       kind: "trusted_form_consent",
       type: "TRUSTED_FORM_CONSENT",
+      confirmation: {
+        label: input.confirmation.label ?? "Confirme su información",
+        nextLabel: input.confirmation.nextLabel ?? "Continuar",
+        fields: input.confirmation.fields as InputConfirmationFields<TInput>,
+      },
       disclosure: input.disclosure,
       checkboxLabel: input.checkboxLabel ?? "Acepto y quiero enviar mi solicitud.",
       submitLabel: input.submitLabel ?? "Enviar",
@@ -228,7 +238,6 @@ export const step = {
         preloadOnPreviousStep: input.trustedForm?.preloadOnPreviousStep ?? true,
         allowSubmitWithoutCert: input.trustedForm?.allowSubmitWithoutCert ?? true,
       },
-      grantorSummary: input.grantorSummary as InputGrantorSummary<TInput>,
     };
   },
 } as const;

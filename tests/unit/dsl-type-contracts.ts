@@ -1,4 +1,4 @@
-import { defineFormFlow, resolve, step, text, z } from "../../src/platform/flow";
+import { defineFormFlow, resolve, step, text, z, type TrustedFormConsentStepInput } from "../../src/platform/flow";
 
 const contract = {
   context: z.object({}),
@@ -75,9 +75,18 @@ void defineFormFlow({
       slug: "consentimiento",
       label: "Consentimiento",
       disclosure: "Consentimiento.",
-      grantorSummary: resolve(["first_name"], ({ answers }) => ({
-        name: text(answers.first_name),
-      })),
+      confirmation: {
+        fields: resolve(["first_name"], ({ answers }) => [
+          {
+            name: "trusted_form_grantor_name",
+            label: "Nombre",
+            value: text(answers.first_name),
+            trustedForm: {
+              role: "consent-grantor-name",
+            },
+          },
+        ]),
+      },
     }),
   ],
 });
@@ -99,6 +108,23 @@ void step.interstitial({
   successLines: [{ text: "Listo", color: "accent" }],
   // @ts-expect-error Resolver-backed text values must be created with text(...).
   benefits: resolve([], () => ["plain string"]),
+});
+
+void step.trustedFormConsent({
+  key: "trustedform_consent",
+  slug: "consentimiento",
+  label: "Consentimiento",
+  disclosure: "Consentimiento.",
+  confirmation: {
+    // @ts-expect-error Resolver-backed confirmation values must be created with text(...).
+    fields: resolve([], () => [
+      {
+        name: "review_name",
+        label: "Nombre",
+        value: "plain string",
+      },
+    ]),
+  },
 });
 
 const optionalContextContract = {
@@ -198,23 +224,83 @@ void defineFormFlow({
       slug: "consentimiento",
       label: "Consentimiento",
       disclosure: "Consentimiento.",
-      grantorSummary: resolve(["first_name", "last_name", "phone_number", "residence_state"], ({ answers }) => ({
-        // @ts-expect-error Optional answer values require a fallback before text(...).
-        name: text(answers.first_name, " ", answers.last_name, answers.residence_state),
-        phone: text(answers.phone_number),
-      })),
+      confirmation: {
+        fields: resolve(["first_name", "last_name", "phone_number", "residence_state"], ({ answers }) => [
+          {
+            name: "trusted_form_grantor_name",
+            label: "Nombre",
+            // @ts-expect-error Optional answer values require a fallback before text(...).
+            value: text(answers.first_name, " ", answers.last_name, answers.residence_state),
+            trustedForm: {
+              role: "consent-grantor-name",
+            },
+          },
+          {
+            name: "trusted_form_grantor_phone",
+            label: "Teléfono",
+            value: text(answers.phone_number),
+            trustedForm: {
+              role: "consent-grantor-phone",
+            },
+          },
+        ]),
+      },
     }),
     step.trustedFormConsent({
       key: "trustedform_consent_with_fallback",
       slug: "consentimiento-fallback",
       label: "Consentimiento",
       disclosure: "Consentimiento.",
-      grantorSummary: resolve(["first_name", "last_name", "phone_number", "residence_state"], ({ answers }) => ({
-        name: text(answers.first_name, " ", answers.last_name, " ", answers.residence_state ?? "TN"),
-        phone: text(answers.phone_number),
-      })),
+      confirmation: {
+        fields: resolve(["first_name", "last_name", "phone_number", "residence_state"], ({ answers }) => [
+          {
+            name: "trusted_form_grantor_name",
+            label: "Nombre",
+            value: text(answers.first_name, " ", answers.last_name, " ", answers.residence_state ?? "TN"),
+            trustedForm: {
+              role: "consent-grantor-name",
+            },
+          },
+          {
+            name: "trusted_form_grantor_phone",
+            label: "Teléfono",
+            value: text(answers.phone_number),
+            trustedForm: {
+              role: "consent-grantor-phone",
+            },
+          },
+        ]),
+      },
     }),
   ],
+});
+
+void ({
+  key: "trustedform_consent",
+  slug: "consentimiento",
+  label: "Consentimiento",
+  disclosure: "Consentimiento.",
+  confirmation: {
+    fields: resolve(["first_name"], ({ answers }) => [
+      {
+        name: "trusted_form_grantor_name",
+        label: "Nombre",
+        value: text(answers.first_name),
+        trustedForm: {
+          role: "consent-grantor-name",
+        },
+      },
+      {
+        name: "trusted_form_grantor_phone",
+        label: "Teléfono",
+        // @ts-expect-error Resolver answers are limited to declared dependency keys.
+        value: text(answers.phone_number),
+        trustedForm: {
+          role: "consent-grantor-phone",
+        },
+      },
+    ]),
+  },
 });
 
 void step.trustedFormConsent({
@@ -222,12 +308,29 @@ void step.trustedFormConsent({
   slug: "consentimiento",
   label: "Consentimiento",
   disclosure: "Consentimiento.",
+  confirmation: {
+    fields: [
+      {
+        name: "review_name",
+        label: "Nombre",
+        value: "Static strings remain valid outside resolver outputs.",
+      },
+    ],
+  },
+  // @ts-expect-error grantorSummary is intentionally removed; confirmation.fields is the only review/tagging API.
   grantorSummary: resolve(["first_name"], ({ answers }) => ({
-    name: text(answers.first_name),
-    // @ts-expect-error Resolver answers are limited to declared dependency keys.
-    phone: text(answers.phone_number),
+    fields: [
+      {
+        name: "trusted_form_grantor_name",
+        label: "Nombre",
+        value: text(answers.first_name),
+        trustedForm: {
+          role: "consent-grantor-name",
+        },
+      },
+    ],
   })),
-});
+} satisfies TrustedFormConsentStepInput);
 
 const orderingContract = {
   context: z.object({}),

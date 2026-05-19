@@ -230,7 +230,13 @@ function getStepTemplateStrings(stepDefinition: FormStep): string[] {
   }
 
   if (stepDefinition.kind === "trusted_form_consent") {
-    values.push(stepDefinition.disclosure, stepDefinition.checkboxLabel, stepDefinition.submitLabel);
+    values.push(
+      stepDefinition.confirmation.label,
+      stepDefinition.confirmation.nextLabel,
+      stepDefinition.disclosure,
+      stepDefinition.checkboxLabel,
+      stepDefinition.submitLabel,
+    );
   }
 
   return values;

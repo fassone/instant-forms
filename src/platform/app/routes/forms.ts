@@ -23,9 +23,14 @@ import {
 import { validateSubmission, type SubmissionPayload } from "../../submissions/validation";
 import { createResolvedStepPayload } from "../../rendering";
 import { clearCheckpointAnswers, readCheckpointAnswers, setCheckpointAnswers } from "../http/cookies";
-import { jsonResponse } from "../http/responses";
+import { htmlResponse, jsonResponse } from "../http/responses";
 
 export type SubmissionLogger = (payload: SubmissionPayload) => void;
+
+type NativeFormData = {
+  entries(): IterableIterator<[string, unknown]>;
+  get(name: string): unknown;
+};
 
 export function registerFormRoutes(app: Hono, routes: FormRoutes, logger: SubmissionLogger): void {
   app.post("/api/forms/:routeKey/checkpoints", async (c) => {
@@ -206,11 +211,63 @@ export function registerFormRoutes(app: Hono, routes: FormRoutes, logger: Submis
 
     return jsonResponse(c, { ok: true, submittedAt: validation.payload.submittedAt }, 201);
   });
+
+  app.post("/api/forms/:routeKey/native-submissions", async (c) => {
+    const routeKey = c.req.param("routeKey");
+    const routeEntry = getFormRouteByRouteKey(routes, routeKey);
+
+    if (!routeEntry) {
+      return htmlResponse(renderNativeSubmissionErrorPage(["Form route is not available."]), 404, "no-store");
+    }
+
+    const formDataResult = await parseFormData(c.req.raw);
+    if (!formDataResult.ok) {
+      return htmlResponse(renderNativeSubmissionErrorPage(["Submission body must be form data."]), 400, "no-store");
+    }
+
+    const checkpointAnswers = readCheckpointAnswers(c, routeEntry.form, routeEntry.routeKey);
+    const postedAnswers = getNativeSubmissionAnswers(formDataResult.value);
+    const trustedFormCertUrl = getNativeTrustedFormCertUrl(routeEntry.form, formDataResult.value);
+    const validation = validateSubmission(routeEntry.form, routeEntry.routeKey, {
+      answers: {
+        ...checkpointAnswers,
+        ...postedAnswers,
+      },
+      trustedFormCertUrl,
+    });
+
+    if (validation.ok === false) {
+      return htmlResponse(
+        renderNativeSubmissionErrorPage(validation.errors.map((error) => error.message)),
+        400,
+        "no-store",
+      );
+    }
+
+    logger(validation.payload);
+    clearCheckpointAnswers(c, routeEntry.routeKey);
+
+    const response = htmlResponse(renderNativeSubmissionThanksPage(), 200, "no-store");
+    const setCookie = c.res.headers.get("Set-Cookie");
+    if (setCookie) {
+      response.headers.set("Set-Cookie", setCookie);
+    }
+
+    return response;
+  });
 }
 
 async function parseJsonBody(request: Request): Promise<{ ok: true; value: unknown } | { ok: false }> {
   try {
     return { ok: true, value: await request.json() };
+  } catch {
+    return { ok: false };
+  }
+}
+
+async function parseFormData(request: Request): Promise<{ ok: true; value: NativeFormData } | { ok: false }> {
+  try {
+    return { ok: true, value: (await request.formData()) as NativeFormData };
   } catch {
     return { ok: false };
   }
@@ -228,4 +285,144 @@ function getStepAt(form: InstantForm, index: number): FormStep {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function getNativeSubmissionAnswers(formData: NativeFormData): Record<string, string> {
+  const answers: Record<string, string> = {};
+  const answerFieldPattern = /^answers\[([^\]]+)\]$/u;
+
+  for (const [fieldName, fieldValue] of formData.entries()) {
+    if (typeof fieldValue !== "string") {
+      continue;
+    }
+
+    const match = answerFieldPattern.exec(fieldName);
+    const answerKey = match?.[1];
+    if (answerKey) {
+      answers[answerKey] = fieldValue.trim();
+    }
+  }
+
+  return answers;
+}
+
+function getNativeTrustedFormCertUrl(form: InstantForm, formData: NativeFormData): string | undefined {
+  const trustedFormStep = form.steps.find((stepDefinition) => stepDefinition.kind === "trusted_form_consent");
+  const fieldName = trustedFormStep?.kind === "trusted_form_consent" ? trustedFormStep.trustedForm.fieldName : undefined;
+  const candidateFieldNames = ["trustedFormCertUrl", ...(fieldName ? [fieldName] : [])];
+
+  for (const candidateFieldName of candidateFieldNames) {
+    const value = formData.get(candidateFieldName);
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return undefined;
+}
+
+function renderNativeSubmissionThanksPage(): string {
+  return `<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Gracias</title>
+    <style>
+      body {
+        min-height: 100vh;
+        margin: 0;
+        display: grid;
+        place-items: center;
+        background: #fffdf4;
+        color: #111427;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        padding: 24px;
+      }
+      main {
+        width: min(100%, 720px);
+        border: 1px solid #d9dff0;
+        border-radius: 8px;
+        background: #fffdf4;
+        padding: clamp(28px, 6vw, 64px);
+      }
+      h1 {
+        margin: 0 0 16px;
+        font-size: clamp(2.2rem, 8vw, 4.5rem);
+        line-height: 1;
+      }
+      p {
+        margin: 0;
+        color: #4d5878;
+        font-size: 1.1rem;
+        line-height: 1.6;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Gracias.</h1>
+      <p>Recibimos su información. Un agente se pondrá en contacto con usted pronto.</p>
+    </main>
+  </body>
+</html>`;
+}
+
+function renderNativeSubmissionErrorPage(messages: readonly string[]): string {
+  const message = messages[0] ?? "No pudimos enviar el formulario.";
+
+  return `<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>No pudimos enviar el formulario</title>
+    <style>
+      body {
+        min-height: 100vh;
+        margin: 0;
+        display: grid;
+        place-items: center;
+        background: #fffdf4;
+        color: #111427;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        padding: 24px;
+      }
+      main {
+        width: min(100%, 720px);
+        border: 1px solid #d9dff0;
+        border-radius: 8px;
+        background: #fffdf4;
+        padding: clamp(28px, 6vw, 64px);
+      }
+      h1 {
+        margin: 0 0 16px;
+        color: #073b8e;
+        font-size: clamp(2rem, 7vw, 3.5rem);
+        line-height: 1;
+      }
+      p {
+        margin: 0;
+        color: #4d5878;
+        font-size: 1.1rem;
+        line-height: 1.6;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>No pudimos enviar el formulario.</h1>
+      <p>${escapeHtml(message)}</p>
+    </main>
+  </body>
+</html>`;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }

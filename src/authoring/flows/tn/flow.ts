@@ -148,10 +148,75 @@ export const tnFlow = defineFormFlow({
         "Al seleccionar esta casilla, autorizo a Seguros Aseguranza y a sus agentes a contactarme por teléfono o mensaje de texto sobre opciones de seguro de auto.",
       checkboxLabel: "Acepto continuar y enviar mi solicitud.",
       submitLabel: "Enviar",
-      grantorSummary: resolve(["first_name", "last_name", "phone_number", "residence_state"], ({ context, answers }) => ({
-        name: text(answers.first_name, " ", answers.last_name, " ", answers.residence_state ?? context.areaCode),
-        phone: text(answers.phone_number),
-      })),
+      confirmation: {
+        label: "Confirme su información",
+        nextLabel: "Continuar",
+        fields: resolve(
+          [
+            "belongs_to_state",
+            "residence_state",
+            "has_license",
+            "has_insurance",
+            "is_clean_title",
+            "number_of_registered_cars",
+            "first_name",
+            "last_name",
+            "phone_number",
+          ],
+          ({ context, answers }) => [
+            {
+              name: "review_belongs_to_state",
+              label: "Vive en Tennessee",
+              value: text(answers.belongs_to_state === "yes" ? "Sí" : "No"),
+            },
+            {
+              name: "review_residence_state",
+              label: "Estado",
+              value: text(
+                answers.belongs_to_state === "yes"
+                  ? (context.areaName ?? context.areaCode)
+                  : (answers.residence_state ?? "No indicado"),
+              ),
+            },
+            {
+              name: "review_has_license",
+              label: "Licencia de EE. UU.",
+              value: text(answers.has_license === "yes" ? "Sí" : "No"),
+            },
+            {
+              name: "review_has_insurance",
+              label: "Seguro actual",
+              value: text(answers.has_insurance === "yes" ? "Sí" : "No"),
+            },
+            {
+              name: "review_is_clean_title",
+              label: "Título limpio",
+              value: text(answers.is_clean_title === "yes" ? "Sí" : "No"),
+            },
+            {
+              name: "review_number_of_registered_cars",
+              label: "Autos a asegurar",
+              value: text(answers.number_of_registered_cars),
+            },
+            {
+              name: "trusted_form_grantor_name",
+              label: "Nombre completo",
+              value: text(answers.first_name, " ", answers.last_name),
+              trustedForm: {
+                role: "consent-grantor-name",
+              },
+            },
+            {
+              name: "trusted_form_grantor_phone",
+              label: "Teléfono",
+              value: text(answers.phone_number),
+              trustedForm: {
+                role: "consent-grantor-phone",
+              },
+            },
+          ],
+        ),
+      },
       trustedForm: {
         fieldName: "xxTrustedFormCertUrl",
         delivery: "main_thread",

@@ -135,6 +135,8 @@ function getCoreRuntimeScript(): string {
       config,
       form,
       thanks,
+      nextButton,
+      backButton,
       steps,
       get currentStep() {
         return currentStep;
@@ -171,17 +173,39 @@ function getCoreRuntimeScript(): string {
   }
 
   function bootstrapInstantFormRuntime() {
-    nextButton.addEventListener("click", () => {
+    nextButton.addEventListener("click", (event) => {
+      const activeBehavior = getActiveBehavior();
+      if (activeBehavior?.usesNativeSubmit?.(getContext(), getQuestion(), getStepElement())) {
+        return;
+      }
+
+      event.preventDefault();
       void handleNext();
     });
 
     backButton.addEventListener("click", () => {
       const activeBehavior = getActiveBehavior();
-      activeBehavior?.beforeBack?.(getContext(), getQuestion(), getStepElement());
+      if (activeBehavior?.beforeBack?.(getContext(), getQuestion(), getStepElement())) {
+        return;
+      }
+
       const previousUrl = getRenderedPreviousUrl();
       if (previousUrl) {
         navigateToUrl(previousUrl);
       }
+    });
+
+    form.addEventListener("submit", (event) => {
+      const submitResult = getActiveBehavior()?.onSubmit?.(event, getContext(), getQuestion(), getStepElement());
+      if (submitResult === "allowDefault") {
+        return;
+      }
+      if (submitResult) {
+        return;
+      }
+
+      event.preventDefault();
+      void handleNext({ source: "submit" });
     });
 
     if (errorModal && errorModalClose) {
@@ -248,6 +272,10 @@ function getCoreRuntimeScript(): string {
 
     form.addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
+        if (getActiveBehavior()?.usesNativeSubmit?.(getContext(), getQuestion(), getStepElement())) {
+          return;
+        }
+
         event.preventDefault();
         nextButton.click();
         return;
@@ -369,12 +397,25 @@ function getCoreRuntimeScript(): string {
     }
     nextButton.disabled = isLoading;
     nextButton.dataset.loading = String(isLoading);
+    applyNextButtonState(label, behavior, question);
     if (isLoading) {
       nextButton.setAttribute("aria-busy", "true");
     } else {
       nextButton.removeAttribute("aria-busy");
     }
     backButton.disabled = !getRenderedPreviousUrl() || isLoading;
+  }
+
+  function applyNextButtonState(label, behavior, question) {
+    const buttonState = behavior?.getNextButtonState?.(getContext(), question, getStepElement()) ?? {};
+    nextButton.type = buttonState.type ?? "button";
+    nextButton.name = buttonState.name ?? "next";
+    nextButton.value = buttonState.value ?? label;
+    if (buttonState.tfRole) {
+      nextButton.setAttribute("data-tf-element-role", buttonState.tfRole);
+    } else {
+      nextButton.removeAttribute("data-tf-element-role");
+    }
   }
 
   function renderNextButtonContent(label, isLoading) {
@@ -1931,12 +1972,16 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
     const trustedFormReadyPollMs = 100;
     const trustedFormReadyTimeoutMs = 5000;
     const trustedFormReadyErrorMessage = "No pudimos preparar el certificado de consentimiento. Revise su conexión e intente de nuevo.";
+    const trustedFormReviewLoadingReason = "trusted-form-review";
+    const trustedFormSubmitLoadingReason = "trusted-form-submit";
     let trustedFormSdkLoaded = false;
     let trustedFormSdkLoadPromise;
     let trustedFormReadyPromise;
     let trustedFormReadyFieldName;
     let partytownLoadPromise;
     let partytownLoaded = false;
+    let activeSubstep = "review";
+    let allowNativeSubmit = false;
 
     function getAnswer(_ctx, question, step) {
       const checked = step.querySelector("[data-trusted-form-consent]:checked");
@@ -1948,7 +1993,7 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
       if (input instanceof HTMLInputElement) {
         input.checked = answer === question.acceptedAnswer;
       }
-      hydrateTrustedFormGrantorSummary(ctx, question, step);
+      hydrateTrustedFormFieldBank(question, step);
     }
 
     function validate(ctx, question, step) {
@@ -1966,67 +2011,152 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
     }
 
     function getNextLabel(_ctx, question) {
-      return question.submitLabel;
+      return activeSubstep === "review" ? question.confirmation.nextLabel : question.submitLabel;
     }
 
     function mount(ctx, question, step) {
-      syncTrustedFormElementRoles(ctx, question);
+      activeSubstep = "review";
+      allowNativeSubmit = false;
+      installTrustedFormRequestProxyShim();
+      configureNativeTrustedForm(ctx, question);
+      setTrustedFormSubstep(ctx, question, step, "review");
       startTrustedFormStepReadiness(ctx, question);
-      hydrateTrustedFormGrantorSummary(ctx, question, step);
+      hydrateTrustedFormFieldBank(question, step);
     }
 
     function unmount(ctx) {
       ctx.form.removeAttribute("data-tf-element-role");
-      document.getElementById("next-button")?.removeAttribute("data-tf-element-role");
+      ctx.form.noValidate = true;
+      ctx.nextButton.removeAttribute("data-tf-element-role");
+      ctx.nextButton.name = "next";
+      ctx.nextButton.type = "button";
+      ctx.setNextButtonLoading(trustedFormReviewLoadingReason, false);
+      ctx.setNextButtonLoading(trustedFormSubmitLoadingReason, false);
     }
 
-    function syncTrustedFormElementRoles(ctx, question) {
-      if (question.kind !== "trusted_form_consent") {
-        ctx.form.removeAttribute("data-tf-element-role");
-        return;
-      }
+    function configureNativeTrustedForm(ctx, _question) {
       ctx.form.setAttribute("data-tf-element-role", "offer");
-      document.getElementById("next-button")?.setAttribute("data-tf-element-role", "submit");
+      ctx.form.method = "post";
+      ctx.form.action = "/api/forms/" + encodeURIComponent(ctx.config.routeKey) + "/native-submissions";
+      ctx.form.enctype = "application/x-www-form-urlencoded";
+      ctx.form.noValidate = false;
     }
 
-    function hydrateTrustedFormGrantorSummary(ctx, question, step) {
-      const grantorSummary = question.grantorSummary;
-      if (!grantorSummary) return;
-      const card = step.querySelector(".consent-card");
-      if (!(card instanceof HTMLElement)) return;
-      const name = String(grantorSummary.name || "").trim();
-      const phone = String(grantorSummary.phone || "").trim();
-      const displayPhone = phone ? formatUsPhoneForDisplay(phone) : "";
-      let summary = card.querySelector("[data-consent-summary]");
-      if (!name && !displayPhone) {
-        summary?.remove();
-        return;
+    function setTrustedFormSubstep(ctx, question, step, nextSubstep) {
+      activeSubstep = nextSubstep;
+      const panels = step.querySelector("[data-trusted-form-substeps]");
+      if (panels instanceof HTMLElement) {
+        panels.dataset.trustedFormActiveSubstep = activeSubstep;
       }
-      if (!(summary instanceof HTMLElement)) {
-        summary = document.createElement("p");
-        summary.className = "consent-summary";
-        summary.dataset.consentSummary = "true";
-        card.prepend(summary);
-      }
-      summary.replaceChildren();
-      if (name) {
-        const nameElement = document.createElement("span");
-        nameElement.dataset.tfElementRole = "consent-grantor-name";
-        nameElement.textContent = name;
-        summary.appendChild(nameElement);
-      }
-      if (name && displayPhone) summary.appendChild(document.createTextNode(" · "));
-      if (displayPhone) {
-        const phoneElement = document.createElement("span");
-        phoneElement.dataset.tfElementRole = "consent-grantor-phone";
-        phoneElement.textContent = displayPhone;
-        summary.appendChild(phoneElement);
-      }
+      Array.from(step.querySelectorAll("[data-trusted-form-substep]")).forEach((panel) => {
+        if (panel instanceof HTMLElement) {
+          panel.setAttribute("aria-hidden", String(panel.dataset.trustedFormSubstep !== activeSubstep));
+        }
+      });
+      ctx.updateNextButton();
+    }
+
+    function hydrateTrustedFormFieldBank(question, step) {
+      const fields = Array.isArray(question.confirmation?.fields) ? question.confirmation.fields : [];
+      fields.forEach((field) => {
+        const input = step.querySelector('input[name="' + CSS.escape(field.name) + '"]');
+        if (input instanceof HTMLInputElement) {
+          input.value = String(field.value || "");
+          if (field.trustedForm?.role) {
+            input.dataset.tfElementRole = field.trustedForm.role;
+          } else {
+            delete input.dataset.tfElementRole;
+          }
+        }
+      });
     }
 
     function startTrustedFormStepReadiness(ctx, question) {
       if (getTrustedFormCertUrl(question.trustedForm)) return;
       ensureTrustedFormReady(question.trustedForm).catch(() => undefined);
+    }
+
+    async function continueFromReview(ctx, question, step) {
+      ctx.setNextButtonLoading(trustedFormReviewLoadingReason, true);
+      try {
+        await ensureTrustedFormReady(question.trustedForm);
+        setTrustedFormSubstep(ctx, question, step, "consent");
+      } catch (trustedFormError) {
+        if (question.trustedForm.allowSubmitWithoutCert) {
+          setTrustedFormSubstep(ctx, question, step, "consent");
+        } else {
+          ctx.showErrorModal(getTrustedFormReadyErrorMessage(trustedFormError));
+        }
+      } finally {
+        ctx.setNextButtonLoading(trustedFormReviewLoadingReason, false);
+      }
+    }
+
+    async function submitNativeWhenReady(event, ctx, question, step) {
+      if (!validate(ctx, question, step)) {
+        return;
+      }
+
+      ctx.setNextButtonLoading(trustedFormSubmitLoadingReason, true);
+      try {
+        await ctx.queueCheckpoint(question.key, question.acceptedAnswer, { stepUrl: question.url, reconcile: false });
+      } catch {
+        // Native submission can still use the posted answer fields. Checkpoint persistence is best-effort here.
+      }
+
+      let trustedFormCertUrl = getTrustedFormCertUrl(question.trustedForm);
+      try {
+        trustedFormCertUrl = await ensureTrustedFormReady(question.trustedForm);
+      } catch (trustedFormError) {
+        if (!question.trustedForm.allowSubmitWithoutCert) {
+          ctx.setNextButtonLoading(trustedFormSubmitLoadingReason, false);
+          ctx.showErrorModal(getTrustedFormReadyErrorMessage(trustedFormError));
+          return;
+        }
+        trustedFormCertUrl = getTrustedFormCertUrl(question.trustedForm);
+      }
+
+      syncNativeSubmissionFields(ctx, question, step, trustedFormCertUrl);
+      ctx.setNextButtonLoading(trustedFormSubmitLoadingReason, false);
+      allowNativeSubmit = true;
+      ctx.form.requestSubmit(ctx.nextButton);
+    }
+
+    function syncNativeSubmissionFields(ctx, question, step, trustedFormCertUrl) {
+      const container = getNativeSubmissionFieldContainer(ctx.form);
+      container.replaceChildren();
+      const postedAnswers = { ...ctx.answers, [question.key]: question.acceptedAnswer };
+      Object.keys(postedAnswers).forEach((answerKey) => {
+        appendHiddenInput(container, "answers[" + answerKey + "]", postedAnswers[answerKey]);
+      });
+      if (trustedFormCertUrl) {
+        appendHiddenInput(container, "trustedFormCertUrl", trustedFormCertUrl);
+        appendHiddenInput(container, question.trustedForm.fieldName, trustedFormCertUrl);
+      }
+
+      const certField = step.querySelector('input[name="' + CSS.escape(question.trustedForm.fieldName) + '"]');
+      if (certField instanceof HTMLInputElement && trustedFormCertUrl) {
+        certField.value = trustedFormCertUrl;
+      }
+    }
+
+    function getNativeSubmissionFieldContainer(form) {
+      let container = form.querySelector("[data-native-submission-fields]");
+      if (!(container instanceof HTMLElement)) {
+        container = document.createElement("div");
+        container.dataset.nativeSubmissionFields = "true";
+        container.hidden = true;
+        form.appendChild(container);
+      }
+      return container;
+    }
+
+    function appendHiddenInput(container, name, value) {
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = name;
+      input.value = value ?? "";
+      container.appendChild(input);
     }
 
     function ensureTrustedFormReady(trustedForm) {
@@ -2201,6 +2331,96 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
       return value || undefined;
     }
 
+    function installTrustedFormRequestProxyShim() {
+      if (window.__INSTANT_TRUSTED_FORM_PROXY_SHIM__) return;
+      window.__INSTANT_TRUSTED_FORM_PROXY_SHIM__ = true;
+      const nativeFetch = window.fetch;
+      window.fetch = function(input, init) {
+        if (typeof input === "string" || input instanceof URL) {
+          return nativeFetch.call(this, rewriteTrustedFormUrl(input), init);
+        }
+        if (input instanceof Request && shouldProxyTrustedFormUrl(input.url)) {
+          return nativeFetch.call(this, new Request(rewriteTrustedFormUrl(input.url), input), init);
+        }
+        return nativeFetch.call(this, input, init);
+      };
+
+      const nativeOpen = XMLHttpRequest.prototype.open;
+      XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+        return nativeOpen.call(this, method, rewriteTrustedFormUrl(url), ...rest);
+      };
+
+      if (navigator.sendBeacon) {
+        const nativeSendBeacon = navigator.sendBeacon.bind(navigator);
+        navigator.sendBeacon = function(url, data) {
+          return nativeSendBeacon(rewriteTrustedFormUrl(url), data);
+        };
+      }
+
+      patchElementSetAttribute();
+      patchSrcProperty(HTMLImageElement.prototype);
+      patchSrcProperty(HTMLScriptElement.prototype);
+      patchSrcProperty(HTMLIFrameElement.prototype);
+      patchHtmlStringWriter(document, "write");
+      patchHtmlStringWriter(document, "writeln");
+      patchInsertAdjacentHTML();
+    }
+
+    function rewriteTrustedFormUrl(value) {
+      if (!shouldProxyTrustedFormUrl(value)) return value;
+      const url = new URL(String(value), window.location.href);
+      return "/_instant/trustedform/proxy?u=" + encodeURIComponent(url.toString());
+    }
+
+    function shouldProxyTrustedFormUrl(value) {
+      try {
+        const url = new URL(String(value), window.location.href);
+        return url.protocol === "https:" && (url.hostname === "trustedform.com" || url.hostname.endsWith(".trustedform.com"));
+      } catch {
+        return false;
+      }
+    }
+
+    function patchElementSetAttribute() {
+      const nativeSetAttribute = Element.prototype.setAttribute;
+      Element.prototype.setAttribute = function(name, value) {
+        if (String(name).toLowerCase() === "src") {
+          return nativeSetAttribute.call(this, name, rewriteTrustedFormUrl(value));
+        }
+        return nativeSetAttribute.call(this, name, value);
+      };
+    }
+
+    function patchSrcProperty(prototype) {
+      const descriptor = Object.getOwnPropertyDescriptor(prototype, "src");
+      if (!descriptor || !descriptor.set) return;
+      Object.defineProperty(prototype, "src", {
+        ...descriptor,
+        set(value) {
+          descriptor.set.call(this, rewriteTrustedFormUrl(value));
+        },
+      });
+    }
+
+    function patchHtmlStringWriter(target, methodName) {
+      const nativeMethod = target[methodName];
+      if (typeof nativeMethod !== "function") return;
+      target[methodName] = function(...parts) {
+        return nativeMethod.apply(this, parts.map(rewriteTrustedFormHtml));
+      };
+    }
+
+    function patchInsertAdjacentHTML() {
+      const nativeInsertAdjacentHTML = Element.prototype.insertAdjacentHTML;
+      Element.prototype.insertAdjacentHTML = function(position, text) {
+        return nativeInsertAdjacentHTML.call(this, position, rewriteTrustedFormHtml(text));
+      };
+    }
+
+    function rewriteTrustedFormHtml(value) {
+      return String(value).replace(/https:\\/\\/[^"'<>\\s)]+trustedform\\.com[^"'<>\\s)]*/g, (url) => rewriteTrustedFormUrl(url));
+    }
+
     function formatUsPhoneForDisplay(value) {
       const digitsOnly = value.replace(/\\D/g, "");
       const nationalDigits = digitsOnly.startsWith("1") && digitsOnly.length > 10 ? digitsOnly.slice(1, 11) : digitsOnly.slice(0, 10);
@@ -2225,10 +2445,61 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
       },
       getAnswer,
       getNextLabel,
+      getNextButtonState(_ctx, question) {
+        if (activeSubstep === "consent") {
+          return {
+            type: "submit",
+            name: "trusted_form_submit",
+            value: question.submitLabel,
+            tfRole: "submit",
+          };
+        }
+
+        return {
+          type: "button",
+          name: "next",
+          value: question.confirmation.nextLabel,
+        };
+      },
       hydrate,
       isAnswered,
       mount,
+      async onNext(ctx, question, step) {
+        if (activeSubstep === "review") {
+          await continueFromReview(ctx, question, step);
+          return true;
+        }
+        ctx.form.requestSubmit(ctx.nextButton);
+        return true;
+      },
+      onSubmit(event, ctx, question, step) {
+        if (activeSubstep !== "consent") {
+          event.preventDefault();
+          void continueFromReview(ctx, question, step);
+          return true;
+        }
+
+        if (allowNativeSubmit) {
+          allowNativeSubmit = false;
+          syncNativeSubmissionFields(ctx, question, step, getTrustedFormCertUrl(question.trustedForm));
+          return "allowDefault";
+        }
+
+        event.preventDefault();
+        void submitNativeWhenReady(event, ctx, question, step);
+        return true;
+      },
+      beforeBack(ctx, question, step) {
+        if (activeSubstep === "consent") {
+          setTrustedFormSubstep(ctx, question, step, "review");
+          return true;
+        }
+        return false;
+      },
       unmount,
+      usesNativeSubmit() {
+        return activeSubstep === "consent";
+      },
       validate,
     };
   })());

@@ -210,15 +210,14 @@ test.describe("instant routed form UI", () => {
     }
     await expect(page).toHaveURL(/\/tn\/custom\/consentimiento$/u);
 
+    await continueTrustedFormReview(page);
     await activeStep(page).locator("[data-trusted-form-consent]").check();
     await expect(page.getByRole("button", { name: "Enviar" })).toBeEnabled();
-    const submissionRequest = page.waitForRequest(/\/api\/forms\/tn_custom\/submissions/u);
-    const submissionResponse = page.waitForResponse(/\/api\/forms\/tn_custom\/submissions/u);
+    const submissionRequest = page.waitForRequest(/\/api\/forms\/tn_custom\/native-submissions/u);
     await page.getByRole("button", { name: "Enviar" }).click();
-    expect(JSON.parse((await submissionRequest).postData() ?? "{}")).toMatchObject({
-      trustedFormCertUrl,
-    });
-    await expect((await submissionResponse).status()).toBe(201);
+    expect((await submissionRequest).postData() ?? "").toContain(
+      "trustedFormCertUrl=https%3A%2F%2Fcert.trustedform.com%2F454a35b802f3e7b63ffabb4efedb7c6ebe67886c",
+    );
     await expect(page.getByRole("heading", { name: "Gracias." })).toBeVisible();
   });
 
@@ -233,17 +232,14 @@ test.describe("instant routed form UI", () => {
     await page.goto("/tn/custom/consentimiento");
 
     await expect(page.getByRole("button", { name: "Preparando..." })).toBeHidden();
-    await expect(page.getByRole("button", { name: "Enviar" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Continuar" })).toBeEnabled();
 
-    await activeStep(page).locator("[data-trusted-form-consent]").check();
-    const submissionRequest = page.waitForRequest(/\/api\/forms\/tn_custom\/submissions/u);
-    const submissionResponse = page.waitForResponse(/\/api\/forms\/tn_custom\/submissions/u);
-    const submitButton = page.getByRole("button", { name: "Enviar" });
-    const buttonBoxBeforeLoading = await submitButton.boundingBox();
+    const reviewButton = page.getByRole("button", { name: "Continuar" });
+    const buttonBoxBeforeLoading = await reviewButton.boundingBox();
     if (!buttonBoxBeforeLoading) {
-      throw new Error("Expected the submit button to have a visible bounding box before loading.");
+      throw new Error("Expected the review button to have a visible bounding box before loading.");
     }
-    await submitButton.click();
+    await reviewButton.click();
 
     const loadingButton = await assertSpinnerOnlyLoadingButton(page);
     const buttonBoxWhileLoading = await loadingButton.boundingBox();
@@ -253,10 +249,16 @@ test.describe("instant routed form UI", () => {
     expect(Math.abs(buttonBoxWhileLoading.width - buttonBoxBeforeLoading.width)).toBeLessThanOrEqual(1);
     expect(Math.abs(buttonBoxWhileLoading.height - buttonBoxBeforeLoading.height)).toBeLessThanOrEqual(1);
 
-    expect(JSON.parse((await submissionRequest).postData() ?? "{}")).toMatchObject({
-      trustedFormCertUrl,
-    });
-    await expect((await submissionResponse).status()).toBe(201);
+    await expect(page.getByRole("button", { name: "Enviar" })).toBeEnabled();
+
+    await activeStep(page).locator("[data-trusted-form-consent]").check();
+    const submitButton = page.getByRole("button", { name: "Enviar" });
+    const submissionRequest = page.waitForRequest(/\/api\/forms\/tn_custom\/native-submissions/u);
+    await submitButton.click();
+
+    expect((await submissionRequest).postData() ?? "").toContain(
+      "trustedFormCertUrl=https%3A%2F%2Fcert.trustedform.com%2F454a35b802f3e7b63ffabb4efedb7c6ebe67886c",
+    );
     await expect(page.getByRole("heading", { name: "Gracias." })).toBeVisible();
   });
 
@@ -269,11 +271,12 @@ test.describe("instant routed form UI", () => {
       phone_number: "+16155551234",
     });
     let submissionRequests = 0;
-    await page.route("**/api/forms/tn_custom/submissions", async (route) => {
+    await page.route("**/api/forms/tn_custom/native-submissions", async (route) => {
       submissionRequests += 1;
       await route.continue();
     });
     await page.goto("/tn/custom/consentimiento");
+    await continueTrustedFormReview(page);
 
     const submitButton = page.getByRole("button", { name: "Enviar" });
     await expect(submitButton).toBeEnabled();
@@ -332,6 +335,7 @@ test.describe("instant routed form UI", () => {
     }
 
     await expect(page).toHaveURL(/\/tn\/custom\/consentimiento$/u);
+    await continueTrustedFormReview(page);
     expect(partytownRequests).toBe(0);
     await expect.poll(() => trustedFormProxyRequests).toBeGreaterThan(0);
     expect(trustedFormDirectRequests).toBe(0);
@@ -357,15 +361,15 @@ test.describe("instant routed form UI", () => {
     });
     await page.goto("/tn/custom/consentimiento");
 
+    await page.getByRole("button", { name: "Continuar" }).click();
     await expect(page.getByRole("button", { name: "Enviar" })).toBeEnabled({ timeout: 7000 });
     await expect(page.getByRole("alertdialog")).toBeHidden();
 
     await activeStep(page).locator("[data-trusted-form-consent]").check();
-    const submissionRequest = page.waitForRequest(/\/api\/forms\/tn_custom\/submissions/u);
-    const submissionResponse = page.waitForResponse(/\/api\/forms\/tn_custom\/submissions/u);
+    const submissionRequest = page.waitForRequest(/\/api\/forms\/tn_custom\/native-submissions/u);
     await page.getByRole("button", { name: "Enviar" }).click();
-    expect(JSON.parse((await submissionRequest).postData() ?? "{}")).not.toHaveProperty("trustedFormCertUrl");
-    await expect((await submissionResponse).status()).toBe(201);
+    expect((await submissionRequest).postData() ?? "").not.toContain("trustedFormCertUrl=");
+    await expect(page.getByRole("heading", { name: "Gracias." })).toBeVisible();
   });
 
   test("key visual states remain stable", async ({ page }) => {
@@ -412,6 +416,13 @@ async function waitForTransitionAsset(page: Page, transitionAssetUrl: string): P
 
 async function clickActiveOption(page: Page, label: string): Promise<void> {
   await activeStep(page).locator("[data-option]", { hasText: label }).first().click();
+}
+
+async function continueTrustedFormReview(page: Page): Promise<void> {
+  await expect(page.getByText("Confirme su información")).toBeVisible();
+  await page.getByRole("button", { name: "Continuar" }).click();
+  await expect(activeStep(page).locator("[data-trusted-form-consent]")).toBeVisible({ timeout: 7000 });
+  await expect(page.getByRole("button", { name: "Enviar" })).toBeEnabled({ timeout: 7000 });
 }
 
 async function assertSpinnerOnlyLoadingButton(page: Page) {

@@ -4,6 +4,8 @@ import type {
   FormStep,
   InstantForm,
   InterstitialStep,
+  TrustedFormConfirmationField,
+  TrustedFormConsentFieldRole,
   TrustedFormConsentStep,
 } from "./types";
 
@@ -25,7 +27,7 @@ export function getStepDynamicResolverDependencies(stepDefinition: FormStep): re
   }
 
   if (stepDefinition.kind === "trusted_form_consent") {
-    return getDynamicResolverDependencies(stepDefinition.grantorSummary);
+    return getDynamicResolverDependencies(stepDefinition.confirmation.fields);
   }
 
   return [];
@@ -60,21 +62,27 @@ export function resolveStepDynamicValues(
   }
 
   if (stepDefinition.kind === "trusted_form_consent") {
-    const grantorSummary = resolveDynamicValue(
+    const confirmationFields = resolveDynamicValue(
       form,
-      stepDefinition.grantorSummary,
+      stepDefinition.confirmation.fields,
       answers,
       undefined,
       stepDefinition.key,
-      "grantorSummary",
+      "confirmation.fields",
     );
 
     return {
       ...stepDefinition,
-      grantorSummary: assertTrustedFormGrantorSummary(
-        grantorSummary,
-        `Resolver for step "${stepDefinition.key}" must return a grantor summary object.`,
-      ),
+      confirmation: {
+        ...stepDefinition.confirmation,
+        fields:
+          confirmationFields === undefined
+            ? stepDefinition.confirmation.fields
+            : assertTrustedFormConfirmationFields(
+                confirmationFields,
+                `Resolver for step "${stepDefinition.key}" must return at least one confirmation field.`,
+              ),
+      },
     } satisfies TrustedFormConsentStep;
   }
 
@@ -135,35 +143,48 @@ function assertStringArray(value: unknown, message: string): readonly string[] {
   return value;
 }
 
-function assertTrustedFormGrantorSummary(
-  value: unknown,
-  message: string,
-): { name?: string; phone?: string } | undefined {
-  if (value === undefined) {
-    return undefined;
+function assertTrustedFormConfirmationFields(value: unknown, message: string): readonly TrustedFormConfirmationField[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error(message);
   }
 
+  return value.map((field) => assertTrustedFormConfirmationField(field, message));
+}
+
+function assertTrustedFormConfirmationField(value: unknown, message: string): TrustedFormConfirmationField {
   if (!isRecord(value)) {
     throw new Error(message);
   }
 
-  const summary: { name?: string; phone?: string } = {};
-
-  if (value.name !== undefined) {
-    if (typeof value.name !== "string") {
-      throw new Error(message);
-    }
-    summary.name = value.name;
+  if (
+    typeof value.name !== "string" ||
+    typeof value.label !== "string" ||
+    typeof value.value !== "string"
+  ) {
+    throw new Error(message);
   }
 
-  if (value.phone !== undefined) {
-    if (typeof value.phone !== "string") {
-      throw new Error(message);
-    }
-    summary.phone = value.phone;
+  const trustedForm =
+    value.trustedForm === undefined
+      ? undefined
+      : isRecord(value.trustedForm) && isTrustedFormConsentFieldRole(value.trustedForm.role)
+        ? { role: value.trustedForm.role }
+        : undefined;
+
+  if (value.trustedForm !== undefined && !trustedForm) {
+    throw new Error(message);
   }
 
-  return summary;
+  return {
+    name: value.name,
+    label: value.label,
+    value: value.value,
+    ...(trustedForm ? { trustedForm } : {}),
+  };
+}
+
+function isTrustedFormConsentFieldRole(value: unknown): value is TrustedFormConsentFieldRole {
+  return value === "consent-grantor-name" || value === "consent-grantor-phone" || value === "consent-grantor-email";
 }
 
 function assertSafeResolvedOutput(value: unknown, path: string): void {

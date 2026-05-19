@@ -3,6 +3,7 @@ import {
   getStepSlug,
   getStepDynamicResolverDependencies,
   isCountedStep,
+  isDynamicResolver,
   isStepVisible,
   resolveStepDynamicValues,
   type AutocompleteStep,
@@ -11,8 +12,8 @@ import {
   type InterstitialStep,
   type PhoneStep,
   type TextStep,
+  type TrustedFormConfirmation,
   type TrustedFormConsentStep,
-  type TrustedFormGrantorSummary,
 } from "../../flow";
 import { createStateAutocompleteItems } from "../../steps/autocomplete/ranking";
 
@@ -62,12 +63,12 @@ export type ClientStep =
   | (ClientStepBase & {
       kind: "trusted_form_consent";
       type: TrustedFormConsentStep["type"];
+      confirmation: TrustedFormConfirmation;
       checkboxLabel: string;
       submitLabel: string;
       acceptedAnswer: TrustedFormConsentStep["acceptedAnswer"];
       validationMessage: string;
       trustedForm: TrustedFormConsentStep["trustedForm"];
-      grantorSummary?: TrustedFormGrantorSummary;
     });
 
 export type ClientFormConfig = {
@@ -228,19 +229,25 @@ function createClientStep(
     const resolvedTrustedFormStep = resolvedStepDefinition as TrustedFormConsentStep<
       string,
       undefined,
-      TrustedFormGrantorSummary | undefined
+      TrustedFormConfirmation["fields"]
     >;
 
     return {
       ...baseStep,
       kind: "trusted_form_consent",
       type: resolvedTrustedFormStep.type,
+      confirmation: {
+        label: resolvedTrustedFormStep.confirmation.label,
+        nextLabel: resolvedTrustedFormStep.confirmation.nextLabel,
+        fields: isDynamicResolver(resolvedTrustedFormStep.confirmation.fields)
+          ? []
+          : resolvedTrustedFormStep.confirmation.fields,
+      },
       checkboxLabel: resolvedTrustedFormStep.checkboxLabel,
       submitLabel: resolvedTrustedFormStep.submitLabel,
       acceptedAnswer: resolvedTrustedFormStep.acceptedAnswer,
       validationMessage: resolvedTrustedFormStep.validationMessage,
       trustedForm: resolvedTrustedFormStep.trustedForm,
-      ...(resolvedTrustedFormStep.grantorSummary ? { grantorSummary: resolvedTrustedFormStep.grantorSummary } : {}),
     };
   }
 

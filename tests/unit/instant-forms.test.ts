@@ -354,6 +354,15 @@ describe("form registry", () => {
           slug: "consentimiento",
           label: "Consentimiento",
           disclosure: "Texto de consentimiento.",
+          confirmation: {
+            fields: [
+              {
+                name: "review_first_name",
+                label: "Nombre",
+                value: "Ana",
+              },
+            ],
+          },
         }),
       ],
     });
@@ -421,6 +430,18 @@ describe("form registry", () => {
           slug: "consentimiento",
           label: "Consentimiento",
           disclosure: "Texto de consentimiento.",
+          confirmation: {
+            fields: [
+              {
+                name: "trusted_form_grantor_phone",
+                label: "Teléfono",
+                value: "+16155551234",
+                trustedForm: {
+                  role: "consent-grantor-phone",
+                },
+              },
+            ],
+          },
           trustedForm: {
             delivery: "main_thread",
             scriptProxyKey: "tfc",
@@ -1057,10 +1078,26 @@ describe("form registry", () => {
           slug: "consentimiento",
           label: "Consentimiento",
           disclosure: "Texto de consentimiento.",
-          grantorSummary: resolve(["first_name", "last_name", "phone_number"], ({ answers }) => ({
-            name: text(answers.first_name, " ", answers.last_name),
-            phone: text(answers.phone_number),
-          })),
+          confirmation: {
+            fields: resolve(["first_name", "last_name", "phone_number"], ({ answers }) => [
+              {
+                name: "trusted_form_grantor_name",
+                label: "Nombre",
+                value: text(answers.first_name, " ", answers.last_name),
+                trustedForm: {
+                  role: "consent-grantor-name",
+                },
+              },
+              {
+                name: "trusted_form_grantor_phone",
+                label: "Teléfono",
+                value: text(answers.phone_number),
+                trustedForm: {
+                  role: "consent-grantor-phone",
+                },
+              },
+            ]),
+          },
         }),
       ],
     });
@@ -1073,9 +1110,25 @@ describe("form registry", () => {
 
     expect(resolvedConsentStep).toMatchObject({
       kind: "trusted_form_consent",
-      grantorSummary: {
-        name: "Ana Lopez",
-        phone: "+16155551234",
+      confirmation: {
+        fields: [
+          {
+            name: "trusted_form_grantor_name",
+            label: "Nombre",
+            value: "Ana Lopez",
+            trustedForm: {
+              role: "consent-grantor-name",
+            },
+          },
+          {
+            name: "trusted_form_grantor_phone",
+            label: "Teléfono",
+            value: "+16155551234",
+            trustedForm: {
+              role: "consent-grantor-phone",
+            },
+          },
+        ],
       },
     });
 
@@ -1913,6 +1966,53 @@ describe("server routing", () => {
     }
   });
 
+  it("proxies TrustedForm event requests through an allowlisted first-party route", async () => {
+    const originalFetch = globalThis.fetch;
+    const handler = createFetchHandler();
+    let fetchedUrl = "";
+    let fetchedHeaders: Headers | undefined;
+
+    globalThis.fetch = ((input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+      fetchedUrl = input instanceof Request ? input.url : String(input);
+      fetchedHeaders = new Headers(init?.headers);
+
+      return Promise.resolve(
+        new Response("ok", {
+          headers: { "Content-Type": "text/plain" },
+        }),
+      );
+    }) as typeof fetch;
+
+    try {
+      const target = encodeURIComponent("https://events.trustedform.com/v1/beacon?event=submitted");
+      const response = await handler(
+        new Request(`http://localhost/_instant/trustedform/proxy?u=${target}`, {
+          headers: {
+            Accept: "text/plain",
+            Cookie: "private=value",
+          },
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe("ok");
+      expect(fetchedUrl).toBe("https://events.trustedform.com/v1/beacon?event=submitted");
+      expect(fetchedHeaders?.get("Accept")).toBe("text/plain");
+      expect(fetchedHeaders?.get("Cookie")).toBeNull();
+
+      const rejectedResponse = await handler(
+        new Request(
+          `http://localhost/_instant/trustedform/proxy?u=${encodeURIComponent(
+            "https://static.cloudflareinsights.com/beacon.min.js",
+          )}`,
+        ),
+      );
+      expect(rejectedResponse.status).toBe(400);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it("routes nested selected-script proxy URLs through their script key", async () => {
     const app = new Hono();
     registerScriptRoutes(app, getBunFetchSelectedScriptRegistry());
@@ -2306,10 +2406,66 @@ describe("server routing", () => {
         url: "/tn/custom/consentimiento",
         config: {
           kind: "trusted_form_consent",
-          dynamicResolverDependencies: ["first_name", "last_name", "phone_number", "residence_state"],
-          grantorSummary: {
-            name: "Ana Lopez TN",
-            phone: "(615) 555-1234",
+          dynamicResolverDependencies: [
+            "belongs_to_state",
+            "residence_state",
+            "has_license",
+            "has_insurance",
+            "is_clean_title",
+            "number_of_registered_cars",
+            "first_name",
+            "last_name",
+            "phone_number",
+          ],
+          confirmation: {
+            fields: [
+              {
+                name: "review_belongs_to_state",
+                label: "Vive en Tennessee",
+                value: "Sí",
+              },
+              {
+                name: "review_residence_state",
+                label: "Estado",
+                value: "Tennessee",
+              },
+              {
+                name: "review_has_license",
+                label: "Licencia de EE. UU.",
+                value: "Sí",
+              },
+              {
+                name: "review_has_insurance",
+                label: "Seguro actual",
+                value: "No",
+              },
+              {
+                name: "review_is_clean_title",
+                label: "Título limpio",
+                value: "Sí",
+              },
+              {
+                name: "review_number_of_registered_cars",
+                label: "Autos a asegurar",
+                value: "1",
+              },
+              {
+                name: "trusted_form_grantor_name",
+                label: "Nombre completo",
+                value: "Ana Lopez",
+                trustedForm: {
+                  role: "consent-grantor-name",
+                },
+              },
+              {
+                name: "trusted_form_grantor_phone",
+                label: "Teléfono",
+                value: "(615) 555-1234",
+                trustedForm: {
+                  role: "consent-grantor-phone",
+                },
+              },
+            ],
           },
         },
       },
@@ -2339,10 +2495,66 @@ describe("server routing", () => {
         url: "/tn/custom/consentimiento",
         config: {
           kind: "trusted_form_consent",
-          dynamicResolverDependencies: ["first_name", "last_name", "phone_number", "residence_state"],
-          grantorSummary: {
-            name: "Ana Lopez TN",
-            phone: "(615) 555-1234",
+          dynamicResolverDependencies: [
+            "belongs_to_state",
+            "residence_state",
+            "has_license",
+            "has_insurance",
+            "is_clean_title",
+            "number_of_registered_cars",
+            "first_name",
+            "last_name",
+            "phone_number",
+          ],
+          confirmation: {
+            fields: [
+              {
+                name: "review_belongs_to_state",
+                label: "Vive en Tennessee",
+                value: "Sí",
+              },
+              {
+                name: "review_residence_state",
+                label: "Estado",
+                value: "Tennessee",
+              },
+              {
+                name: "review_has_license",
+                label: "Licencia de EE. UU.",
+                value: "Sí",
+              },
+              {
+                name: "review_has_insurance",
+                label: "Seguro actual",
+                value: "No",
+              },
+              {
+                name: "review_is_clean_title",
+                label: "Título limpio",
+                value: "Sí",
+              },
+              {
+                name: "review_number_of_registered_cars",
+                label: "Autos a asegurar",
+                value: "1",
+              },
+              {
+                name: "trusted_form_grantor_name",
+                label: "Nombre completo",
+                value: "Ana Lopez",
+                trustedForm: {
+                  role: "consent-grantor-name",
+                },
+              },
+              {
+                name: "trusted_form_grantor_phone",
+                label: "Teléfono",
+                value: "(615) 555-1234",
+                trustedForm: {
+                  role: "consent-grantor-phone",
+                },
+              },
+            ],
           },
         },
       },
@@ -2515,6 +2727,43 @@ describe("server routing", () => {
     expect(setCookie).toContain(`${getCheckpointCookieName(routeKey)}=`);
     expect(setCookie).toContain("Max-Age=0");
   });
+
+  it("accepts native TrustedForm form submissions and returns thank-you HTML", async () => {
+    const logs: unknown[] = [];
+    const handler = createFetchHandler({ logger: (payload) => logs.push(payload) });
+    const body = new URLSearchParams();
+    Object.entries(validAnswers).forEach(([key, value]) => {
+      body.set(`answers[${key}]`, value);
+    });
+    body.set("trustedFormCertUrl", trustedFormCertUrl);
+    body.set("xxTrustedFormCertUrl", trustedFormCertUrl);
+
+    const response = await handler(
+      new Request("http://localhost/api/forms/tn_custom/native-submissions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: createCheckpointCookie(validAnswers),
+        },
+        body,
+      }),
+    );
+    const html = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toBe("text/html; charset=utf-8");
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(response.headers.get("Set-Cookie")).toContain("Max-Age=0");
+    expect(html).toContain("Gracias.");
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toMatchObject({
+      routeKey: "tn_custom",
+      trustedFormCertUrl,
+      answers: {
+        phone_number: "+16155551234",
+      },
+    });
+  });
 });
 
 describe("form rendering", () => {
@@ -2583,7 +2832,20 @@ describe("form rendering", () => {
     const transitionSteps = transitionAsset.asset.steps as readonly { key: string; config: Record<string, unknown> }[];
     expect(transitionSteps.find((stepDefinition) => stepDefinition.key === "trustedform_consent")?.config).toMatchObject({
       kind: "trusted_form_consent",
-      dynamicResolverDependencies: ["first_name", "last_name", "phone_number", "residence_state"],
+      dynamicResolverDependencies: [
+        "belongs_to_state",
+        "residence_state",
+        "has_license",
+        "has_insurance",
+        "is_clean_title",
+        "number_of_registered_cars",
+        "first_name",
+        "last_name",
+        "phone_number",
+      ],
+      confirmation: {
+        fields: [],
+      },
     });
     expect(transitionSteps.find((stepDefinition) => stepDefinition.key === "trustedform_consent")?.config).not.toHaveProperty(
       "grantorSummary",
@@ -2901,11 +3163,25 @@ describe("form rendering", () => {
     expect(html).toContain('"partytownLib":"/~partytown/"');
     expect(html).toContain('"partytownScriptUrl":"/~partytown/partytown.js"');
     expect(html).toContain('"allowSubmitWithoutCert":true');
-    expect(html).toContain('"dynamicResolverDependencies":["first_name","last_name","phone_number","residence_state"]');
-    expect(html).toContain('"grantorSummary":{"name":"Ana Lopez TN","phone":"(615) 555-1234"}');
+    expect(html).toContain(
+      '"dynamicResolverDependencies":["belongs_to_state","residence_state","has_license","has_insurance","is_clean_title","number_of_registered_cars","first_name","last_name","phone_number"]',
+    );
+    expect(html).toContain('"confirmation":{"label":"Confirme su información","nextLabel":"Continuar","fields":[{"name":"review_belongs_to_state"');
+    expect(html).toContain('"name":"trusted_form_grantor_name","label":"Nombre completo","value":"Ana Lopez","trustedForm":{"role":"consent-grantor-name"}');
+    expect(html).not.toContain('"grantorSummary"');
     expect(html).not.toContain('"nameKeys"');
     expect(html).not.toContain('"phoneKey"');
     expect(html).toContain('data-step="10" data-step-kind="trusted_form_consent"');
+    expect(html).toContain('method="post" action="/api/forms/tn_custom/native-submissions"');
+    expect(html).toContain('data-trusted-form-substep="review" aria-hidden="false"');
+    expect(html).toContain('data-trusted-form-substep="consent" aria-hidden="true"');
+    expect(html).toContain('data-trusted-form-field-bank');
+    expect(html).toContain('name="trusted_form_grantor_name"');
+    expect(html).toContain('name="trusted_form_grantor_phone"');
+    expect(html).toContain('name="review_belongs_to_state"');
+    expect(html).toContain('Vive en Tennessee');
+    expect(html).toContain("Confirme su información");
+    expect(html).toContain("Continuar");
     expect(html).toContain('data-tf-element-role="consent-language"');
     expect(html).toContain('data-tf-element-role="consent-opt-in"');
     expect(html).toContain('data-tf-element-role="consent-grantor-name"');
@@ -2941,7 +3217,10 @@ describe("form rendering", () => {
     expect(html).not.toContain("@media (prefers-reduced-motion: reduce)");
     expect(html).toContain("No pudimos preparar el certificado de consentimiento");
     expect(html).toContain("trustedFormCertUrl");
-    expect(html).toContain('document.getElementById("next-button")?.setAttribute("data-tf-element-role", "submit")');
+    expect(html).toContain('tfRole: "submit"');
+    expect(html).toContain('form.addEventListener("submit"');
+    expect(html).toContain('function installTrustedFormRequestProxyShim()');
+    expect(html).toContain('"/_instant/trustedform/proxy?u="');
     expect(html).toContain('ctx.form.setAttribute("data-tf-element-role", "offer")');
     expect(html).toContain("/_instant/scripts/trustedform.com/tfc.js");
     expect(html).not.toContain("https://api.trustedform.com/trustedform.js");

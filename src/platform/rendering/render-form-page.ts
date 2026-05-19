@@ -13,6 +13,7 @@ import type {
   InstantForm,
   InterstitialStep,
   PhoneStep,
+  TrustedFormConfirmationField,
   TextStep,
   TrustedFormConsentStep,
 } from "../flow";
@@ -57,6 +58,16 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
   const routeKey = options.routeKey ?? "preview";
   const displayAreaCode = getDisplayAreaCode(form, routeKey);
   const initialStepCountAriaHidden = activeStep && !isCountedStep(activeStep) ? ' aria-hidden="true"' : "";
+  const usesNativeTrustedFormSubmit = activeStep?.kind === "trusted_form_consent";
+  const initialNextButtonLabel =
+    activeStep?.kind === "trusted_form_consent"
+      ? activeStep.confirmation.nextLabel
+      : activeStepIndex === lastStepIndex
+        ? "Enviar"
+        : "Siguiente";
+  const formAttributes = usesNativeTrustedFormSubmit
+    ? ` method="post" action="/api/forms/${escapeHtml(routeKey)}/native-submissions" enctype="application/x-www-form-urlencoded" data-tf-element-role="offer"`
+    : " novalidate";
   const clientConfig = createClientFormConfig(
     form,
     activeStepIndex,
@@ -510,6 +521,67 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         gap: 14px;
       }
 
+      .trusted-form-panels {
+        display: grid;
+        gap: 20px;
+      }
+
+      .trusted-form-panel[aria-hidden="true"] {
+        display: none;
+      }
+
+      .trusted-form-review {
+        display: grid;
+        gap: 16px;
+      }
+
+      .trusted-form-review-title {
+        margin: 0;
+        color: var(--brand-navy);
+        font-size: 1.15rem;
+        font-weight: 800;
+        line-height: 1.25;
+      }
+
+      .trusted-form-review-list {
+        display: grid;
+        gap: 10px;
+        margin: 0;
+      }
+
+      .trusted-form-review-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 14px;
+        align-items: baseline;
+        border-bottom: 1px solid var(--border);
+        padding: 0 0 10px;
+      }
+
+      .trusted-form-review-label {
+        color: var(--muted);
+        font-size: 0.95rem;
+        font-weight: 700;
+      }
+
+      .trusted-form-review-value {
+        max-width: 100%;
+        color: var(--text);
+        font-weight: 800;
+        text-align: right;
+        word-break: break-word;
+      }
+
+      .trusted-form-field-bank {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        clip-path: inset(50%);
+        white-space: nowrap;
+      }
+
       .consent-summary {
         margin: 0;
         color: var(--muted);
@@ -837,7 +909,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
   </head>
   <body>
     <main class="shell">
-      <form class="form-panel" id="lead-form" novalidate>
+      <form class="form-panel" id="lead-form"${formAttributes}>
         <header class="brand">
           <div class="brand-identity">
             <img class="brand-logo" src="/assets/logo.webp" alt="${escapeHtml(form.page.name)}" width="220" height="63">
@@ -854,12 +926,12 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
           </div>
         </div>
         <section id="steps">
-          ${activeStep ? renderQuestion(activeStep, activeStepIndex, activeStepIndex, initialAnswers) : ""}
+          ${activeStep ? renderQuestion(activeStep, activeStepIndex, activeStepIndex, initialAnswers, form) : ""}
         </section>
         <footer>
           <div class="actions">
             <button class="button button-secondary" id="back-button" name="back" type="button">Atrás</button>
-            <button class="button button-primary" id="next-button" name="next" type="button">Siguiente</button>
+            <button class="button button-primary" id="next-button" name="next" type="button">${escapeHtml(initialNextButtonLabel)}</button>
           </div>
         </footer>
       </form>
@@ -1020,7 +1092,16 @@ function getDisplayAreaCode(form: InstantForm, routeKey: string): string {
   return form.customVariables.areaCode || routeKey;
 }
 
-type StepTemplateRenderer<TStep extends FormStep> = (stepDefinition: TStep, answers: Record<string, string>) => string;
+type StepTemplateContext = {
+  form?: InstantForm;
+  index: number;
+};
+
+type StepTemplateRenderer<TStep extends FormStep> = (
+  stepDefinition: TStep,
+  answers: Record<string, string>,
+  context: StepTemplateContext,
+) => string;
 
 const stepTemplateRegistry = {
   choice: renderOptions,
@@ -1037,7 +1118,7 @@ export function renderTransitionStepHtml(
   answers: Record<string, string> = {},
   form?: InstantForm,
 ): string {
-  return renderQuestion(form ? resolveStepDynamicValues(form, stepDefinition, answers) : stepDefinition, index, index, answers);
+  return renderQuestion(form ? resolveStepDynamicValues(form, stepDefinition, answers) : stepDefinition, index, index, answers, form);
 }
 
 function renderQuestion(
@@ -1045,6 +1126,7 @@ function renderQuestion(
   index: number,
   activeStepIndex: number,
   answers: Record<string, string>,
+  form?: InstantForm,
 ): string {
   const isCurrent = index === activeStepIndex;
   const countsAsStep = isCountedStep(stepDefinition);
@@ -1052,7 +1134,7 @@ function renderQuestion(
 
   return `<article class="step" data-step="${index}" data-step-kind="${escapeHtml(stepDefinition.kind)}" data-step-counted="${String(countsAsStep)}" aria-hidden="${String(!isCurrent)}">
     <h1 class="question-title">${escapeHtml(stepDefinition.label)}</h1>
-    ${renderTemplate(stepDefinition, answers)}
+    ${renderTemplate(stepDefinition, answers, { form, index })}
   </article>`;
 }
 
@@ -1106,55 +1188,142 @@ function renderPhoneInput(stepDefinition: PhoneStep, answers: Record<string, str
   return renderBaseTextInput(stepDefinition, answers, "tel");
 }
 
-function renderTrustedFormConsent(stepDefinition: TrustedFormConsentStep, answers: Record<string, string>): string {
+function renderTrustedFormConsent(
+  stepDefinition: TrustedFormConsentStep,
+  answers: Record<string, string>,
+  _context: StepTemplateContext,
+): string {
   const checked = answers[stepDefinition.key] === stepDefinition.acceptedAnswer ? " checked" : "";
-  const grantorSummary = renderTrustedFormGrantorSummary(stepDefinition, answers);
 
-  return `<div class="consent-card">
-    ${grantorSummary}
-    <label class="consent-check" data-tf-element-role="consent-language">
-      <input
-        class="consent-checkbox"
-        type="checkbox"
-        name="${escapeHtml(stepDefinition.key)}"
-        value="${escapeHtml(stepDefinition.acceptedAnswer)}"
-        data-trusted-form-consent="true"
-        data-tf-element-role="consent-opt-in"
-        ${checked}
-      >
-      <span class="consent-copy">
-        <span>${escapeHtml(stepDefinition.disclosure)}</span>
-        <span class="consent-acceptance">${escapeHtml(stepDefinition.checkboxLabel)}</span>
-      </span>
-    </label>
+  return `${renderTrustedFormFieldBank(stepDefinition)}
+  <div class="trusted-form-panels" data-trusted-form-substeps data-trusted-form-active-substep="review">
+    <div class="trusted-form-panel trusted-form-review" data-trusted-form-substep="review" aria-hidden="false">
+      <p class="trusted-form-review-title">${escapeHtml(stepDefinition.confirmation.label)}</p>
+      ${renderTrustedFormReviewList(stepDefinition)}
+    </div>
+    <div class="trusted-form-panel" data-trusted-form-substep="consent" aria-hidden="true">
+      <div class="consent-card">
+        ${renderTrustedFormGrantorSummary(stepDefinition)}
+        <label class="consent-check" data-tf-element-role="consent-language">
+          <input
+            class="consent-checkbox"
+            type="checkbox"
+            name="${escapeHtml(stepDefinition.key)}"
+            value="${escapeHtml(stepDefinition.acceptedAnswer)}"
+            data-trusted-form-consent="true"
+            data-tf-element-role="consent-opt-in"
+            ${checked}
+          >
+          <span class="consent-copy">
+            <span>${escapeHtml(stepDefinition.disclosure)}</span>
+            <span class="consent-acceptance">${escapeHtml(stepDefinition.checkboxLabel)}</span>
+          </span>
+        </label>
+      </div>
+    </div>
   </div>`;
 }
 
-function renderTrustedFormGrantorSummary(
-  stepDefinition: TrustedFormConsentStep,
-  answers: Record<string, string>,
-): string {
-  const summary = stepDefinition.grantorSummary;
-  if (!summary || isDynamicResolver(summary)) {
+function renderTrustedFormFieldBank(stepDefinition: TrustedFormConsentStep): string {
+  const fields = stepDefinition.confirmation.fields;
+  if (isDynamicResolver(fields) || fields.length === 0) {
     return "";
   }
 
-  const name = summary.name?.trim() ?? "";
-  const phone = summary.phone?.trim() ?? "";
+  return `<div class="trusted-form-field-bank" data-trusted-form-field-bank aria-hidden="true">
+    ${fields.map(renderTrustedFormConsentInput).join("")}
+  </div>`;
+}
 
-  if (!name && !phone) {
+function renderTrustedFormConsentInput(field: TrustedFormConfirmationField): string {
+  const role = field.trustedForm?.role;
+  const inputType =
+    role === "consent-grantor-email" ? "email" : role === "consent-grantor-phone" ? "tel" : "text";
+  const trustedFormAttribute = role ? ` data-tf-element-role="${escapeHtml(role)}"` : "";
+
+  return `<label>
+      <span>${escapeHtml(field.label)}</span>
+      <input
+        type="${inputType}"
+        name="${escapeHtml(field.name)}"
+        value="${escapeHtml(field.value)}"
+        ${trustedFormAttribute}
+        readonly
+      >
+    </label>`;
+}
+
+function renderTrustedFormGrantorSummary(stepDefinition: TrustedFormConsentStep): string {
+  const taggedFields = getTaggedTrustedFormConfirmationFields(stepDefinition);
+  if (taggedFields.length === 0) {
     return "";
   }
 
-  const nameText = name
-    ? `<span data-tf-element-role="consent-grantor-name">${escapeHtml(name)}</span>`
-    : "";
-  const phoneText = phone
-    ? `<span data-tf-element-role="consent-grantor-phone">${escapeHtml(phone)}</span>`
-    : "";
-  const separator = nameText && phoneText ? " · " : "";
+  const fieldText = taggedFields
+    .map(
+      (field) =>
+        `<span data-tf-element-role="${escapeHtml(field.trustedForm.role)}">${escapeHtml(getConsentFieldDisplayValue(field))}</span>`,
+    )
+    .join(" · ");
 
-  return `<p class="consent-summary" data-consent-summary="true">${nameText}${separator}${phoneText}</p>`;
+  return `<p class="consent-summary" data-consent-summary="true">${fieldText}</p>`;
+}
+
+function renderTrustedFormReviewList(stepDefinition: TrustedFormConsentStep): string {
+  const fields = stepDefinition.confirmation.fields;
+  const reviewItems = isDynamicResolver(fields)
+    ? []
+    : fields.map((field) => ({ label: field.label, value: getConsentFieldDisplayValue(field) }));
+
+  if (reviewItems.length === 0) {
+    return "";
+  }
+
+  return `<dl class="trusted-form-review-list">
+    ${reviewItems
+      .map(
+        (item) => `<div class="trusted-form-review-row">
+      <dt class="trusted-form-review-label">${escapeHtml(item.label)}</dt>
+      <dd class="trusted-form-review-value">${escapeHtml(item.value)}</dd>
+    </div>`,
+      )
+      .join("")}
+  </dl>`;
+}
+
+function getTaggedTrustedFormConfirmationFields(stepDefinition: TrustedFormConsentStep): Array<
+  TrustedFormConfirmationField & { trustedForm: NonNullable<TrustedFormConfirmationField["trustedForm"]> }
+> {
+  const fields = stepDefinition.confirmation.fields;
+  if (isDynamicResolver(fields)) {
+    return [];
+  }
+
+  return fields.filter(
+    (field): field is TrustedFormConfirmationField & { trustedForm: NonNullable<TrustedFormConfirmationField["trustedForm"]> } =>
+      Boolean(field.trustedForm),
+  );
+}
+
+function getConsentFieldDisplayValue(field: TrustedFormConfirmationField): string {
+  const value = field.value.trim();
+  return field.trustedForm?.role === "consent-grantor-phone" ? formatPhoneForDisplay(value) : value;
+}
+
+function formatPhoneForDisplay(value: string): string {
+  const digitsOnly = value.replace(/\D/g, "");
+  const nationalDigits = digitsOnly.startsWith("1") && digitsOnly.length > 10 ? digitsOnly.slice(1, 11) : digitsOnly.slice(0, 10);
+  if (nationalDigits.length === 0) {
+    return value;
+  }
+  if (nationalDigits.length <= 3) {
+    return `(${nationalDigits}`;
+  }
+  if (nationalDigits.length <= 6) {
+    return `(${nationalDigits.slice(0, 3)}) ${nationalDigits.slice(3)}`;
+  }
+
+  return `(${nationalDigits.slice(0, 3)}) ${nationalDigits.slice(3, 6)}-${nationalDigits.slice(6, 10)}`;
 }
 
 function renderBaseTextInput(

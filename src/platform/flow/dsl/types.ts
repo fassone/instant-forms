@@ -163,34 +163,69 @@ export type TrustedFormConsentConfig = {
   allowSubmitWithoutCert: boolean;
 };
 
-export type TrustedFormGrantorSummary = {
-  name?: string;
-  phone?: string;
+export type TrustedFormConsentFieldRole =
+  | "consent-grantor-name"
+  | "consent-grantor-phone"
+  | "consent-grantor-email";
+
+export type TrustedFormConsentFieldTag = {
+  role: TrustedFormConsentFieldRole;
 };
 
-export type ResolverTrustedFormGrantorSummary = {
-  name?: TextValue;
-  phone?: TextValue;
+export type TrustedFormConfirmationField = {
+  name: string;
+  label: string;
+  value: string;
+  trustedForm?: TrustedFormConsentFieldTag;
+};
+
+export type ResolverTrustedFormConfirmationField = {
+  name: string;
+  label: string;
+  value: TextValue;
+  trustedForm?: TrustedFormConsentFieldTag;
+};
+
+export type TrustedFormConfirmation<
+  TFields extends
+    | readonly TrustedFormConfirmationField[]
+    | ResolvableValue<readonly TrustedFormConfirmationField[], readonly ResolverTrustedFormConfirmationField[]> =
+    | readonly TrustedFormConfirmationField[]
+    | ResolvableValue<readonly TrustedFormConfirmationField[], readonly ResolverTrustedFormConfirmationField[]>,
+> = {
+  label: string;
+  nextLabel: string;
+  fields: TFields;
+};
+
+export type TrustedFormConfirmationInput<
+  TFields extends ResolvableValue<
+    readonly TrustedFormConfirmationField[],
+    readonly ResolverTrustedFormConfirmationField[]
+  > = ResolvableValue<readonly TrustedFormConfirmationField[], readonly ResolverTrustedFormConfirmationField[]>,
+> = {
+  label?: string;
+  nextLabel?: string;
+  fields: TFields;
 };
 
 export type TrustedFormConsentStep<
   TKey extends string = string,
   TShowWhen extends StepCondition | undefined = StepCondition | undefined,
-  TGrantorSummary extends
-    | ResolvableValue<TrustedFormGrantorSummary, ResolverTrustedFormGrantorSummary>
-    | undefined =
-    | ResolvableValue<TrustedFormGrantorSummary, ResolverTrustedFormGrantorSummary>
-    | undefined,
+  TConfirmationFields extends ResolvableValue<
+    readonly TrustedFormConfirmationField[],
+    readonly ResolverTrustedFormConfirmationField[]
+  > = ResolvableValue<readonly TrustedFormConfirmationField[], readonly ResolverTrustedFormConfirmationField[]>,
 > = BaseStep<TKey, TShowWhen> & {
   kind: "trusted_form_consent";
   type: "TRUSTED_FORM_CONSENT";
+  confirmation: TrustedFormConfirmation<TConfirmationFields>;
   disclosure: string;
   checkboxLabel: string;
   submitLabel: string;
   acceptedAnswer: "accepted";
   validationMessage: string;
   trustedForm: TrustedFormConsentConfig;
-  grantorSummary?: TGrantorSummary;
 };
 
 export type FormStep<TKey extends string = string> =
@@ -202,7 +237,7 @@ export type FormStep<TKey extends string = string> =
   | TrustedFormConsentStep<
       TKey,
       StepCondition | undefined,
-      ResolvableValue<TrustedFormGrantorSummary, ResolverTrustedFormGrantorSummary> | undefined
+      ResolvableValue<readonly TrustedFormConfirmationField[], readonly ResolverTrustedFormConfirmationField[]>
     >;
 
 export type AnswerStep<TKey extends string = string> =
@@ -313,19 +348,18 @@ export type InterstitialStepInput<
 export type TrustedFormConsentStepInput<
   TKey extends string = string,
   TShowWhen extends StepCondition | undefined = StepCondition | undefined,
-  TGrantorSummary extends
-    | ResolvableValue<TrustedFormGrantorSummary, ResolverTrustedFormGrantorSummary>
-    | undefined =
-    | ResolvableValue<TrustedFormGrantorSummary, ResolverTrustedFormGrantorSummary>
-    | undefined,
+  TConfirmationFields extends ResolvableValue<
+    readonly TrustedFormConfirmationField[],
+    readonly ResolverTrustedFormConfirmationField[]
+  > = ResolvableValue<readonly TrustedFormConfirmationField[], readonly ResolverTrustedFormConfirmationField[]>,
 > = BaseStepInput<TKey, TShowWhen> & {
+  confirmation: TrustedFormConfirmationInput<TConfirmationFields>;
   disclosure: string;
   checkboxLabel?: string;
   submitLabel?: string;
   acceptedAnswer?: "accepted";
   validationMessage?: string;
   trustedForm?: Partial<TrustedFormConsentConfig>;
-  grantorSummary?: TGrantorSummary;
 };
 
 export type AnswerStepKey<TStep extends FormStep> = TStep extends AnswerStep ? TStep["key"] : never;
@@ -387,8 +421,8 @@ export type StepDynamicResolverDependencyKey<TStep> = TStep extends Interstitial
   infer TBenefits
 >
   ? DynamicResolverDependencyKey<TBenefits>
-  : TStep extends TrustedFormConsentStep<string, StepCondition | undefined, infer TGrantorSummary>
-    ? DynamicResolverDependencyKey<NonNullable<TGrantorSummary>>
+  : TStep extends TrustedFormConsentStep<string, StepCondition | undefined, infer TConfirmationFields>
+    ? DynamicResolverDependencyKey<TConfirmationFields>
     : never;
 export type UnknownDynamicResolverDependencyKeys<
   TContract extends FormContract,
