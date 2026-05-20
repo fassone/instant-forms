@@ -2,6 +2,7 @@ import { US_STATES } from "../../../shared/data/us-states";
 import {
   getStepSlug,
   getStepDynamicResolverDependencies,
+  getOptionalStepDynamicResolverDependencies,
   isCountedStep,
   isDynamicResolver,
   isStepVisible,
@@ -30,6 +31,19 @@ type ClientStepBase = {
   behavior: FormStep["behavior"];
   showWhen?: ClientStepCondition;
   dynamicResolverDependencies?: readonly string[];
+  optionalDynamicResolverDependencies?: readonly string[];
+};
+
+type ClientTrustedFormPreloadResource = {
+  url: string;
+  as: "script";
+};
+
+export type ClientTrustedFormPreloadAsset = {
+  stepKey: string;
+  stepUrl: string;
+  preloadAssets: TrustedFormConsentStep["trustedForm"]["preloadAssets"];
+  resources: readonly ClientTrustedFormPreloadResource[];
 };
 
 export type ClientStep =
@@ -89,6 +103,7 @@ export type ClientFormConfig = {
   autocompleteSources?: {
     usStates: ReturnType<typeof createStateAutocompleteItems>;
   };
+  trustedFormPreloadAssets?: readonly ClientTrustedFormPreloadAsset[];
   transitionAssetUrl?: string;
 };
 
@@ -114,6 +129,14 @@ export function createClientFormConfig(
   const countedStepNumber = Math.max(countedStepIndexes.filter((index) => index <= activeStepIndex).length, 1);
   const stepUrlsBySlug = Object.fromEntries(
     form.steps.map((stepDefinition) => [getStepSlug(stepDefinition), getClientStepUrl(stepDefinition)]),
+  );
+  const trustedFormPreloadAssets = createClientTrustedFormPreloadAssets(
+    form,
+    activeStepIndex,
+    initialAnswers,
+    previewMode,
+    getClientStepUrl,
+    visibleStepIndexes,
   );
   const currentStep = createClientStep(
     currentStepDefinition,
@@ -143,6 +166,7 @@ export function createClientFormConfig(
           },
         }
       : {}),
+    ...(trustedFormPreloadAssets.length > 0 ? { trustedFormPreloadAssets } : {}),
     ...(options.transitionAssetUrl ? { transitionAssetUrl: options.transitionAssetUrl } : {}),
   };
 }
@@ -176,7 +200,7 @@ function createClientStep(
     countsAsStep: isCountedStep(stepDefinition),
     behavior: stepDefinition.behavior,
     showWhen: stepDefinition.showWhen,
-    ...getDynamicResolverDependencyConfig(stepDefinition),
+    ...getDynamicResolverDependencyConfig(form, stepDefinition),
   };
   const resolvedStepDefinition = resolveStepDynamicValues(form, stepDefinition, answers);
 
@@ -237,7 +261,7 @@ function createClientStep(
       kind: "trusted_form_consent",
       type: resolvedTrustedFormStep.type,
       confirmation: {
-        label: resolvedTrustedFormStep.confirmation.label,
+        ...(resolvedTrustedFormStep.confirmation.label ? { label: resolvedTrustedFormStep.confirmation.label } : {}),
         nextLabel: resolvedTrustedFormStep.confirmation.nextLabel,
         fields: isDynamicResolver(resolvedTrustedFormStep.confirmation.fields)
           ? []
@@ -258,11 +282,136 @@ function createClientStep(
   };
 }
 
-function getDynamicResolverDependencyConfig(stepDefinition: FormStep): Pick<ClientStepBase, "dynamicResolverDependencies"> {
+function getDynamicResolverDependencyConfig(
+  form: InstantForm,
+  stepDefinition: FormStep,
+): Pick<ClientStepBase, "dynamicResolverDependencies" | "optionalDynamicResolverDependencies"> {
   const dependencies = getStepDynamicResolverDependencies(stepDefinition);
+  const optionalDependencies = getOptionalStepDynamicResolverDependencies(form.contract, stepDefinition);
 
-  return dependencies.length > 0 ? { dynamicResolverDependencies: dependencies } : {};
+  return dependencies.length > 0
+    ? {
+        dynamicResolverDependencies: dependencies,
+        ...(optionalDependencies.length > 0 ? { optionalDynamicResolverDependencies: optionalDependencies } : {}),
+      }
+    : {};
 }
+
+function createClientTrustedFormPreloadAssets(
+  form: InstantForm,
+  activeStepIndex: number,
+  answers: Record<string, string>,
+  previewMode: boolean,
+  getClientStepUrl: (stepDefinition: FormStep) => string,
+  visibleStepIndexes = getVisibleStepIndexes(form, answers, previewMode),
+): readonly ClientTrustedFormPreloadAsset[] {
+  if (previewMode) {
+    return [];
+  }
+
+  return form.steps.flatMap((stepDefinition, stepIndex) => {
+    if (stepDefinition.kind !== "trusted_form_consent" || stepDefinition.trustedForm.preloadAssets === "never") {
+      return [];
+    }
+
+    if (!shouldIncludeTrustedFormPreloadAsset(stepDefinition, stepIndex, activeStepIndex, visibleStepIndexes)) {
+      return [];
+    }
+
+    const resources = getTrustedFormPreloadResources(stepDefinition.trustedForm);
+    return resources.length > 0
+      ? [
+          {
+            stepKey: stepDefinition.key,
+            stepUrl: getClientStepUrl(stepDefinition),
+            preloadAssets: stepDefinition.trustedForm.preloadAssets,
+            resources,
+          },
+        ]
+      : [];
+  });
+}
+
+function shouldIncludeTrustedFormPreloadAsset(
+  stepDefinition: TrustedFormConsentStep,
+  stepIndex: number,
+  activeStepIndex: number,
+  visibleStepIndexes: readonly number[],
+): boolean {
+  if (!visibleStepIndexes.includes(stepIndex)) {
+    return false;
+  }
+
+  if (stepDefinition.trustedForm.preloadAssets === "previous_step") {
+    const activeVisiblePosition = visibleStepIndexes.indexOf(activeStepIndex);
+    return visibleStepIndexes[activeVisiblePosition + 1] === stepIndex;
+  }
+
+  return stepIndex >= activeStepIndex;
+}
+
+function getTrustedFormPreloadResources(
+  trustedForm: TrustedFormConsentStep["trustedForm"],
+): readonly ClientTrustedFormPreloadResource[] {
+  const sdkUrl = buildTrustedFormSdkPreloadUrl(trustedForm);
+  if (!sdkUrl) {
+    return [];
+  }
+
+  const resources: ClientTrustedFormPreloadResource[] = [{ url: sdkUrl, as: "script" }];
+  if (trustedForm.delivery === "partytown") {
+    const partytownScriptUrl = getSameOriginPreloadPath(trustedForm.partytownScriptUrl);
+    if (partytownScriptUrl) {
+      resources.push({ url: partytownScriptUrl, as: "script" });
+    }
+  }
+
+  return resources;
+}
+
+function buildTrustedFormSdkPreloadUrl(trustedForm: TrustedFormConsentStep["trustedForm"]): string | undefined {
+  const url = getSameOriginPreloadUrl(trustedForm.scriptBaseUrl);
+  if (!url) {
+    return undefined;
+  }
+
+  const usesProxyAliases = shouldUseTrustedFormProxyAliases(trustedForm, url);
+  const fieldParam = usesProxyAliases ? "f" : "field";
+  const taggedConsentParam = usesProxyAliases ? "t" : "use_tagged_consent";
+  const sandboxParam = usesProxyAliases ? "s" : "sandbox";
+
+  if (trustedForm.fieldName && !url.searchParams.has(fieldParam)) {
+    url.searchParams.set(fieldParam, trustedForm.fieldName);
+  }
+  if (trustedForm.useTaggedConsent && !url.searchParams.has(taggedConsentParam)) {
+    url.searchParams.set(taggedConsentParam, "true");
+  }
+  if (trustedForm.sandbox && !url.searchParams.has(sandboxParam)) {
+    url.searchParams.set(sandboxParam, "true");
+  }
+
+  return `${url.pathname}${url.search}`;
+}
+
+function shouldUseTrustedFormProxyAliases(trustedForm: TrustedFormConsentStep["trustedForm"], url: URL): boolean {
+  return Boolean(
+    trustedForm.scriptProxyKey &&
+      url.origin === trustedFormPreloadBaseUrl.origin &&
+      url.pathname.endsWith(`/${trustedForm.scriptProxyKey}.js`),
+  );
+}
+
+function getSameOriginPreloadPath(value: string): string | undefined {
+  const url = getSameOriginPreloadUrl(value);
+  return url ? `${url.pathname}${url.search}` : undefined;
+}
+
+function getSameOriginPreloadUrl(value: string): URL | undefined {
+  const url = new URL(value, trustedFormPreloadBaseUrl);
+  return url.origin === trustedFormPreloadBaseUrl.origin ? url : undefined;
+}
+
+const trustedFormPreloadBaseUrl = new URL("https://instant.local");
 
 function getVisibleStepIndexes(form: InstantForm, answers: Record<string, string>, previewMode: boolean): number[] {
   return form.steps

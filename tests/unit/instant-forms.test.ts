@@ -19,7 +19,12 @@ import {
 } from "../../src/platform/flow";
 import { encodeCheckpointAnswers, getCheckpointCookieName } from "../../src/platform/persistence/checkpoints";
 import { FORM_CONFIG_PLACEHOLDER_EXPRESSION, buildTransitionAsset, renderFormPage } from "../../src/platform/rendering";
-import { buildInlineCss, getInlineAssetMode } from "../../src/platform/rendering/inline-assets";
+import {
+  applyProductionTokens,
+  applyProductionTokensToScript,
+  buildInlineCss,
+  getInlineAssetMode,
+} from "../../src/platform/rendering/inline-assets";
 import {
   defineFormRoutes,
   getFormRouteByRouteKey,
@@ -404,6 +409,9 @@ describe("form registry", () => {
       trustedForm: {
         delivery: "main_thread",
         scriptBaseUrl: "https://api.trustedform.com/trustedform.js",
+        preloadAssets: "when_reachable",
+        execute: "on_review_mount",
+        requireReadyBefore: "consent_substep",
       },
     });
   });
@@ -455,6 +463,9 @@ describe("form registry", () => {
         delivery: "main_thread",
         scriptProxyKey: "tfc",
         scriptBaseUrl: "/_instant/scripts/tfc.js",
+        preloadAssets: "when_reachable",
+        execute: "on_review_mount",
+        requireReadyBefore: "consent_substep",
       },
     });
   });
@@ -2798,6 +2809,17 @@ describe("form rendering", () => {
     expect(productionHtml).not.toContain("¿Usted tiene licencia");
     expect(productionHtml).not.toContain('"autocompleteSources"');
     expect(productionHtml).not.toContain("\n      (() => {");
+    expect(applyProductionTokensToScript("const body = { step: true }; if (!body.step) throw new Error();")).toContain(
+      "body.step",
+    );
+    const tokenizedHtml = applyProductionTokens(
+      '<style>.step{display:block}.actions{display:flex}</style><article class="step actions"></article><script>document.querySelector(".actions"); if (!body.step) throw new Error();</script>',
+    );
+    expect(tokenizedHtml).toContain(".ao{display:block}");
+    expect(tokenizedHtml).toContain(".au{display:flex}");
+    expect(tokenizedHtml).toContain('class="ao au"');
+    expect(tokenizedHtml).toContain('".au"');
+    expect(tokenizedHtml).toContain("body.step");
   });
 
   it("builds a static non-PII transition JS asset for snappy production step changes", async () => {
@@ -2843,6 +2865,7 @@ describe("form rendering", () => {
         "last_name",
         "phone_number",
       ],
+      optionalDynamicResolverDependencies: ["residence_state"],
       confirmation: {
         fields: [],
       },
@@ -3151,7 +3174,8 @@ describe("form rendering", () => {
       answers: preConsentAnswers,
     });
 
-    expect(phoneHtml).not.toContain('"trustedFormPreload"');
+    expect(phoneHtml).toContain('"trustedFormPreloadAssets":[{"stepKey":"trustedform_consent"');
+    expect(phoneHtml).toContain('"url":"/_instant/scripts/trustedform.com/tfc.js?f=xxTrustedFormCertUrl\\u0026t=true"');
     expect(phoneHtml).not.toContain('"fieldName":"xxTrustedFormCertUrl"');
     expect(html).toContain('"kind":"trusted_form_consent"');
     expect(html).toContain('"slug":"consentimiento"');
@@ -3162,25 +3186,32 @@ describe("form rendering", () => {
     expect(html).toContain('"scriptBaseUrl":"/_instant/scripts/trustedform.com/tfc.js"');
     expect(html).toContain('"partytownLib":"/~partytown/"');
     expect(html).toContain('"partytownScriptUrl":"/~partytown/partytown.js"');
+    expect(html).toContain('"preloadAssets":"when_reachable"');
+    expect(html).toContain('"execute":"on_review_mount"');
+    expect(html).toContain('"requireReadyBefore":"consent_substep"');
+    expect(html).not.toContain("preloadOnPreviousStep");
     expect(html).toContain('"allowSubmitWithoutCert":true');
     expect(html).toContain(
       '"dynamicResolverDependencies":["belongs_to_state","residence_state","has_license","has_insurance","is_clean_title","number_of_registered_cars","first_name","last_name","phone_number"]',
     );
-    expect(html).toContain('"confirmation":{"label":"Confirme su información","nextLabel":"Continuar","fields":[{"name":"review_belongs_to_state"');
+    expect(html).toContain('"confirmation":{"nextLabel":"Continuar","fields":[{"name":"review_belongs_to_state"');
+    expect(html).not.toContain('"label":"Confirme su información"');
     expect(html).toContain('"name":"trusted_form_grantor_name","label":"Nombre completo","value":"Ana Lopez","trustedForm":{"role":"consent-grantor-name"}');
     expect(html).not.toContain('"grantorSummary"');
     expect(html).not.toContain('"nameKeys"');
     expect(html).not.toContain('"phoneKey"');
     expect(html).toContain('data-step="10" data-step-kind="trusted_form_consent"');
     expect(html).toContain('method="post" action="/api/forms/tn_custom/native-submissions"');
-    expect(html).toContain('data-trusted-form-substep="review" aria-hidden="false"');
+    expect(html).toContain('data-trusted-form-substep="review"');
+    expect(html).toContain('data-has-title="false"');
+    expect(html).toContain('data-trusted-form-review-scroll');
     expect(html).toContain('data-trusted-form-substep="consent" aria-hidden="true"');
     expect(html).toContain('data-trusted-form-field-bank');
     expect(html).toContain('name="trusted_form_grantor_name"');
     expect(html).toContain('name="trusted_form_grantor_phone"');
     expect(html).toContain('name="review_belongs_to_state"');
     expect(html).toContain('Vive en Tennessee');
-    expect(html).toContain("Confirme su información");
+    expect(html).not.toContain("Confirme su información");
     expect(html).toContain("Continuar");
     expect(html).toContain('data-tf-element-role="consent-language"');
     expect(html).toContain('data-tf-element-role="consent-opt-in"');
@@ -3195,6 +3226,8 @@ describe("form rendering", () => {
     expect(html).toContain("function shouldUseTrustedFormProxyAliases(trustedForm, url)");
     expect(html).toContain('script.type = "text/partytown"');
     expect(html).toContain('window.dispatchEvent(new CustomEvent("ptupdate"))');
+    expect(html).toContain("function preloadTrustedFormAssets()");
+    expect(html).toContain("function preloadTrustedFormResource(url, resourceType)");
     expect(html).not.toContain("function preloadTrustedFormSdk(trustedForm)");
     expect(html).toContain("function ensureTrustedFormReady(trustedForm)");
     expect(html).toContain("function waitForTrustedFormCertUrl(trustedForm)");

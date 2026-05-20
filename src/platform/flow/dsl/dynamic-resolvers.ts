@@ -33,6 +33,15 @@ export function getStepDynamicResolverDependencies(stepDefinition: FormStep): re
   return [];
 }
 
+export function getOptionalStepDynamicResolverDependencies(
+  contract: FormContract,
+  stepDefinition: FormStep,
+): readonly string[] {
+  return getStepDynamicResolverDependencies(stepDefinition).filter((dependency) =>
+    isOptionalAnswerDependency(contract, dependency),
+  );
+}
+
 export function hasStepDynamicResolvers(stepDefinition: FormStep): boolean {
   return getStepDynamicResolverDependencies(stepDefinition).length > 0;
 }

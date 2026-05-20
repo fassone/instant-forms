@@ -332,6 +332,47 @@ void step.trustedFormConsent({
   })),
 } satisfies TrustedFormConsentStepInput);
 
+void step.trustedFormConsent({
+  key: "trustedform_consent",
+  slug: "consentimiento",
+  label: "Consentimiento",
+  disclosure: "Consentimiento.",
+  confirmation: {
+    fields: [
+      {
+        name: "review_name",
+        label: "Nombre",
+        value: "Ana",
+      },
+    ],
+  },
+  trustedForm: {
+    preloadAssets: "previous_step",
+    execute: "on_review_mount",
+    requireReadyBefore: "consent_substep",
+  },
+});
+
+void step.trustedFormConsent({
+  key: "trustedform_consent",
+  slug: "consentimiento",
+  label: "Consentimiento",
+  disclosure: "Consentimiento.",
+  confirmation: {
+    fields: [
+      {
+        name: "review_name",
+        label: "Nombre",
+        value: "Ana",
+      },
+    ],
+  },
+  trustedForm: {
+    // @ts-expect-error TrustedForm readiness cannot be deferred until native submit.
+    requireReadyBefore: "native_submit",
+  },
+});
+
 const orderingContract = {
   context: z.object({}),
   answers: z.object({

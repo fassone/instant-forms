@@ -159,7 +159,9 @@ export type TrustedFormConsentConfig = {
   partytownScriptUrl: string;
   useTaggedConsent: boolean;
   sandbox: boolean;
-  preloadOnPreviousStep: boolean;
+  preloadAssets: "when_reachable" | "previous_step" | "never";
+  execute: "on_review_mount";
+  requireReadyBefore: "consent_substep";
   allowSubmitWithoutCert: boolean;
 };
 
@@ -193,7 +195,7 @@ export type TrustedFormConfirmation<
     | readonly TrustedFormConfirmationField[]
     | ResolvableValue<readonly TrustedFormConfirmationField[], readonly ResolverTrustedFormConfirmationField[]>,
 > = {
-  label: string;
+  label?: string;
   nextLabel: string;
   fields: TFields;
 };

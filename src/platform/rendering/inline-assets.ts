@@ -166,7 +166,7 @@ function tokenizeScriptSelectorLiterals(script: string): string {
   );
 
   return classEntries.reduce((scriptWithTokens, [sourceClass, builtClass]) => {
-    if (sourceClass === "button") {
+    if (sourceClass === "button" || sourceClass === "step") {
       return scriptWithTokens;
     }
 
@@ -203,19 +203,23 @@ function replaceClassToken(html: string, sourceClass: string, builtClass: string
 
       return `class="${mappedClassValue}"`;
     })
-    .replace(new RegExp(`\\.${escapeRegExp(sourceClass)}(?=[^a-zA-Z0-9_-])`, "g"), `.${builtClass}`)
-    .replace(new RegExp(`class=\\\\\\"${escapeRegExp(sourceClass)}\\\\\\"`, "g"), `class=\\"${builtClass}\\"`);
+    .replace(/<style\b([^>]*)>([\s\S]*?)<\/style>/g, (match, attributes: string, styleBody: string) => {
+      const tokenizedStyle = styleBody.replace(
+        new RegExp(`\\.${escapeRegExp(sourceClass)}(?=[^a-zA-Z0-9_-])`, "g"),
+        `.${builtClass}`,
+      );
 
-  if (sourceClass === "button") {
+      return `<style${attributes}>${tokenizedStyle}</style>`;
+    });
+
+  if (sourceClass === "button" || sourceClass === "step") {
     return htmlWithStaticClassTokens;
   }
 
   return htmlWithStaticClassTokens
+    .replace(new RegExp(`class=\\\\\\"${escapeRegExp(sourceClass)}\\\\\\"`, "g"), `class=\\"${builtClass}\\"`)
     .replace(/<script\b([^>]*)>([\s\S]*?)<\/script>/g, (match, attributes: string, scriptBody: string) => {
-      const tokenizedScript = scriptBody.replace(
-        new RegExp(`(["'])${escapeRegExp(sourceClass)}\\1`, "g"),
-        `$1${builtClass}$1`,
-      );
+      const tokenizedScript = replaceScriptClassToken(scriptBody, sourceClass, builtClass);
 
       return `<script${attributes}>${tokenizedScript}</script>`;
     });

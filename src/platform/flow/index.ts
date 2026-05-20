@@ -1,6 +1,7 @@
 export { defineFormFlow } from "./dsl/define-form-flow";
 export {
   canResolveStepDynamicValues,
+  getOptionalStepDynamicResolverDependencies,
   getStepDynamicResolverDependencies,
   hasStepDynamicResolvers,
   isDynamicResolver,

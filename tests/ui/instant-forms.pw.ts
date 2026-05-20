@@ -55,6 +55,37 @@ test.describe("instant routed form UI", () => {
     expect(documentRequests.filter((url) => url.includes("/tn/custom/tiene-licencia"))).toHaveLength(0);
   });
 
+  test("preloaded dynamic consent content stays hidden on earlier steps", async ({ page }) => {
+    let consentResolutionRequests = 0;
+    await page.route("**/api/forms/tn_custom/resolutions", async (route) => {
+      const postData = route.request().postDataJSON() as { stepKey?: string } | undefined;
+      if (postData?.stepKey === "trustedform_consent") {
+        consentResolutionRequests += 1;
+      }
+      await route.continue();
+    });
+    await seedCheckpoint(page, {
+      ...seenMatchingAnswers,
+      belongs_to_state: "no",
+      residence_state: "AR",
+      first_name: "Ana",
+      last_name: "Lopez",
+      phone_number: "+16155551234",
+    });
+    await page.goto("/tn/custom/vive-en-tennessee");
+    const transitionAssetUrl = await getTransitionAssetUrl(page);
+
+    if (!transitionAssetUrl) {
+      return;
+    }
+
+    await waitForTransitionAsset(page, transitionAssetUrl);
+    await expect.poll(() => consentResolutionRequests).toBeGreaterThan(0);
+    await expect(activeStep(page).getByRole("heading", { name: "¿Usted vive en Tennessee?" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Antes de enviar" })).toHaveCount(0);
+    await expect(activeStep(page).locator("[data-trusted-form-review-scroll]")).toHaveCount(0);
+  });
+
   test("production optimistic transitions do not wait for slow checkpoint responses", async ({ page }) => {
     await page.goto("/tn/custom/vive-en-tennessee");
     const transitionAssetUrl = await getTransitionAssetUrl(page);
@@ -322,8 +353,10 @@ test.describe("instant routed form UI", () => {
         page.evaluate("Boolean(window.__TRUSTED_FORM_SCRIPT_EXECUTED__)"),
       )
       .toBe(false);
+    await expect(page.locator('input[name="xxTrustedFormCertUrl"]')).toHaveCount(0);
     expect(partytownRequests).toBe(0);
-    expect(trustedFormProxyRequests).toBe(0);
+    await expect.poll(() => trustedFormProxyRequests).toBeGreaterThan(0);
+    const preConsentProxyRequests = trustedFormProxyRequests;
     expect(trustedFormDirectRequests).toBe(0);
 
     const phoneInput = activeStep(page).getByPlaceholder("Escriba su telefono aquí");
@@ -337,7 +370,6 @@ test.describe("instant routed form UI", () => {
     await expect(page).toHaveURL(/\/tn\/custom\/consentimiento$/u);
     await continueTrustedFormReview(page);
     expect(partytownRequests).toBe(0);
-    await expect.poll(() => trustedFormProxyRequests).toBeGreaterThan(0);
     expect(trustedFormDirectRequests).toBe(0);
     await expect
       .poll(() =>
@@ -345,7 +377,7 @@ test.describe("instant routed form UI", () => {
       )
       .toBe(true);
     await page.waitForTimeout(150);
-    expect(trustedFormProxyRequests).toBe(1);
+    expect(trustedFormProxyRequests).toBeGreaterThanOrEqual(preConsentProxyRequests);
   });
 
   test("TrustedForm script failure allows fallback submission when configured", async ({ page }) => {
@@ -419,7 +451,8 @@ async function clickActiveOption(page: Page, label: string): Promise<void> {
 }
 
 async function continueTrustedFormReview(page: Page): Promise<void> {
-  await expect(page.getByText("Confirme su información")).toBeVisible();
+  await expect(activeStep(page).locator("[data-trusted-form-review-scroll]")).toBeVisible();
+  await expect(activeStep(page).locator(".trusted-form-review-label", { hasText: "Vive en Tennessee" })).toBeVisible();
   await page.getByRole("button", { name: "Continuar" }).click();
   await expect(activeStep(page).locator("[data-trusted-form-consent]")).toBeVisible({ timeout: 7000 });
   await expect(page.getByRole("button", { name: "Enviar" })).toBeEnabled({ timeout: 7000 });

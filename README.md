@@ -127,7 +127,7 @@ Current visible order:
 
 The `matching_offer` step is routed and checkpointed, but not counted in `Paso X de Y`. Its success copy uses separate colored lines so each phrase can use a distinct brand color.
 
-The `trustedform_consent` step is authored like any other flow step. It renders the consent disclosure, opt-in checkbox, TrustedForm consent tags, and loads the TrustedForm Certify SDK only when that step is mounted. Tennessee uses the selected-script proxy at `/_instant/scripts/trustedform.com/tfc.js`, so browsers request the SDK through the first-party domain whether the authored delivery mode is `main_thread` or `partytown`. Transition assets may register the TrustedForm behavior module ahead of time, but they must not initialize Partytown or request the SDK until the visitor reaches the consent step.
+The `trustedform_consent` step is authored like any other flow step. It renders the consent disclosure, opt-in checkbox, TrustedForm consent tags, and executes the TrustedForm Certify SDK only when that step is mounted. Tennessee uses the selected-script proxy at `/_instant/scripts/trustedform.com/tfc.js`, so browsers request the SDK through the first-party domain whether the authored delivery mode is `main_thread` or `partytown`. Transition assets may register the TrustedForm behavior module ahead of time, and the runtime may preload same-origin TrustedForm assets before the consent step, but preloading must not execute Certify or create a certificate. The consent checkbox substep is gated behind TrustedForm readiness.
 
 ## Selected Scripts
 

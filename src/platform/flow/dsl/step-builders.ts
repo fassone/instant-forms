@@ -213,7 +213,7 @@ export const step = {
       kind: "trusted_form_consent",
       type: "TRUSTED_FORM_CONSENT",
       confirmation: {
-        label: input.confirmation.label ?? "Confirme su información",
+        ...(input.confirmation.label ? { label: input.confirmation.label } : {}),
         nextLabel: input.confirmation.nextLabel ?? "Continuar",
         fields: input.confirmation.fields as InputConfirmationFields<TInput>,
       },
@@ -235,7 +235,9 @@ export const step = {
         partytownScriptUrl: input.trustedForm?.partytownScriptUrl ?? "/~partytown/partytown.js",
         useTaggedConsent: input.trustedForm?.useTaggedConsent ?? true,
         sandbox: input.trustedForm?.sandbox ?? false,
-        preloadOnPreviousStep: input.trustedForm?.preloadOnPreviousStep ?? true,
+        preloadAssets: input.trustedForm?.preloadAssets ?? "when_reachable",
+        execute: input.trustedForm?.execute ?? "on_review_mount",
+        requireReadyBefore: input.trustedForm?.requireReadyBefore ?? "consent_substep",
         allowSubmitWithoutCert: input.trustedForm?.allowSubmitWithoutCert ?? true,
       },
     };

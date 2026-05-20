@@ -81,6 +81,7 @@ function getCoreRuntimeScript(): string {
   let checkpointQueueFailedQuestionKey;
   const resolvedStepCache = new Map();
   const resolvedStepRequests = new Map();
+  const trustedFormPreloadedResources = new Set();
 
   function registerBehaviorModule(kind, module) {
     behaviorModules[kind] = module;
@@ -122,6 +123,7 @@ function getCoreRuntimeScript(): string {
     showStep(currentStep);
     restoreStepDraft(currentQuestion, currentDraftAnswer);
     preloadResolvedDynamicSteps();
+    preloadTrustedFormAssets();
   }
 
   window.__INSTANT_FORM_RUNTIME__ = {
@@ -326,6 +328,7 @@ function getCoreRuntimeScript(): string {
 
     showStep(config.activeStepIndex);
     preloadTransitionAsset();
+    preloadTrustedFormAssets();
     if (!replaceHiddenMatchingRouteIfNeeded()) {
       const currentQuestion = config.steps[currentStep];
       if (currentQuestion) {
@@ -366,6 +369,8 @@ function getCoreRuntimeScript(): string {
     hydrateCurrentStepAnswer(question);
     updateNextButton();
     mountCurrentBehavior();
+    requestCurrentResolvedStepPayloadIfNeeded();
+    preloadTrustedFormAssets();
   }
 
   function mountCurrentBehavior() {
@@ -626,6 +631,146 @@ function getCoreRuntimeScript(): string {
     }
 
     void loadTransitionAsset();
+  }
+
+  function preloadTrustedFormAssets() {
+    if (config.previewMode) {
+      return;
+    }
+
+    getTrustedFormPreloadAssets().forEach((asset) => {
+      if (!shouldPreloadTrustedFormAsset(asset)) {
+        return;
+      }
+
+      asset.resources.forEach((resource) => {
+        preloadTrustedFormResource(resource.url, resource.as);
+      });
+    });
+  }
+
+  function getTrustedFormPreloadAssets() {
+    const configuredAssets = Array.isArray(config.trustedFormPreloadAssets) ? config.trustedFormPreloadAssets : [];
+    if (!hasFullStepContext()) {
+      return configuredAssets;
+    }
+
+    const derivedAssets = config.steps
+      .filter((question) => question.kind === "trusted_form_consent" && question.trustedForm?.preloadAssets !== "never")
+      .map((question) => {
+        return {
+          stepKey: question.key,
+          stepUrl: question.url,
+          preloadAssets: question.trustedForm.preloadAssets,
+          resources: getTrustedFormPreloadResources(question.trustedForm),
+        };
+      })
+      .filter((asset) => asset.resources.length > 0);
+
+    return [...configuredAssets, ...derivedAssets];
+  }
+
+  function shouldPreloadTrustedFormAsset(asset) {
+    if (!asset || asset.preloadAssets === "never" || !Array.isArray(asset.resources)) {
+      return false;
+    }
+
+    if (asset.preloadAssets === "previous_step") {
+      return getPathname(getRenderedNextUrl() || "") === getPathname(asset.stepUrl);
+    }
+
+    const stepIndex = getStepIndexForPath(getPathname(asset.stepUrl));
+    if (stepIndex === -1) {
+      return asset.preloadAssets === "when_reachable";
+    }
+
+    return isQuestionVisible(config.steps[stepIndex]) && stepIndex >= currentStep;
+  }
+
+  function getTrustedFormPreloadResources(trustedForm) {
+    const sdkUrl = buildTrustedFormSdkPreloadUrl(trustedForm);
+    if (!sdkUrl) {
+      return [];
+    }
+
+    const resources = [{ url: sdkUrl, as: "script" }];
+    if (trustedForm.delivery === "partytown") {
+      const partytownScriptUrl = getSameOriginPath(trustedForm.partytownScriptUrl);
+      if (partytownScriptUrl) {
+        resources.push({ url: partytownScriptUrl, as: "script" });
+      }
+    }
+
+    return resources;
+  }
+
+  function buildTrustedFormSdkPreloadUrl(trustedForm) {
+    if (!trustedForm?.scriptBaseUrl) {
+      return undefined;
+    }
+
+    const url = getSameOriginUrl(trustedForm.scriptBaseUrl);
+    if (!url) {
+      return undefined;
+    }
+
+    const usesProxyAliases = shouldUseTrustedFormPreloadProxyAliases(trustedForm, url);
+    const fieldParam = usesProxyAliases ? "f" : "field";
+    const taggedConsentParam = usesProxyAliases ? "t" : "use_tagged_consent";
+    const sandboxParam = usesProxyAliases ? "s" : "sandbox";
+
+    if (trustedForm.fieldName && !url.searchParams.has(fieldParam)) {
+      url.searchParams.set(fieldParam, trustedForm.fieldName);
+    }
+    if (trustedForm.useTaggedConsent && !url.searchParams.has(taggedConsentParam)) {
+      url.searchParams.set(taggedConsentParam, "true");
+    }
+    if (trustedForm.sandbox && !url.searchParams.has(sandboxParam)) {
+      url.searchParams.set(sandboxParam, "true");
+    }
+
+    return url.pathname + url.search;
+  }
+
+  function shouldUseTrustedFormPreloadProxyAliases(trustedForm, url) {
+    return Boolean(
+      trustedForm.scriptProxyKey &&
+      url.origin === window.location.origin &&
+      url.pathname.endsWith("/" + trustedForm.scriptProxyKey + ".js")
+    );
+  }
+
+  function preloadTrustedFormResource(url, resourceType) {
+    if (!url) {
+      return;
+    }
+
+    const sameOriginPath = getSameOriginPath(url);
+    if (!sameOriginPath || trustedFormPreloadedResources.has(sameOriginPath)) {
+      return;
+    }
+
+    trustedFormPreloadedResources.add(sameOriginPath);
+    const link = document.createElement("link");
+    link.rel = "preload";
+    link.as = resourceType || "script";
+    link.href = sameOriginPath;
+    link.dataset.trustedFormPreload = "true";
+    document.head.appendChild(link);
+  }
+
+  function getSameOriginPath(value) {
+    const url = getSameOriginUrl(value);
+    return url ? url.pathname + url.search : undefined;
+  }
+
+  function getSameOriginUrl(value) {
+    try {
+      const url = new URL(value, window.location.origin);
+      return url.origin === window.location.origin ? url : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   function loadTransitionAsset() {
@@ -949,7 +1094,12 @@ function getCoreRuntimeScript(): string {
   }
 
   function canRequestResolvedStepPayload(question) {
-    return requiresResolvedStepPayload(question) && question.dynamicResolverDependencies.every((dependency) => Boolean(answers[dependency]));
+    if (!requiresResolvedStepPayload(question)) {
+      return false;
+    }
+
+    const optionalDependencies = new Set(question.optionalDynamicResolverDependencies || []);
+    return question.dynamicResolverDependencies.every((dependency) => optionalDependencies.has(dependency) || Boolean(answers[dependency]));
   }
 
   function getResolvedStepCacheKey(question) {
@@ -993,12 +1143,43 @@ function getCoreRuntimeScript(): string {
     config.steps[stepIndex] = stepPayload.config;
     const existingStep = steps[stepIndex];
     if (existingStep && stepPayload.html) {
+      const activeTrustedFormSubstep = getActiveTrustedFormSubstep(existingStep);
       existingStep.outerHTML = stepPayload.html;
       steps = Array.from(document.querySelectorAll("[data-step]"));
+      steps[stepIndex]?.setAttribute("aria-hidden", String(stepIndex !== currentStep));
       if (stepIndex === currentStep) {
+        if (activeTrustedFormSubstep === "consent" && config.steps[stepIndex]?.kind === "trusted_form_consent") {
+          setTrustedFormSubstepDom(steps[stepIndex], activeTrustedFormSubstep);
+          hydrateCurrentStepAnswer(config.steps[stepIndex]);
+          updateNextButton();
+          return;
+        }
         mountedStepIndex = -1;
+        showStep(stepIndex);
       }
     }
+  }
+
+  function getActiveTrustedFormSubstep(step) {
+    const consentPanel = step.querySelector('[data-trusted-form-substep="consent"]');
+    if (consentPanel instanceof HTMLElement && consentPanel.getAttribute("aria-hidden") === "false") {
+      return "consent";
+    }
+
+    return undefined;
+  }
+
+  function setTrustedFormSubstepDom(step, activeSubstep) {
+    const panels = step?.querySelector("[data-trusted-form-substeps]");
+    if (panels instanceof HTMLElement) {
+      panels.dataset.trustedFormActiveSubstep = activeSubstep;
+    }
+
+    Array.from(step?.querySelectorAll("[data-trusted-form-substep]") ?? []).forEach((panel) => {
+      if (panel instanceof HTMLElement) {
+        panel.setAttribute("aria-hidden", String(panel.dataset.trustedFormSubstep !== activeSubstep));
+      }
+    });
   }
 
   function preloadResolvedDynamicSteps() {
@@ -1011,6 +1192,15 @@ function getCoreRuntimeScript(): string {
         void requestResolvedStepPayload(question).catch(() => undefined);
       }
     });
+  }
+
+  function requestCurrentResolvedStepPayloadIfNeeded() {
+    const question = getQuestion();
+    if (!canRequestResolvedStepPayload(question) || hasCachedResolvedStepPayload(question)) {
+      return;
+    }
+
+    void requestResolvedStepPayload(question).catch(() => undefined);
   }
 
   async function requestResolvedStepPayload(question) {

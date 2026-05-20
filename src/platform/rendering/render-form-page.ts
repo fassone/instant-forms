@@ -230,6 +230,10 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         display: grid;
       }
 
+      #steps:has(.step[data-step-kind="trusted_form_consent"][aria-hidden="false"]) {
+        display: grid;
+      }
+
       .step[data-step-kind="interstitial"][aria-hidden="false"] {
         display: grid;
         grid-template-rows: auto minmax(0, 1fr);
@@ -239,6 +243,14 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
       }
 
       .step[data-step-kind="autocomplete"][aria-hidden="false"] {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        height: 100%;
+        min-height: 0;
+        align-self: stretch;
+      }
+
+      .step[data-step-kind="trusted_form_consent"][aria-hidden="false"] {
         display: grid;
         grid-template-rows: auto minmax(0, 1fr);
         height: 100%;
@@ -523,6 +535,8 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
 
       .trusted-form-panels {
         display: grid;
+        height: 100%;
+        min-height: 0;
         gap: 20px;
       }
 
@@ -532,7 +546,13 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
 
       .trusted-form-review {
         display: grid;
-        gap: 16px;
+        grid-template-rows: auto minmax(0, 1fr);
+        min-height: 0;
+        gap: 12px;
+      }
+
+      .trusted-form-review[data-has-title="false"] {
+        grid-template-rows: minmax(0, 1fr);
       }
 
       .trusted-form-review-title {
@@ -543,30 +563,39 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         line-height: 1.25;
       }
 
+      .trusted-form-review-scroll {
+        min-height: 0;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        padding-right: 4px;
+        -webkit-overflow-scrolling: touch;
+      }
+
       .trusted-form-review-list {
         display: grid;
-        gap: 10px;
+        gap: 8px;
         margin: 0;
       }
 
       .trusted-form-review-row {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
-        gap: 14px;
+        gap: 12px;
         align-items: baseline;
         border-bottom: 1px solid var(--border);
-        padding: 0 0 10px;
+        padding: 0 0 8px;
       }
 
       .trusted-form-review-label {
         color: var(--muted);
-        font-size: 0.95rem;
+        font-size: 0.9rem;
         font-weight: 700;
       }
 
       .trusted-form-review-value {
         max-width: 100%;
         color: var(--text);
+        font-size: 0.95rem;
         font-weight: 800;
         text-align: right;
         word-break: break-word;
@@ -1194,11 +1223,15 @@ function renderTrustedFormConsent(
   _context: StepTemplateContext,
 ): string {
   const checked = answers[stepDefinition.key] === stepDefinition.acceptedAnswer ? " checked" : "";
+  const reviewTitle = stepDefinition.confirmation.label?.trim() ?? "";
+  const renderedReviewTitle = reviewTitle
+    ? `<p class="trusted-form-review-title">${escapeHtml(reviewTitle)}</p>`
+    : "";
 
   return `${renderTrustedFormFieldBank(stepDefinition)}
   <div class="trusted-form-panels" data-trusted-form-substeps data-trusted-form-active-substep="review">
-    <div class="trusted-form-panel trusted-form-review" data-trusted-form-substep="review" aria-hidden="false">
-      <p class="trusted-form-review-title">${escapeHtml(stepDefinition.confirmation.label)}</p>
+    <div class="trusted-form-panel trusted-form-review" data-trusted-form-substep="review" data-has-title="${String(Boolean(reviewTitle))}" aria-hidden="false">
+      ${renderedReviewTitle}
       ${renderTrustedFormReviewList(stepDefinition)}
     </div>
     <div class="trusted-form-panel" data-trusted-form-substep="consent" aria-hidden="true">
@@ -1279,7 +1312,8 @@ function renderTrustedFormReviewList(stepDefinition: TrustedFormConsentStep): st
     return "";
   }
 
-  return `<dl class="trusted-form-review-list">
+  return `<div class="trusted-form-review-scroll" data-trusted-form-review-scroll>
+    <dl class="trusted-form-review-list">
     ${reviewItems
       .map(
         (item) => `<div class="trusted-form-review-row">
@@ -1288,7 +1322,8 @@ function renderTrustedFormReviewList(stepDefinition: TrustedFormConsentStep): st
     </div>`,
       )
       .join("")}
-  </dl>`;
+  </dl>
+  </div>`;
 }
 
 function getTaggedTrustedFormConfirmationFields(stepDefinition: TrustedFormConsentStep): Array<

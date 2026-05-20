@@ -149,7 +149,6 @@ export const tnFlow = defineFormFlow({
       checkboxLabel: "Acepto continuar y enviar mi solicitud.",
       submitLabel: "Enviar",
       confirmation: {
-        label: "Confirme su información",
         nextLabel: "Continuar",
         fields: resolve(
           [
@@ -222,7 +221,9 @@ export const tnFlow = defineFormFlow({
         delivery: "main_thread",
         scriptProxyKey: "tfc",
         scriptBaseUrl: "/_instant/scripts/trustedform.com/tfc.js",
-        preloadOnPreviousStep: true,
+        preloadAssets: "when_reachable",
+        execute: "on_review_mount",
+        requireReadyBefore: "consent_substep",
         allowSubmitWithoutCert: true,
       },
     }),
