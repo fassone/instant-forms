@@ -4,9 +4,11 @@ import type {
   FormStep,
   InstantForm,
   InterstitialStep,
-  TrustedFormConfirmationField,
+  InterstitialStepDynamicBody,
+  TrustedFormReviewField,
   TrustedFormConsentFieldRole,
   TrustedFormConsentStep,
+  TrustedFormConsentStepDynamicBody,
 } from "./types";
 
 type AnswerSchema = Record<string, unknown> & {
@@ -22,15 +24,7 @@ export function getDynamicResolverDependencies(value: unknown): readonly string[
 }
 
 export function getStepDynamicResolverDependencies(stepDefinition: FormStep): readonly string[] {
-  if (stepDefinition.kind === "interstitial") {
-    return getDynamicResolverDependencies(stepDefinition.benefits);
-  }
-
-  if (stepDefinition.kind === "trusted_form_consent") {
-    return getDynamicResolverDependencies(stepDefinition.confirmation.fields);
-  }
-
-  return [];
+  return getDynamicResolverDependencies(getStepDynamicResolver(stepDefinition));
 }
 
 export function getOptionalStepDynamicResolverDependencies(
@@ -61,69 +55,33 @@ export function resolveStepDynamicValues(
   stepDefinition: FormStep,
   answers: Record<string, string>,
 ): FormStep {
-  if (stepDefinition.kind === "interstitial") {
-    const benefits = resolveDynamicValue(form, stepDefinition.benefits, answers, [], stepDefinition.key, "benefits");
+  const resolver = getStepDynamicResolver(stepDefinition);
 
-    return {
-      ...stepDefinition,
-      benefits: assertStringArray(benefits, `Resolver for step "${stepDefinition.key}" must return an array of strings.`),
-    } satisfies InterstitialStep;
+  if (!resolver) {
+    return stepDefinition;
   }
 
-  if (stepDefinition.kind === "trusted_form_consent") {
-    const confirmationFields = resolveDynamicValue(
-      form,
-      stepDefinition.confirmation.fields,
-      answers,
-      undefined,
-      stepDefinition.key,
-      "confirmation.fields",
-    );
-
-    return {
-      ...stepDefinition,
-      confirmation: {
-        ...stepDefinition.confirmation,
-        fields:
-          confirmationFields === undefined
-            ? stepDefinition.confirmation.fields
-            : assertTrustedFormConfirmationFields(
-                confirmationFields,
-                `Resolver for step "${stepDefinition.key}" must return at least one confirmation field.`,
-              ),
-      },
-    } satisfies TrustedFormConsentStep;
+  if (!resolver.dependencies.every((dependency) => isOptionalAnswerDependency(form.contract, dependency) || Boolean(answers[dependency]))) {
+    return stepDefinition;
   }
 
-  return stepDefinition;
-}
-
-function resolveDynamicValue<TResult>(
-  form: InstantForm,
-  value: TResult | DynamicResolverContext<string, TResult> | undefined,
-  answers: Record<string, string>,
-  fallback: TResult,
-  stepKey: string,
-  fieldName: string,
-): TResult {
-  if (!isDynamicResolver(value)) {
-    return value ?? fallback;
-  }
-
-  if (!value.dependencies.every((dependency) => isOptionalAnswerDependency(form.contract, dependency) || Boolean(answers[dependency]))) {
-    return fallback;
-  }
-
-  const scopedAnswers = Object.fromEntries(value.dependencies.map((dependency) => [dependency, answers[dependency]]));
-
-  const resolvedValue = value.resolve({
+  const scopedAnswers = Object.fromEntries(resolver.dependencies.map((dependency) => [dependency, answers[dependency]]));
+  const resolvedBody = resolver.resolve({
     context: form.context,
     answers: scopedAnswers as Readonly<Record<string, string>>,
   });
 
-  assertSafeResolvedOutput(resolvedValue, `Resolver for step "${stepKey}" field "${fieldName}"`);
+  assertSafeResolvedOutput(resolvedBody, `Resolver for step "${stepDefinition.key}"`);
 
-  return resolvedValue;
+  if (stepDefinition.kind === "interstitial") {
+    return mergeInterstitialStepDynamicBody(stepDefinition, resolvedBody, stepDefinition.key);
+  }
+
+  if (stepDefinition.kind === "trusted_form_consent") {
+    return mergeTrustedFormConsentStepDynamicBody(stepDefinition, resolvedBody, stepDefinition.key);
+  }
+
+  return stepDefinition;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -144,6 +102,125 @@ function getAnswerSchema(contract: FormContract, key: string): AnswerSchema | un
   return schema as unknown as AnswerSchema;
 }
 
+function getStepDynamicResolver(stepDefinition: FormStep): DynamicResolverContext<string, unknown> | undefined {
+  return "dynamic" in stepDefinition && isDynamicResolver(stepDefinition.dynamic) ? stepDefinition.dynamic : undefined;
+}
+
+function mergeInterstitialStepDynamicBody(
+  stepDefinition: InterstitialStep,
+  value: unknown,
+  stepKey: string,
+): InterstitialStep {
+  if (!isRecord(value)) {
+    throw new Error(`Resolver for step "${stepKey}" must return an interstitial body object.`);
+  }
+  assertOnlyKeys(value, ["label", "loadingLabel", "successLines", "benefits"], `Resolver for step "${stepKey}" cannot return static step fields.`);
+
+  const body = value as Partial<InterstitialStepDynamicBody>;
+  const benefits = assertStringArray(body.benefits, `Resolver for step "${stepKey}" field "benefits" must return an array of strings.`);
+  const loadingLabel =
+    body.loadingLabel === undefined
+      ? stepDefinition.loadingLabel
+      : assertString(body.loadingLabel, `Resolver for step "${stepKey}" field "loadingLabel" must return text.`);
+  const successLines =
+    body.successLines === undefined
+      ? stepDefinition.successLines
+      : assertInterstitialSuccessLines(body.successLines, `Resolver for step "${stepKey}" field "successLines" is invalid.`);
+  const label =
+    body.label === undefined
+      ? stepDefinition.label
+      : assertString(body.label, `Resolver for step "${stepKey}" field "label" must return text.`);
+
+  return {
+    ...stepDefinition,
+    label,
+    loadingLabel,
+    successLines,
+    benefits,
+  };
+}
+
+function mergeTrustedFormConsentStepDynamicBody(
+  stepDefinition: TrustedFormConsentStep,
+  value: unknown,
+  stepKey: string,
+): TrustedFormConsentStep {
+  if (!isRecord(value) || !isRecord(value.review) || !isRecord(value.consent)) {
+    throw new Error(`Resolver for step "${stepKey}" must return review and consent body objects.`);
+  }
+  assertOnlyKeys(value, ["review", "consent"], `Resolver for step "${stepKey}" cannot return static step fields.`);
+  assertOnlyKeys(
+    value.review,
+    ["title", "description", "nextLabel", "fields"],
+    `Resolver for step "${stepKey}" field "review" cannot return static step fields.`,
+  );
+  assertOnlyKeys(
+    value.consent,
+    ["title", "description", "disclosure", "checkboxLabel", "submitLabel", "validationMessage"],
+    `Resolver for step "${stepKey}" field "consent" cannot return static step fields.`,
+  );
+
+  const reviewFields = assertTrustedFormReviewFields(
+    value.review.fields,
+    `Resolver for step "${stepKey}" field "review.fields" must return at least one review field.`,
+  );
+  const reviewTitle = assertString(
+    value.review.title,
+    `Resolver for step "${stepKey}" field "review.title" must return text.`,
+  );
+  const consentTitle = assertString(
+    value.consent.title,
+    `Resolver for step "${stepKey}" field "consent.title" must return text.`,
+  );
+  const disclosure = assertString(
+    value.consent.disclosure,
+    `Resolver for step "${stepKey}" field "consent.disclosure" must return markdown text.`,
+  );
+  const reviewDescription =
+    value.review.description === undefined
+      ? undefined
+      : assertString(value.review.description, `Resolver for step "${stepKey}" field "review.description" must return markdown text.`);
+  const consentDescription =
+    value.consent.description === undefined
+      ? undefined
+      : assertString(value.consent.description, `Resolver for step "${stepKey}" field "consent.description" must return markdown text.`);
+
+  return {
+    ...stepDefinition,
+    review: {
+      ...stepDefinition.review,
+      title: reviewTitle,
+      ...(reviewDescription === undefined ? {} : { description: reviewDescription }),
+      nextLabel:
+        value.review.nextLabel === undefined
+          ? stepDefinition.review.nextLabel
+          : assertString(value.review.nextLabel, `Resolver for step "${stepKey}" field "review.nextLabel" must return text.`),
+      fields: reviewFields,
+    },
+    consent: {
+      ...stepDefinition.consent,
+      title: consentTitle,
+      ...(consentDescription === undefined ? {} : { description: consentDescription }),
+      disclosure,
+      checkboxLabel:
+        value.consent.checkboxLabel === undefined
+          ? stepDefinition.consent.checkboxLabel
+          : assertString(value.consent.checkboxLabel, `Resolver for step "${stepKey}" field "consent.checkboxLabel" must return text.`),
+      submitLabel:
+        value.consent.submitLabel === undefined
+          ? stepDefinition.consent.submitLabel
+          : assertString(value.consent.submitLabel, `Resolver for step "${stepKey}" field "consent.submitLabel" must return text.`),
+      validationMessage:
+        value.consent.validationMessage === undefined
+          ? stepDefinition.consent.validationMessage
+          : assertString(
+              value.consent.validationMessage,
+              `Resolver for step "${stepKey}" field "consent.validationMessage" must return text.`,
+            ),
+    },
+  };
+}
+
 function assertStringArray(value: unknown, message: string): readonly string[] {
   if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
     throw new Error(message);
@@ -152,15 +229,51 @@ function assertStringArray(value: unknown, message: string): readonly string[] {
   return value;
 }
 
-function assertTrustedFormConfirmationFields(value: unknown, message: string): readonly TrustedFormConfirmationField[] {
+function assertInterstitialSuccessLines(value: unknown, message: string): InterstitialStep["successLines"] {
+  if (
+    !Array.isArray(value) ||
+    !value.every(
+      (line) =>
+        isRecord(line) &&
+        typeof line.text === "string" &&
+        (line.color === "brand-navy" || line.color === "accent"),
+    )
+  ) {
+    throw new Error(message);
+  }
+
+  return value.map((line) => ({
+    text: line.text as string,
+    color: line.color as "brand-navy" | "accent",
+  }));
+}
+
+function assertString(value: unknown, message: string): string {
+  if (typeof value !== "string") {
+    throw new Error(message);
+  }
+
+  return value;
+}
+
+function assertOnlyKeys(value: Record<string, unknown>, allowedKeys: readonly string[], message: string): void {
+  const allowed = new Set(allowedKeys);
+  const unknownKeys = Object.keys(value).filter((key) => !allowed.has(key));
+
+  if (unknownKeys.length > 0) {
+    throw new Error(`${message} Unknown fields: ${unknownKeys.join(", ")}.`);
+  }
+}
+
+function assertTrustedFormReviewFields(value: unknown, message: string): readonly TrustedFormReviewField[] {
   if (!Array.isArray(value) || value.length === 0) {
     throw new Error(message);
   }
 
-  return value.map((field) => assertTrustedFormConfirmationField(field, message));
+  return value.map((field) => assertTrustedFormReviewField(field, message));
 }
 
-function assertTrustedFormConfirmationField(value: unknown, message: string): TrustedFormConfirmationField {
+function assertTrustedFormReviewField(value: unknown, message: string): TrustedFormReviewField {
   if (!isRecord(value)) {
     throw new Error(message);
   }

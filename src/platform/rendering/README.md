@@ -27,6 +27,7 @@ flowchart LR
 - Static transition JS asset generation for post-load step swaps.
 - Client config generated from the server DSL.
 - Template ownership files for each step kind.
+- Server-side Markdown rendering for authored display copy. Raw HTML is escaped and only sanitized HTML is sent to the browser.
 
 ## Does Not Belong Here
 

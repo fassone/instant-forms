@@ -2,7 +2,6 @@ import {
   getStepSlug,
   getStepUrl,
   isCountedStep,
-  isDynamicResolver,
   isStepVisible as isServerStepVisible,
   resolveStepDynamicValues,
 } from "../flow";
@@ -13,13 +12,14 @@ import type {
   InstantForm,
   InterstitialStep,
   PhoneStep,
-  TrustedFormConfirmationField,
+  TrustedFormReviewField,
   TextStep,
   TrustedFormConsentStep,
 } from "../flow";
 import { createClientFormConfig } from "./client/config";
 import { getFormControllerScript } from "./client/controller-script";
 import { prepareInlineAssetHtml } from "./inline-assets";
+import { renderMarkdownToHtml } from "./markdown";
 
 export const FORM_CONFIG_JSON_PLACEHOLDER = "__FORM_CONFIG_JSON__";
 export const FORM_CONFIG_PLACEHOLDER_EXPRESSION = JSON.stringify(FORM_CONFIG_JSON_PLACEHOLDER);
@@ -61,7 +61,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
   const usesNativeTrustedFormSubmit = activeStep?.kind === "trusted_form_consent";
   const initialNextButtonLabel =
     activeStep?.kind === "trusted_form_consent"
-      ? activeStep.confirmation.nextLabel
+      ? activeStep.review.nextLabel
       : activeStepIndex === lastStepIndex
         ? "Enviar"
         : "Siguiente";
@@ -232,6 +232,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
 
       #steps:has(.step[data-step-kind="trusted_form_consent"][aria-hidden="false"]) {
         display: grid;
+        overflow: hidden;
       }
 
       .step[data-step-kind="interstitial"][aria-hidden="false"] {
@@ -252,10 +253,16 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
 
       .step[data-step-kind="trusted_form_consent"][aria-hidden="false"] {
         display: grid;
-        grid-template-rows: auto minmax(0, 1fr);
+        grid-template-rows: auto auto minmax(0, 1fr);
         height: 100%;
         min-height: 0;
         align-self: stretch;
+        gap: 20px;
+        overflow: hidden;
+      }
+
+      .step[data-step-kind="trusted_form_consent"][aria-hidden="false"] .question-title {
+        margin: 0;
       }
 
       .step-count {
@@ -277,6 +284,35 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         line-height: 1.02;
         letter-spacing: 0;
         text-wrap: balance;
+      }
+
+      .question-description {
+        max-width: 100%;
+        margin: 0;
+        color: var(--muted);
+        font-size: 1.05rem;
+        font-weight: 400;
+        line-height: 1.45;
+      }
+
+      .question-description[hidden] {
+        display: none;
+      }
+
+      .question-description p,
+      .consent-copy p {
+        margin: 0;
+      }
+
+      .question-description a,
+      .consent-copy a {
+        color: var(--brand-navy);
+        font-weight: 800;
+      }
+
+      .question-description strong,
+      .question-description b {
+        font-weight: 800;
       }
 
       .matching-content {
@@ -538,6 +574,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         height: 100%;
         min-height: 0;
         gap: 20px;
+        overflow: hidden;
       }
 
       .trusted-form-panel[aria-hidden="true"] {
@@ -546,29 +583,51 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
 
       .trusted-form-review {
         display: grid;
-        grid-template-rows: auto minmax(0, 1fr);
-        min-height: 0;
-        gap: 12px;
-      }
-
-      .trusted-form-review[data-has-title="false"] {
         grid-template-rows: minmax(0, 1fr);
+        min-height: 0;
+        overflow: hidden;
       }
 
-      .trusted-form-review-title {
-        margin: 0;
-        color: var(--brand-navy);
-        font-size: 1.15rem;
-        font-weight: 800;
-        line-height: 1.25;
+      .trusted-form-review-scroll-shell {
+        position: relative;
+        min-height: 0;
+        overflow: hidden;
       }
 
       .trusted-form-review-scroll {
+        height: 100%;
         min-height: 0;
         overflow-y: auto;
         overscroll-behavior: contain;
-        padding-right: 4px;
+        padding: 0 4px 8px 0;
+        scrollbar-gutter: stable;
         -webkit-overflow-scrolling: touch;
+      }
+
+      .trusted-form-review-scroll-fade {
+        position: absolute;
+        right: 0;
+        left: 0;
+        z-index: 2;
+        height: 32px;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 140ms ease;
+      }
+
+      .trusted-form-review-scroll-fade-top {
+        top: 0;
+        background: linear-gradient(180deg, var(--surface), rgba(255, 253, 244, 0));
+      }
+
+      .trusted-form-review-scroll-fade-bottom {
+        bottom: 0;
+        background: linear-gradient(0deg, var(--surface), rgba(255, 253, 244, 0));
+      }
+
+      .trusted-form-review-scroll-shell[data-can-scroll-up="true"] .trusted-form-review-scroll-fade-top,
+      .trusted-form-review-scroll-shell[data-can-scroll-down="true"] .trusted-form-review-scroll-fade-bottom {
+        opacity: 1;
       }
 
       .trusted-form-review-list {
@@ -1162,9 +1221,27 @@ function renderQuestion(
   const renderTemplate = stepTemplateRegistry[stepDefinition.template] as StepTemplateRenderer<FormStep>;
 
   return `<article class="step" data-step="${index}" data-step-kind="${escapeHtml(stepDefinition.kind)}" data-step-counted="${String(countsAsStep)}" aria-hidden="${String(!isCurrent)}">
-    <h1 class="question-title">${escapeHtml(stepDefinition.label)}</h1>
+    <h1 class="question-title" data-question-title>${getQuestionTitleHtml(stepDefinition)}</h1>
+    ${renderQuestionDescription(stepDefinition)}
     ${renderTemplate(stepDefinition, answers, { form, index })}
   </article>`;
+}
+
+function getQuestionTitleHtml(stepDefinition: FormStep): string {
+  if (stepDefinition.kind === "trusted_form_consent") {
+    return escapeHtml(stepDefinition.review.title);
+  }
+
+  return escapeHtml(stepDefinition.label);
+}
+
+function renderQuestionDescription(stepDefinition: FormStep): string {
+  if (stepDefinition.kind !== "trusted_form_consent") {
+    return "";
+  }
+
+  const descriptionHtml = renderOptionalDisplayCopyHtml(stepDefinition.review.description);
+  return `<div class="question-description" data-question-description${descriptionHtml ? "" : " hidden"}>${descriptionHtml}</div>`;
 }
 
 function renderInterstitial(stepDefinition: InterstitialStep, answers: Record<string, string>): string {
@@ -1223,15 +1300,10 @@ function renderTrustedFormConsent(
   _context: StepTemplateContext,
 ): string {
   const checked = answers[stepDefinition.key] === stepDefinition.acceptedAnswer ? " checked" : "";
-  const reviewTitle = stepDefinition.confirmation.label?.trim() ?? "";
-  const renderedReviewTitle = reviewTitle
-    ? `<p class="trusted-form-review-title">${escapeHtml(reviewTitle)}</p>`
-    : "";
 
   return `${renderTrustedFormFieldBank(stepDefinition)}
   <div class="trusted-form-panels" data-trusted-form-substeps data-trusted-form-active-substep="review">
-    <div class="trusted-form-panel trusted-form-review" data-trusted-form-substep="review" data-has-title="${String(Boolean(reviewTitle))}" aria-hidden="false">
-      ${renderedReviewTitle}
+    <div class="trusted-form-panel trusted-form-review" data-trusted-form-substep="review" aria-hidden="false">
       ${renderTrustedFormReviewList(stepDefinition)}
     </div>
     <div class="trusted-form-panel" data-trusted-form-substep="consent" aria-hidden="true">
@@ -1248,8 +1320,8 @@ function renderTrustedFormConsent(
             ${checked}
           >
           <span class="consent-copy">
-            <span>${escapeHtml(stepDefinition.disclosure)}</span>
-            <span class="consent-acceptance">${escapeHtml(stepDefinition.checkboxLabel)}</span>
+            <span>${renderDisplayCopyHtml(stepDefinition.consent.disclosure)}</span>
+            <span class="consent-acceptance">${escapeHtml(stepDefinition.consent.checkboxLabel)}</span>
           </span>
         </label>
       </div>
@@ -1258,8 +1330,8 @@ function renderTrustedFormConsent(
 }
 
 function renderTrustedFormFieldBank(stepDefinition: TrustedFormConsentStep): string {
-  const fields = stepDefinition.confirmation.fields;
-  if (isDynamicResolver(fields) || fields.length === 0) {
+  const fields = stepDefinition.review.fields;
+  if (fields.length === 0) {
     return "";
   }
 
@@ -1268,7 +1340,7 @@ function renderTrustedFormFieldBank(stepDefinition: TrustedFormConsentStep): str
   </div>`;
 }
 
-function renderTrustedFormConsentInput(field: TrustedFormConfirmationField): string {
+function renderTrustedFormConsentInput(field: TrustedFormReviewField): string {
   const role = field.trustedForm?.role;
   const inputType =
     role === "consent-grantor-email" ? "email" : role === "consent-grantor-phone" ? "tel" : "text";
@@ -1287,7 +1359,7 @@ function renderTrustedFormConsentInput(field: TrustedFormConfirmationField): str
 }
 
 function renderTrustedFormGrantorSummary(stepDefinition: TrustedFormConsentStep): string {
-  const taggedFields = getTaggedTrustedFormConfirmationFields(stepDefinition);
+  const taggedFields = getTaggedTrustedFormReviewFields(stepDefinition);
   if (taggedFields.length === 0) {
     return "";
   }
@@ -1303,46 +1375,69 @@ function renderTrustedFormGrantorSummary(stepDefinition: TrustedFormConsentStep)
 }
 
 function renderTrustedFormReviewList(stepDefinition: TrustedFormConsentStep): string {
-  const fields = stepDefinition.confirmation.fields;
-  const reviewItems = isDynamicResolver(fields)
-    ? []
-    : fields.map((field) => ({ label: field.label, value: getConsentFieldDisplayValue(field) }));
+  const fields = stepDefinition.review.fields;
+  const reviewItems = fields.map((field) => ({ label: field.label, value: getConsentFieldDisplayValue(field) }));
 
   if (reviewItems.length === 0) {
     return "";
   }
 
-  return `<div class="trusted-form-review-scroll" data-trusted-form-review-scroll>
-    <dl class="trusted-form-review-list">
-    ${reviewItems
-      .map(
-        (item) => `<div class="trusted-form-review-row">
+  return `<div
+    class="trusted-form-review-scroll-shell"
+    data-trusted-form-review-scroll-shell
+    data-can-scroll-up="false"
+    data-can-scroll-down="false"
+  >
+    <div
+      class="trusted-form-review-scroll-fade trusted-form-review-scroll-fade-top"
+      data-trusted-form-review-scroll-fade-top
+      aria-hidden="true"
+    ></div>
+    <div class="trusted-form-review-scroll" data-trusted-form-review-scroll>
+      <dl class="trusted-form-review-list">
+      ${reviewItems
+        .map(
+          (item) => `<div class="trusted-form-review-row">
       <dt class="trusted-form-review-label">${escapeHtml(item.label)}</dt>
       <dd class="trusted-form-review-value">${escapeHtml(item.value)}</dd>
     </div>`,
-      )
-      .join("")}
-  </dl>
+        )
+        .join("")}
+    </dl>
+    </div>
+    <div
+      class="trusted-form-review-scroll-fade trusted-form-review-scroll-fade-bottom"
+      data-trusted-form-review-scroll-fade-bottom
+      aria-hidden="true"
+    ></div>
   </div>`;
 }
 
-function getTaggedTrustedFormConfirmationFields(stepDefinition: TrustedFormConsentStep): Array<
-  TrustedFormConfirmationField & { trustedForm: NonNullable<TrustedFormConfirmationField["trustedForm"]> }
+function getTaggedTrustedFormReviewFields(stepDefinition: TrustedFormConsentStep): Array<
+  TrustedFormReviewField & { trustedForm: NonNullable<TrustedFormReviewField["trustedForm"]> }
 > {
-  const fields = stepDefinition.confirmation.fields;
-  if (isDynamicResolver(fields)) {
-    return [];
-  }
-
+  const fields = stepDefinition.review.fields;
   return fields.filter(
-    (field): field is TrustedFormConfirmationField & { trustedForm: NonNullable<TrustedFormConfirmationField["trustedForm"]> } =>
+    (field): field is TrustedFormReviewField & { trustedForm: NonNullable<TrustedFormReviewField["trustedForm"]> } =>
       Boolean(field.trustedForm),
   );
 }
 
-function getConsentFieldDisplayValue(field: TrustedFormConfirmationField): string {
+function getConsentFieldDisplayValue(field: TrustedFormReviewField): string {
   const value = field.value.trim();
   return field.trustedForm?.role === "consent-grantor-phone" ? formatPhoneForDisplay(value) : value;
+}
+
+function renderOptionalDisplayCopyHtml(value: unknown): string {
+  if (value === undefined) {
+    return "";
+  }
+
+  return renderDisplayCopyHtml(value);
+}
+
+function renderDisplayCopyHtml(value: unknown): string {
+  return typeof value === "string" ? renderMarkdownToHtml(value) : "";
 }
 
 function formatPhoneForDisplay(value: string): string {

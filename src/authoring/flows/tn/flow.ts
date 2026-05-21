@@ -47,7 +47,7 @@ export const tnFlow = defineFormFlow({
   page: {
     name: "Seguros Aseguranza",
   },
-  steps: ({ step, resolve, text }) => [
+  steps: ({ step, text, md }) => [
     step.choice({
       key: "belongs_to_state",
       slug: "vive-en-tennessee",
@@ -104,22 +104,27 @@ export const tnFlow = defineFormFlow({
         { key: "2+", label: "2+" },
       ],
     }),
-    step.interstitial({
-      key: "matching_offer",
-      slug: "buscando-oferta",
-      label: "Estamos buscando su seguro ideal",
-      countsAsStep: false,
-      benefits: resolve([], ({ context }) => [
-        text("Revisando sus respuestas"),
-        text("Buscando agentes disponibles"),
-        text("Priorizando atención en español"),
-        text("Preparando opciones en ", context.areaName ?? context.areaCode),
-      ]),
-      successLines: [
-        { text: "Encontramos agentes listos para cotizarle.", color: "brand-navy" },
-        { text: "Descubra cuánto puede ahorrar.", color: "accent" },
-      ],
-    }),
+    step.interstitial(
+      {
+        key: "matching_offer",
+        slug: "buscando-oferta",
+        label: "Estamos buscando su seguro ideal",
+        countsAsStep: false,
+        successLines: [
+          { text: "Encontramos agentes listos para cotizarle.", color: "brand-navy" },
+          { text: "Descubra cuánto puede ahorrar.", color: "accent" },
+        ],
+      },
+      [],
+      ({ context }) => ({
+        benefits: [
+          text("Revisando sus respuestas"),
+          text("Buscando agentes disponibles"),
+          text("Priorizando atención en español"),
+          text("Preparando opciones en ", context.areaName ?? context.areaCode),
+        ],
+      }),
+    ),
     step.text({
       key: "first_name",
       slug: "nombre",
@@ -139,30 +144,38 @@ export const tnFlow = defineFormFlow({
       slug: "telefono",
       label: "Número de teléfono",
     }),
-    step.trustedFormConsent({
-      key: "trustedform_consent",
-      slug: "consentimiento",
-      label: "Antes de enviar",
-      // Replace with approved consent language before production traffic.
-      disclosure:
-        "Al seleccionar esta casilla, autorizo a Seguros Aseguranza y a sus agentes a contactarme por teléfono o mensaje de texto sobre opciones de seguro de auto.",
-      checkboxLabel: "Acepto continuar y enviar mi solicitud.",
-      submitLabel: "Enviar",
-      confirmation: {
-        nextLabel: "Continuar",
-        fields: resolve(
-          [
-            "belongs_to_state",
-            "residence_state",
-            "has_license",
-            "has_insurance",
-            "is_clean_title",
-            "number_of_registered_cars",
-            "first_name",
-            "last_name",
-            "phone_number",
-          ],
-          ({ context, answers }) => [
+    step.trustedFormConsent(
+      {
+        key: "trustedform_consent",
+        slug: "consentimiento",
+        trustedForm: {
+          fieldName: "xxTrustedFormCertUrl",
+          delivery: "main_thread",
+          scriptProxyKey: "tfc",
+          scriptBaseUrl: "/_instant/scripts/trustedform.com/tfc.js",
+          preloadAssets: "when_reachable",
+          execute: "on_review_mount",
+          requireReadyBefore: "consent_substep",
+          allowSubmitWithoutCert: true,
+        },
+      },
+      [
+        "belongs_to_state",
+        "residence_state",
+        "has_license",
+        "has_insurance",
+        "is_clean_title",
+        "number_of_registered_cars",
+        "first_name",
+        "last_name",
+        "phone_number",
+      ],
+      ({ context, answers }) => ({
+        review: {
+          title: text("Antes de enviar"),
+          description: md("Por favor, confirme su informacion"),
+          nextLabel: "Continuar",
+          fields: [
             {
               name: "review_belongs_to_state",
               label: "Vive en Tennessee",
@@ -214,18 +227,18 @@ export const tnFlow = defineFormFlow({
               },
             },
           ],
-        ),
-      },
-      trustedForm: {
-        fieldName: "xxTrustedFormCertUrl",
-        delivery: "main_thread",
-        scriptProxyKey: "tfc",
-        scriptBaseUrl: "/_instant/scripts/trustedform.com/tfc.js",
-        preloadAssets: "when_reachable",
-        execute: "on_review_mount",
-        requireReadyBefore: "consent_substep",
-        allowSubmitWithoutCert: true,
-      },
-    }),
+        },
+        consent: {
+          title: text("Consentimiento"),
+          description: md("Último paso antes de enviar su solicitud."),
+          // Replace with approved consent language before production traffic.
+          disclosure: md(
+            "Al seleccionar esta casilla, autorizo a **Seguros Aseguranza** y a sus agentes a contactarme por teléfono o mensaje de texto sobre opciones de seguro de auto.",
+          ),
+          checkboxLabel: "Acepto continuar y enviar mi solicitud.",
+          submitLabel: "Enviar",
+        },
+      }),
+    ),
   ],
 });

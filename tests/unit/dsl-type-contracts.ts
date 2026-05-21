@@ -1,4 +1,4 @@
-import { defineFormFlow, resolve, step, text, z, type TrustedFormConsentStepInput } from "../../src/platform/flow";
+import { defineFormFlow, md, resolve, step, text, z, type TrustedFormConsentStepInput } from "../../src/platform/flow";
 
 const contract = {
   context: z.object({}),
@@ -24,7 +24,7 @@ void defineFormFlow({
   context: {},
   payload,
   page: { name: "Page" },
-  steps: [
+  steps: ({ step, text, md }) => [
     step.choice({
       key: "belongs_to_state",
       slug: "vive",
@@ -70,13 +70,16 @@ void defineFormFlow({
       label: "Nombre",
       autocomplete: "given-name",
     }),
-    step.trustedFormConsent({
-      key: "trustedform_consent",
-      slug: "consentimiento",
-      label: "Consentimiento",
-      disclosure: "Consentimiento.",
-      confirmation: {
-        fields: resolve(["first_name"], ({ answers }) => [
+    step.trustedFormConsent(
+      {
+        key: "trustedform_consent",
+        slug: "consentimiento",
+      },
+      ["first_name"],
+      ({ answers }) => ({
+        review: {
+          title: text("Consentimiento"),
+          fields: [
           {
             name: "trusted_form_grantor_name",
             label: "Nombre",
@@ -85,9 +88,14 @@ void defineFormFlow({
               role: "consent-grantor-name",
             },
           },
-        ]),
-      },
-    }),
+          ],
+        },
+        consent: {
+          title: text("Consentimiento"),
+          disclosure: md("Consentimiento."),
+        },
+      }),
+    ),
   ],
 });
 
@@ -101,22 +109,50 @@ void text("Hello ", maybeName);
 
 void text("Hello ", maybeName ?? "Michel");
 
+// @ts-expect-error md(...) rejects undefined parts.
+void md("Hello ", undefined);
+
+// @ts-expect-error md(...) requires optional values to be handled before concatenation.
+void md("Hello ", maybeName);
+
+void md("Hello ", maybeName ?? "Michel");
+
+void step.trustedFormConsent({
+  key: "trustedform_consent",
+  slug: "consentimiento",
+  review: {
+    // @ts-expect-error Titles are plain text, not markdown display copy.
+    title: md("**Consentimiento**"),
+    fields: [
+      {
+        name: "review_name",
+        label: "Nombre",
+        value: "Ana",
+      },
+    ],
+  },
+  consent: {
+    // @ts-expect-error Titles are plain text, not markdown display copy.
+    title: md("**Consentimiento**"),
+    disclosure: md("Consentimiento."),
+  },
+});
+
 void step.interstitial({
   key: "matching_offer",
   slug: "buscando",
   label: "Buscando",
   successLines: [{ text: "Listo", color: "accent" }],
-  // @ts-expect-error Resolver-backed text values must be created with text(...).
+  // @ts-expect-error Nested resolve(...) is not accepted in step fields.
   benefits: resolve([], () => ["plain string"]),
 });
 
 void step.trustedFormConsent({
   key: "trustedform_consent",
   slug: "consentimiento",
-  label: "Consentimiento",
-  disclosure: "Consentimiento.",
-  confirmation: {
-    // @ts-expect-error Resolver-backed confirmation values must be created with text(...).
+  review: {
+    title: text("Consentimiento"),
+    // @ts-expect-error Nested resolve(...) is not accepted in step fields.
     fields: resolve([], () => [
       {
         name: "review_name",
@@ -124,6 +160,10 @@ void step.trustedFormConsent({
         value: "plain string",
       },
     ]),
+  },
+  consent: {
+    title: text("Consentimiento"),
+    disclosure: md("Consentimiento."),
   },
 });
 
@@ -149,7 +189,7 @@ void defineFormFlow({
     mapping: ({ context }) => ({ areaCode: context.areaCode }),
   },
   page: { name: "Page" },
-  steps: ({ step, resolve, text }) => [
+  steps: ({ step, text }) => [
     step.choice({
       key: "belongs_to_state",
       slug: "vive",
@@ -159,18 +199,194 @@ void defineFormFlow({
         { key: "no", label: "No" },
       ],
     }),
-    step.interstitial({
-      key: "matching_offer",
-      slug: "buscando",
-      label: "Buscando",
-      successLines: [{ text: "Listo", color: "accent" }],
-      benefits: resolve([], ({ context }) => [
+    step.interstitial(
+      {
+        key: "matching_offer",
+        slug: "buscando",
+        label: "Buscando",
+        successLines: [{ text: "Listo", color: "accent" }],
+      },
+      [],
+      ({ context }) => ({
+        benefits: [
         // @ts-expect-error Optional context requires a fallback before text(...).
         text("Area ", context.areaName),
         text("Area ", context.areaName ?? context.areaCode),
-      ]),
-    }),
+        ],
+      }),
+    ),
   ],
+});
+
+void defineFormFlow({
+  name: "Dynamic Markdown Fixture",
+  status: "ACTIVE",
+  contract,
+  context: {},
+  payload,
+  page: { name: "Page" },
+  steps: ({ step, md, text }) => [
+    step.choice({
+      key: "belongs_to_state",
+      slug: "vive",
+      label: "Vive aqui?",
+      options: [
+        { key: "yes", label: "Si" },
+        { key: "no", label: "No" },
+      ],
+    }),
+    step.text({
+      key: "first_name",
+      slug: "nombre",
+      label: "Nombre",
+      autocomplete: "given-name",
+    }),
+    step.trustedFormConsent(
+      {
+        key: "trustedform_consent",
+        slug: "consentimiento",
+      },
+      ["first_name"],
+      ({ answers }) => ({
+        review: {
+          title: text("Revise la información de **", answers.first_name, "** antes de continuar."),
+          fields: [
+            {
+              name: "review_name",
+              label: "Nombre",
+              value: text(answers.first_name),
+            },
+          ],
+        },
+        consent: {
+          title: text("Consentimiento"),
+          description: md("Último paso antes de enviar."),
+          disclosure: md("Autorizo a **Seguros Aseguranza** a contactarme."),
+        },
+      }),
+    ),
+  ],
+});
+
+void step.trustedFormConsent({
+  key: "trustedform_consent",
+  slug: "consentimiento",
+  review: {
+    // @ts-expect-error Nested resolve(...) is not accepted in step fields.
+    title: resolve(["first_name"], ({ answers }) =>
+      md("Revise la información de **", answers.first_name, "** antes de continuar."),
+    ),
+    fields: [
+      {
+        name: "review_name",
+        label: "Nombre",
+        value: "Ana",
+      },
+    ],
+  },
+  consent: {
+    title: text("Consentimiento"),
+    disclosure: md("Autorizo a **Seguros Aseguranza** a contactarme."),
+  },
+});
+
+void defineFormFlow({
+  name: "Invalid Dynamic Resolver Body",
+  status: "ACTIVE",
+  contract,
+  context: {},
+  payload,
+  page: { name: "Page" },
+  steps: ({ step, md, text }) => [
+    step.choice({
+      key: "belongs_to_state",
+      slug: "vive",
+      label: "Vive aqui?",
+      options: [
+        { key: "yes", label: "Si" },
+        { key: "no", label: "No" },
+      ],
+    }),
+    step.text({
+      key: "first_name",
+      slug: "nombre",
+      label: "Nombre",
+      autocomplete: "given-name",
+    }),
+    step.trustedFormConsent(
+      {
+        key: "trustedform_consent",
+        slug: "consentimiento",
+      },
+      ["first_name"],
+      () => ({
+        review: {
+          // @ts-expect-error Dynamic titles must be created with text(...).
+          title: "Plain dynamic title",
+          fields: [
+            {
+              name: "review_name",
+              label: "Nombre",
+              // @ts-expect-error Dynamic submitted values must be created with text(...).
+              value: "Ana",
+            },
+            {
+              name: "trusted_form_grantor_name",
+              label: "Nombre",
+              value: text("Ana"),
+            },
+          ],
+        },
+        consent: {
+          title: text("Consentimiento"),
+          // @ts-expect-error Dynamic display copy must be created with md(...).
+          disclosure: "Plain dynamic disclosure",
+        },
+      }),
+    ),
+  ],
+});
+
+void step.trustedFormConsent({
+  key: "trustedform_consent",
+  slug: "consentimiento",
+  review: {
+    // @ts-expect-error Nested resolvers are not accepted in title fields.
+    title: resolve(["first_name"], ({ answers }) => `Hola ${answers.first_name}`),
+    fields: [
+      {
+        name: "review_name",
+        label: "Nombre",
+        value: "Ana",
+      },
+    ],
+  },
+  consent: {
+    title: text("Consentimiento"),
+    disclosure: md("Autorizo a **Seguros Aseguranza** a contactarme."),
+  },
+});
+
+void step.trustedFormConsent({
+  key: "trustedform_consent",
+  slug: "consentimiento",
+  review: {
+    title: text("Consentimiento"),
+    fields: [
+      {
+        name: "review_name",
+        label: "Nombre",
+        // @ts-expect-error Review field values are submitted values and must use text/plain strings, not markdown.
+        value: md("**Ana**"),
+      },
+    ],
+  },
+  consent: {
+    title: text("Consentimiento"),
+    disclosure: md("Autorizo a **Seguros Aseguranza** a contactarme."),
+    // @ts-expect-error Button labels are native control text, not markdown display copy.
+    submitLabel: md("**Enviar**"),
+  },
 });
 
 const optionalAnswerContract = {
@@ -195,7 +411,7 @@ void defineFormFlow({
     mapping: ({ answers }) => ({ phone: answers.phone_number }),
   },
   page: { name: "Page" },
-  steps: ({ step, resolve, text }) => [
+  steps: ({ step, text, md }) => [
     step.text({
       key: "first_name",
       slug: "nombre",
@@ -219,13 +435,16 @@ void defineFormFlow({
       label: "Estado",
       autocomplete: "address-level1",
     }),
-    step.trustedFormConsent({
-      key: "trustedform_consent",
-      slug: "consentimiento",
-      label: "Consentimiento",
-      disclosure: "Consentimiento.",
-      confirmation: {
-        fields: resolve(["first_name", "last_name", "phone_number", "residence_state"], ({ answers }) => [
+    step.trustedFormConsent(
+      {
+        key: "trustedform_consent",
+        slug: "consentimiento",
+      },
+      ["first_name", "last_name", "phone_number", "residence_state"],
+      ({ answers }) => ({
+        review: {
+          title: text("Consentimiento"),
+          fields: [
           {
             name: "trusted_form_grantor_name",
             label: "Nombre",
@@ -243,16 +462,24 @@ void defineFormFlow({
               role: "consent-grantor-phone",
             },
           },
-        ]),
+          ],
+        },
+        consent: {
+          title: text("Consentimiento"),
+          disclosure: md("Consentimiento."),
+        },
+      }),
+    ),
+    step.trustedFormConsent(
+      {
+        key: "trustedform_consent_with_fallback",
+        slug: "consentimiento-fallback",
       },
-    }),
-    step.trustedFormConsent({
-      key: "trustedform_consent_with_fallback",
-      slug: "consentimiento-fallback",
-      label: "Consentimiento",
-      disclosure: "Consentimiento.",
-      confirmation: {
-        fields: resolve(["first_name", "last_name", "phone_number", "residence_state"], ({ answers }) => [
+      ["first_name", "last_name", "phone_number", "residence_state"],
+      ({ answers }) => ({
+        review: {
+          title: text("Consentimiento"),
+          fields: [
           {
             name: "trusted_form_grantor_name",
             label: "Nombre",
@@ -269,18 +496,22 @@ void defineFormFlow({
               role: "consent-grantor-phone",
             },
           },
-        ]),
-      },
-    }),
+          ],
+        },
+        consent: {
+          title: text("Consentimiento"),
+          disclosure: md("Consentimiento."),
+        },
+      }),
+    ),
   ],
 });
 
 void ({
   key: "trustedform_consent",
   slug: "consentimiento",
-  label: "Consentimiento",
-  disclosure: "Consentimiento.",
-  confirmation: {
+  review: {
+    title: text("Consentimiento"),
     fields: resolve(["first_name"], ({ answers }) => [
       {
         name: "trusted_form_grantor_name",
@@ -301,14 +532,17 @@ void ({
       },
     ]),
   },
+  consent: {
+    title: text("Consentimiento"),
+    disclosure: md("Consentimiento."),
+  },
 });
 
 void step.trustedFormConsent({
   key: "trustedform_consent",
   slug: "consentimiento",
-  label: "Consentimiento",
-  disclosure: "Consentimiento.",
-  confirmation: {
+  review: {
+    title: text("Consentimiento"),
     fields: [
       {
         name: "review_name",
@@ -317,7 +551,11 @@ void step.trustedFormConsent({
       },
     ],
   },
-  // @ts-expect-error grantorSummary is intentionally removed; confirmation.fields is the only review/tagging API.
+  consent: {
+    title: text("Consentimiento"),
+    disclosure: md("Consentimiento."),
+  },
+  // @ts-expect-error grantorSummary is intentionally removed; review.fields is the only review/tagging API.
   grantorSummary: resolve(["first_name"], ({ answers }) => ({
     fields: [
       {
@@ -335,9 +573,10 @@ void step.trustedFormConsent({
 void step.trustedFormConsent({
   key: "trustedform_consent",
   slug: "consentimiento",
+  // @ts-expect-error top-level label was removed; review.title and consent.title are explicit.
   label: "Consentimiento",
-  disclosure: "Consentimiento.",
-  confirmation: {
+  review: {
+    title: text("Consentimiento"),
     fields: [
       {
         name: "review_name",
@@ -345,6 +584,52 @@ void step.trustedFormConsent({
         value: "Ana",
       },
     ],
+  },
+  consent: {
+    title: text("Consentimiento"),
+    disclosure: md("Consentimiento."),
+  },
+});
+
+void step.trustedFormConsent({
+  key: "trustedform_consent",
+  slug: "consentimiento",
+  review: {
+    title: text("Consentimiento"),
+    fields: [
+      {
+        name: "review_name",
+        label: "Nombre",
+        value: "Ana",
+      },
+    ],
+  },
+  consent: {
+    title: text("Consentimiento"),
+    disclosure: md("Consentimiento."),
+  },
+  // @ts-expect-error confirmation was removed; use review.fields instead.
+  confirmation: {
+    fields: [],
+  },
+});
+
+void step.trustedFormConsent({
+  key: "trustedform_consent",
+  slug: "consentimiento",
+  review: {
+    title: text("Consentimiento"),
+    fields: [
+      {
+        name: "review_name",
+        label: "Nombre",
+        value: "Ana",
+      },
+    ],
+  },
+  consent: {
+    title: text("Consentimiento"),
+    disclosure: md("Consentimiento."),
   },
   trustedForm: {
     preloadAssets: "previous_step",
@@ -356,9 +641,8 @@ void step.trustedFormConsent({
 void step.trustedFormConsent({
   key: "trustedform_consent",
   slug: "consentimiento",
-  label: "Consentimiento",
-  disclosure: "Consentimiento.",
-  confirmation: {
+  review: {
+    title: text("Consentimiento"),
     fields: [
       {
         name: "review_name",
@@ -366,6 +650,10 @@ void step.trustedFormConsent({
         value: "Ana",
       },
     ],
+  },
+  consent: {
+    title: text("Consentimiento"),
+    disclosure: md("Consentimiento."),
   },
   trustedForm: {
     // @ts-expect-error TrustedForm readiness cannot be deferred until native submit.
@@ -455,13 +743,18 @@ void defineFormFlow({
         { key: "no", label: "No" },
       ],
     }),
-    step.interstitial({
-      key: "matching_offer",
-      slug: "buscando",
-      label: "Buscando",
-      successLines: [{ text: "Listo", color: "accent" }],
-      benefits: resolve(["has_license"], ({ answers }) => [text(answers.has_license)]),
-    }),
+    step.interstitial(
+      {
+        key: "matching_offer",
+        slug: "buscando",
+        label: "Buscando",
+        successLines: [{ text: "Listo", color: "accent" }],
+      },
+      ["has_license"],
+      ({ answers }) => ({
+        benefits: [text(answers.has_license)],
+      }),
+    ),
     step.autocomplete({
       key: "residence_state",
       slug: "estado",

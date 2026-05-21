@@ -252,6 +252,67 @@ test.describe("instant routed form UI", () => {
     await expect(page.getByRole("heading", { name: "Gracias." })).toBeVisible();
   });
 
+  test("TrustedForm review description is compact and regular weight", async ({ page }) => {
+    await mockTrustedFormCertify(page);
+    await seedCheckpoint(page, {
+      ...seenMatchingAnswers,
+      first_name: "Ana",
+      last_name: "Lopez",
+      phone_number: "+16155551234",
+    });
+    await page.goto("/tn/custom/consentimiento");
+
+    const step = activeStep(page);
+    const description = step.locator("[data-question-description]");
+    await expect(step.getByRole("heading", { name: "Antes de enviar" })).toBeVisible();
+    await expect(description).toBeVisible();
+    await expect(description).toHaveCSS("font-weight", "400");
+    const reviewShell = step.locator("[data-trusted-form-review-scroll-shell]");
+    const reviewScroll = step.locator("[data-trusted-form-review-scroll]");
+    const reviewTopFade = step.locator("[data-trusted-form-review-scroll-fade-top]");
+    const reviewBottomFade = step.locator("[data-trusted-form-review-scroll-fade-bottom]");
+    await expect(reviewShell).toHaveAttribute("data-can-scroll-up", "false");
+    const canReviewScroll = await reviewScroll.evaluate(
+      (element) => element.scrollHeight > element.clientHeight + 1,
+    );
+    if (canReviewScroll) {
+      await expect(reviewShell).toHaveAttribute("data-can-scroll-down", "true");
+      await expect(reviewBottomFade).toHaveCSS("opacity", "1");
+    } else {
+      await expect(reviewShell).toHaveAttribute("data-can-scroll-down", "false");
+      await expect(reviewBottomFade).toHaveCSS("opacity", "0");
+    }
+
+    const titleBox = await step.locator("[data-question-title]").boundingBox();
+    const descriptionBox = await description.boundingBox();
+    const reviewBox = await reviewScroll.boundingBox();
+    const continueBox = await page.getByRole("button", { name: "Continuar" }).boundingBox();
+    if (!titleBox || !descriptionBox || !reviewBox || !continueBox) {
+      throw new Error("Expected TrustedForm review layout boxes to be present.");
+    }
+
+    const metrics = {
+      titleToDescriptionGap: descriptionBox.y - (titleBox.y + titleBox.height),
+      descriptionToReviewGap: reviewBox.y - (descriptionBox.y + descriptionBox.height),
+      reviewBottomToActionsGap: continueBox.y - (reviewBox.y + reviewBox.height),
+    };
+
+    expect(metrics.titleToDescriptionGap).toBeLessThan(80);
+    expect(metrics.descriptionToReviewGap).toBeLessThan(80);
+    expect(metrics.reviewBottomToActionsGap).toBeGreaterThanOrEqual(-1);
+
+    if (canReviewScroll) {
+      await reviewScroll.evaluate((element) => {
+        element.scrollTop = element.scrollHeight;
+        element.dispatchEvent(new Event("scroll", { bubbles: true }));
+      });
+      await expect(reviewShell).toHaveAttribute("data-can-scroll-up", "true");
+      await expect(reviewShell).toHaveAttribute("data-can-scroll-down", "false");
+      await expect(reviewTopFade).toHaveCSS("opacity", "1");
+      await expect(reviewBottomFade).toHaveCSS("opacity", "0");
+    }
+  });
+
   test("TrustedForm consent accepts submit while the certificate is still preparing", async ({ page }) => {
     await mockTrustedFormCertify(page, { delayMs: 1000 });
     await seedCheckpoint(page, {
@@ -451,9 +512,13 @@ async function clickActiveOption(page: Page, label: string): Promise<void> {
 }
 
 async function continueTrustedFormReview(page: Page): Promise<void> {
+  await expect(activeStep(page).getByRole("heading", { name: "Antes de enviar" })).toBeVisible();
+  await expect(activeStep(page).getByText("Por favor, confirme su informacion")).toBeVisible();
   await expect(activeStep(page).locator("[data-trusted-form-review-scroll]")).toBeVisible();
   await expect(activeStep(page).locator(".trusted-form-review-label", { hasText: "Vive en Tennessee" })).toBeVisible();
   await page.getByRole("button", { name: "Continuar" }).click();
+  await expect(activeStep(page).getByRole("heading", { name: "Consentimiento" })).toBeVisible({ timeout: 7000 });
+  await expect(activeStep(page).getByText("Último paso antes de enviar su solicitud.")).toBeVisible();
   await expect(activeStep(page).locator("[data-trusted-form-consent]")).toBeVisible({ timeout: 7000 });
   await expect(page.getByRole("button", { name: "Enviar" })).toBeEnabled({ timeout: 7000 });
 }

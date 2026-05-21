@@ -7,7 +7,7 @@ import type {
   FormStep,
   InstantForm,
 } from "./types";
-import { getStepDynamicResolverDependencies, isDynamicResolver } from "./dynamic-resolvers";
+import { getStepDynamicResolverDependencies } from "./dynamic-resolvers";
 import { createFlowAuthoringHelpers, type FlowAuthoringHelpers } from "./step-builders";
 
 type AnswerSchema = Record<string, unknown> & {
@@ -224,24 +224,29 @@ function getStepTemplateStrings(stepDefinition: FormStep): string[] {
   if (stepDefinition.kind === "interstitial") {
     values.push(
       stepDefinition.loadingLabel,
-      ...(isDynamicResolver(stepDefinition.benefits) ? [] : stepDefinition.benefits),
+      ...stepDefinition.benefits,
       ...stepDefinition.successLines.map((line) => line.text),
     );
   }
 
   if (stepDefinition.kind === "trusted_form_consent") {
     values.push(
-      stepDefinition.confirmation.nextLabel,
-      stepDefinition.disclosure,
-      stepDefinition.checkboxLabel,
-      stepDefinition.submitLabel,
+      ...getStaticDisplayCopyTemplateStrings(stepDefinition.review.title),
+      ...getStaticDisplayCopyTemplateStrings(stepDefinition.review.description),
+      stepDefinition.review.nextLabel,
+      ...getStaticDisplayCopyTemplateStrings(stepDefinition.consent.title),
+      ...getStaticDisplayCopyTemplateStrings(stepDefinition.consent.description),
+      ...getStaticDisplayCopyTemplateStrings(stepDefinition.consent.disclosure),
+      stepDefinition.consent.checkboxLabel,
+      stepDefinition.consent.submitLabel,
     );
-    if (stepDefinition.confirmation.label) {
-      values.push(stepDefinition.confirmation.label);
-    }
   }
 
   return values;
+}
+
+function getStaticDisplayCopyTemplateStrings(value: unknown): string[] {
+  return typeof value === "string" ? [value] : [];
 }
 
 function getTemplateVariableNames(value: string): string[] {

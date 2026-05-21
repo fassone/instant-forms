@@ -115,6 +115,18 @@ export type TextValue = string & {
 
 export type TextPart = string | number | boolean | TextValue;
 
+declare const markdownValueBrand: unique symbol;
+
+export type MarkdownValue = string & {
+  readonly [markdownValueBrand]: "MarkdownValue";
+};
+
+export type PlainTextValue = string & {
+  readonly [markdownValueBrand]?: never;
+};
+
+export type MarkdownPart = string | number | boolean | TextValue | MarkdownValue;
+
 export type DynamicResolverContext<
   TDependency extends string = string,
   TResult = unknown,
@@ -133,13 +145,26 @@ export type ResolvableValue<
   TDependency extends string = string,
 > = TStaticValue | DynamicResolverContext<TDependency, TResolvedValue>;
 
+export type StepDynamicResolver<
+  TDependency extends string = string,
+  TResult = unknown,
+> = DynamicResolverContext<TDependency, TResult>;
+
+export type DisplayCopy = string | MarkdownValue;
+
+export type InterstitialStepDynamicBody = {
+  label?: PlainTextValue;
+  loadingLabel?: PlainTextValue;
+  successLines?: readonly InterstitialSuccessLine[];
+  benefits: readonly TextValue[];
+};
+
 export type InterstitialStep<
   TKey extends string = string,
   TShowWhen extends StepCondition | undefined = StepCondition | undefined,
-  TBenefits extends ResolvableValue<readonly string[], readonly TextValue[]> = ResolvableValue<
-    readonly string[],
-    readonly TextValue[]
-  >,
+  TDynamic extends StepDynamicResolver<string, InterstitialStepDynamicBody> | undefined =
+    | StepDynamicResolver<string, InterstitialStepDynamicBody>
+    | undefined,
 > = BaseStep<TKey, TShowWhen> & {
   kind: "interstitial";
   type: "INTERSTITIAL";
@@ -147,7 +172,8 @@ export type InterstitialStep<
   successLines: readonly InterstitialSuccessLine[];
   completionAnswer: "completed";
   seenAnswer: "seen";
-  benefits: TBenefits;
+  benefits: readonly string[];
+  dynamic?: TDynamic;
 };
 
 export type TrustedFormConsentConfig = {
@@ -174,60 +200,97 @@ export type TrustedFormConsentFieldTag = {
   role: TrustedFormConsentFieldRole;
 };
 
-export type TrustedFormConfirmationField = {
-  name: string;
-  label: string;
-  value: string;
+export type TrustedFormReviewField = {
+  name: PlainTextValue;
+  label: PlainTextValue;
+  value: PlainTextValue;
   trustedForm?: TrustedFormConsentFieldTag;
 };
 
-export type ResolverTrustedFormConfirmationField = {
-  name: string;
-  label: string;
+export type ResolverTrustedFormReviewField = {
+  name: PlainTextValue;
+  label: PlainTextValue;
   value: TextValue;
   trustedForm?: TrustedFormConsentFieldTag;
 };
 
-export type TrustedFormConfirmation<
-  TFields extends
-    | readonly TrustedFormConfirmationField[]
-    | ResolvableValue<readonly TrustedFormConfirmationField[], readonly ResolverTrustedFormConfirmationField[]> =
-    | readonly TrustedFormConfirmationField[]
-    | ResolvableValue<readonly TrustedFormConfirmationField[], readonly ResolverTrustedFormConfirmationField[]>,
+export type TrustedFormReview<
+  TTitle extends PlainTextValue = PlainTextValue,
+  TDescription extends DisplayCopy | undefined = DisplayCopy | undefined,
+  TFields extends readonly TrustedFormReviewField[] = readonly TrustedFormReviewField[],
 > = {
-  label?: string;
-  nextLabel: string;
+  title: TTitle;
+  description?: TDescription;
+  nextLabel: PlainTextValue;
   fields: TFields;
 };
 
-export type TrustedFormConfirmationInput<
-  TFields extends ResolvableValue<
-    readonly TrustedFormConfirmationField[],
-    readonly ResolverTrustedFormConfirmationField[]
-  > = ResolvableValue<readonly TrustedFormConfirmationField[], readonly ResolverTrustedFormConfirmationField[]>,
+export type TrustedFormReviewInput<
+  TTitle extends PlainTextValue = PlainTextValue,
+  TDescription extends DisplayCopy | undefined = DisplayCopy | undefined,
+  TFields extends readonly TrustedFormReviewField[] = readonly TrustedFormReviewField[],
 > = {
-  label?: string;
-  nextLabel?: string;
+  title: TTitle;
+  description?: TDescription;
+  nextLabel?: PlainTextValue;
   fields: TFields;
+};
+
+export type TrustedFormConsentCopy<
+  TTitle extends PlainTextValue = PlainTextValue,
+  TDescription extends DisplayCopy | undefined = DisplayCopy | undefined,
+  TDisclosure extends DisplayCopy = DisplayCopy,
+> = {
+  title: TTitle;
+  description?: TDescription;
+  disclosure: TDisclosure;
+  checkboxLabel: PlainTextValue;
+  submitLabel: PlainTextValue;
+  validationMessage: PlainTextValue;
+};
+
+export type TrustedFormConsentCopyInput<
+  TTitle extends PlainTextValue = PlainTextValue,
+  TDescription extends DisplayCopy | undefined = DisplayCopy | undefined,
+  TDisclosure extends DisplayCopy = DisplayCopy,
+> = {
+  title: TTitle;
+  description?: TDescription;
+  disclosure: TDisclosure;
+  checkboxLabel?: PlainTextValue;
+  submitLabel?: PlainTextValue;
+  validationMessage?: PlainTextValue;
+};
+
+export type TrustedFormConsentStepDynamicBody = {
+  review: TrustedFormReviewInput<
+    TextValue,
+    MarkdownValue | undefined,
+    readonly ResolverTrustedFormReviewField[]
+  >;
+  consent: TrustedFormConsentCopyInput<TextValue, MarkdownValue | undefined, MarkdownValue>;
 };
 
 export type TrustedFormConsentStep<
   TKey extends string = string,
   TShowWhen extends StepCondition | undefined = StepCondition | undefined,
-  TConfirmationFields extends ResolvableValue<
-    readonly TrustedFormConfirmationField[],
-    readonly ResolverTrustedFormConfirmationField[]
-  > = ResolvableValue<readonly TrustedFormConfirmationField[], readonly ResolverTrustedFormConfirmationField[]>,
+  TReviewTitle extends PlainTextValue = PlainTextValue,
+  TReviewDescription extends DisplayCopy | undefined = DisplayCopy | undefined,
+  TReviewFields extends readonly TrustedFormReviewField[] = readonly TrustedFormReviewField[],
+  TConsentTitle extends PlainTextValue = PlainTextValue,
+  TConsentDescription extends DisplayCopy | undefined = DisplayCopy | undefined,
+  TDisclosure extends DisplayCopy = DisplayCopy,
+  TDynamic extends StepDynamicResolver<string, TrustedFormConsentStepDynamicBody> | undefined =
+    | StepDynamicResolver<string, TrustedFormConsentStepDynamicBody>
+    | undefined,
 > = BaseStep<TKey, TShowWhen> & {
   kind: "trusted_form_consent";
   type: "TRUSTED_FORM_CONSENT";
-  confirmation: TrustedFormConfirmation<TConfirmationFields>;
-  disclosure: string;
-  checkboxLabel: string;
-  submitLabel: string;
+  review: TrustedFormReview<TReviewTitle, TReviewDescription, TReviewFields>;
+  consent: TrustedFormConsentCopy<TConsentTitle, TConsentDescription, TDisclosure>;
   acceptedAnswer: "accepted";
-  validationMessage: string;
   trustedForm: TrustedFormConsentConfig;
+  dynamic?: TDynamic;
 };
 
 export type FormStep<TKey extends string = string> =
@@ -235,11 +298,16 @@ export type FormStep<TKey extends string = string> =
   | TextStep<TKey, StepCondition | undefined>
   | PhoneStep<TKey, StepCondition | undefined>
   | AutocompleteStep<TKey, StepCondition | undefined>
-  | InterstitialStep<TKey, StepCondition | undefined, ResolvableValue<readonly string[], readonly TextValue[]>>
+  | InterstitialStep<TKey, StepCondition | undefined>
   | TrustedFormConsentStep<
       TKey,
       StepCondition | undefined,
-      ResolvableValue<readonly TrustedFormConfirmationField[], readonly ResolverTrustedFormConfirmationField[]>
+      PlainTextValue,
+      DisplayCopy | undefined,
+      readonly TrustedFormReviewField[],
+      PlainTextValue,
+      DisplayCopy | undefined,
+      DisplayCopy
     >;
 
 export type AnswerStep<TKey extends string = string> =
@@ -335,32 +403,50 @@ export type AutocompleteStepInput<
 export type InterstitialStepInput<
   TKey extends string = string,
   TShowWhen extends StepCondition | undefined = StepCondition | undefined,
-  TBenefits extends ResolvableValue<readonly string[], readonly TextValue[]> = ResolvableValue<
-    readonly string[],
-    readonly TextValue[]
-  >,
 > = BaseStepInput<TKey, TShowWhen> & {
   loadingLabel?: string;
   successLines: readonly InterstitialSuccessLine[];
   completionAnswer?: "completed";
   seenAnswer?: "seen";
-  benefits: TBenefits;
+  benefits: readonly string[];
+};
+
+export type InterstitialStepDynamicInput<
+  TKey extends string = string,
+  TShowWhen extends StepCondition | undefined = StepCondition | undefined,
+> = Omit<InterstitialStepInput<TKey, TShowWhen>, "benefits"> & {
+  benefits?: readonly string[];
 };
 
 export type TrustedFormConsentStepInput<
   TKey extends string = string,
   TShowWhen extends StepCondition | undefined = StepCondition | undefined,
-  TConfirmationFields extends ResolvableValue<
-    readonly TrustedFormConfirmationField[],
-    readonly ResolverTrustedFormConfirmationField[]
-  > = ResolvableValue<readonly TrustedFormConfirmationField[], readonly ResolverTrustedFormConfirmationField[]>,
-> = BaseStepInput<TKey, TShowWhen> & {
-  confirmation: TrustedFormConfirmationInput<TConfirmationFields>;
-  disclosure: string;
-  checkboxLabel?: string;
-  submitLabel?: string;
+  TReviewTitle extends PlainTextValue = PlainTextValue,
+  TReviewDescription extends DisplayCopy | undefined = DisplayCopy | undefined,
+  TReviewFields extends readonly TrustedFormReviewField[] = readonly TrustedFormReviewField[],
+  TConsentTitle extends PlainTextValue = PlainTextValue,
+  TConsentDescription extends DisplayCopy | undefined = DisplayCopy | undefined,
+  TDisclosure extends DisplayCopy = DisplayCopy,
+> = {
+  key: TKey;
+  slug: string;
+  countsAsStep?: boolean;
+  showWhen?: TShowWhen;
+  review: TrustedFormReviewInput<TReviewTitle, TReviewDescription, TReviewFields>;
+  consent: TrustedFormConsentCopyInput<TConsentTitle, TConsentDescription, TDisclosure>;
   acceptedAnswer?: "accepted";
-  validationMessage?: string;
+  trustedForm?: Partial<TrustedFormConsentConfig>;
+};
+
+export type TrustedFormConsentStepDynamicInput<
+  TKey extends string = string,
+  TShowWhen extends StepCondition | undefined = StepCondition | undefined,
+> = {
+  key: TKey;
+  slug: string;
+  countsAsStep?: boolean;
+  showWhen?: TShowWhen;
+  acceptedAnswer?: "accepted";
   trustedForm?: Partial<TrustedFormConsentConfig>;
 };
 
@@ -417,15 +503,9 @@ export type InvalidShowWhenAnswers<
 export type DynamicResolverDependencyKey<TValue> = TValue extends DynamicResolverContext<infer TDependency, unknown>
   ? TDependency
   : never;
-export type StepDynamicResolverDependencyKey<TStep> = TStep extends InterstitialStep<
-  string,
-  StepCondition | undefined,
-  infer TBenefits
->
-  ? DynamicResolverDependencyKey<TBenefits>
-  : TStep extends TrustedFormConsentStep<string, StepCondition | undefined, infer TConfirmationFields>
-    ? DynamicResolverDependencyKey<TConfirmationFields>
-    : never;
+export type StepDynamicResolverDependencyKey<TStep> = TStep extends { dynamic?: infer TDynamic }
+  ? DynamicResolverDependencyKey<NonNullable<TDynamic>>
+  : never;
 export type UnknownDynamicResolverDependencyKeys<
   TContract extends FormContract,
   TSteps extends readonly FormStep[],

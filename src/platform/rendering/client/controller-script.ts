@@ -2188,7 +2188,7 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
 
     function validate(ctx, question, step) {
       if (getAnswer(ctx, question, step) !== question.acceptedAnswer) {
-        ctx.showErrorModal(question.validationMessage);
+        ctx.showErrorModal(question.consent.validationMessage);
         return false;
       }
       ctx.answers[question.key] = question.acceptedAnswer;
@@ -2201,7 +2201,7 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
     }
 
     function getNextLabel(_ctx, question) {
-      return activeSubstep === "review" ? question.confirmation.nextLabel : question.submitLabel;
+      return activeSubstep === "review" ? question.review.nextLabel : question.consent.submitLabel;
     }
 
     function mount(ctx, question, step) {
@@ -2243,11 +2243,29 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
           panel.setAttribute("aria-hidden", String(panel.dataset.trustedFormSubstep !== activeSubstep));
         }
       });
+      updateTrustedFormDisplayCopy(step, question);
       ctx.updateNextButton();
+      if (activeSubstep === "review") {
+        scheduleTrustedFormReviewScrollHints(step);
+      }
+    }
+
+    function updateTrustedFormDisplayCopy(step, question) {
+      const title = step.querySelector("[data-question-title]");
+      const description = step.querySelector("[data-question-description]");
+      const copy = activeSubstep === "review" ? question.review : question.consent;
+      if (title instanceof HTMLElement) {
+        title.textContent = copy.title || "";
+      }
+      if (description instanceof HTMLElement) {
+        const descriptionHtml = copy.description?.html || "";
+        description.innerHTML = descriptionHtml;
+        description.hidden = !descriptionHtml;
+      }
     }
 
     function hydrateTrustedFormFieldBank(question, step) {
-      const fields = Array.isArray(question.confirmation?.fields) ? question.confirmation.fields : [];
+      const fields = Array.isArray(question.review?.fields) ? question.review.fields : [];
       fields.forEach((field) => {
         const input = step.querySelector('input[name="' + CSS.escape(field.name) + '"]');
         if (input instanceof HTMLInputElement) {
@@ -2259,6 +2277,23 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
           }
         }
       });
+      scheduleTrustedFormReviewScrollHints(step);
+    }
+
+    function scheduleTrustedFormReviewScrollHints(step) {
+      const reviewScroll = step.querySelector("[data-trusted-form-review-scroll]");
+      if (!(reviewScroll instanceof HTMLElement)) return;
+      window.requestAnimationFrame(() => updateTrustedFormReviewScrollHints(reviewScroll));
+    }
+
+    function updateTrustedFormReviewScrollHints(reviewScroll) {
+      const shell = reviewScroll.closest("[data-trusted-form-review-scroll-shell]");
+      if (!(shell instanceof HTMLElement)) return;
+      const canScroll = reviewScroll.scrollHeight > reviewScroll.clientHeight + 1;
+      shell.dataset.canScrollUp = String(canScroll && reviewScroll.scrollTop > 1);
+      shell.dataset.canScrollDown = String(
+        canScroll && reviewScroll.scrollTop + reviewScroll.clientHeight < reviewScroll.scrollHeight - 1,
+      );
     }
 
     function startTrustedFormStepReadiness(ctx, question) {
@@ -2640,7 +2675,7 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
           return {
             type: "submit",
             name: "trusted_form_submit",
-            value: question.submitLabel,
+            value: question.consent.submitLabel,
             tfRole: "submit",
           };
         }
@@ -2648,7 +2683,7 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
         return {
           type: "button",
           name: "next",
-          value: question.confirmation.nextLabel,
+          value: question.review.nextLabel,
         };
       },
       hydrate,
@@ -2685,6 +2720,12 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
           return true;
         }
         return false;
+      },
+      onScroll(event) {
+        const target = event.target;
+        if (target instanceof HTMLElement && target.matches("[data-trusted-form-review-scroll]")) {
+          updateTrustedFormReviewScrollHints(target);
+        }
       },
       unmount,
       usesNativeSubmit() {

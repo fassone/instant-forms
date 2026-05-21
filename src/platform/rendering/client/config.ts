@@ -4,7 +4,6 @@ import {
   getStepDynamicResolverDependencies,
   getOptionalStepDynamicResolverDependencies,
   isCountedStep,
-  isDynamicResolver,
   isStepVisible,
   resolveStepDynamicValues,
   type AutocompleteStep,
@@ -13,10 +12,11 @@ import {
   type InterstitialStep,
   type PhoneStep,
   type TextStep,
-  type TrustedFormConfirmation,
   type TrustedFormConsentStep,
+  type TrustedFormReview,
 } from "../../flow";
 import { createStateAutocompleteItems } from "../../steps/autocomplete/ranking";
+import { renderMarkdown, type RenderedMarkdown } from "../markdown";
 
 type ClientStepCondition = {
   questionKey: string;
@@ -38,6 +38,8 @@ type ClientTrustedFormPreloadResource = {
   url: string;
   as: "script";
 };
+
+type ClientDisplayCopy = RenderedMarkdown;
 
 export type ClientTrustedFormPreloadAsset = {
   stepKey: string;
@@ -77,11 +79,19 @@ export type ClientStep =
   | (ClientStepBase & {
       kind: "trusted_form_consent";
       type: TrustedFormConsentStep["type"];
-      confirmation: TrustedFormConfirmation;
-      checkboxLabel: string;
-      submitLabel: string;
+      review: Omit<TrustedFormReview, "title" | "description"> & {
+        title: string;
+        description?: ClientDisplayCopy;
+      };
+      consent: {
+        title: string;
+        description?: ClientDisplayCopy;
+        disclosure: ClientDisplayCopy;
+        checkboxLabel: string;
+        submitLabel: string;
+        validationMessage: string;
+      };
       acceptedAnswer: TrustedFormConsentStep["acceptedAnswer"];
-      validationMessage: string;
       trustedForm: TrustedFormConsentStep["trustedForm"];
     });
 
@@ -231,11 +241,7 @@ function createClientStep(
   }
 
   if (stepDefinition.kind === "interstitial") {
-    const resolvedInterstitialStep = resolvedStepDefinition as InterstitialStep<
-      string,
-      undefined,
-      readonly string[]
-    >;
+    const resolvedInterstitialStep = resolvedStepDefinition as InterstitialStep<string, undefined>;
 
     return {
       ...baseStep,
@@ -253,24 +259,37 @@ function createClientStep(
     const resolvedTrustedFormStep = resolvedStepDefinition as TrustedFormConsentStep<
       string,
       undefined,
-      TrustedFormConfirmation["fields"]
+      string,
+      string | undefined,
+      TrustedFormReview["fields"],
+      string,
+      string | undefined,
+      string
     >;
 
     return {
       ...baseStep,
       kind: "trusted_form_consent",
       type: resolvedTrustedFormStep.type,
-      confirmation: {
-        ...(resolvedTrustedFormStep.confirmation.label ? { label: resolvedTrustedFormStep.confirmation.label } : {}),
-        nextLabel: resolvedTrustedFormStep.confirmation.nextLabel,
-        fields: isDynamicResolver(resolvedTrustedFormStep.confirmation.fields)
-          ? []
-          : resolvedTrustedFormStep.confirmation.fields,
+      review: {
+        title: resolvedTrustedFormStep.review.title,
+        ...(resolvedTrustedFormStep.review.description
+          ? { description: renderDisplayCopy(resolvedTrustedFormStep.review.description) }
+          : {}),
+        nextLabel: resolvedTrustedFormStep.review.nextLabel,
+        fields: resolvedTrustedFormStep.review.fields,
       },
-      checkboxLabel: resolvedTrustedFormStep.checkboxLabel,
-      submitLabel: resolvedTrustedFormStep.submitLabel,
+      consent: {
+        title: resolvedTrustedFormStep.consent.title,
+        ...(resolvedTrustedFormStep.consent.description
+          ? { description: renderDisplayCopy(resolvedTrustedFormStep.consent.description) }
+          : {}),
+        disclosure: renderDisplayCopy(resolvedTrustedFormStep.consent.disclosure),
+        checkboxLabel: resolvedTrustedFormStep.consent.checkboxLabel,
+        submitLabel: resolvedTrustedFormStep.consent.submitLabel,
+        validationMessage: resolvedTrustedFormStep.consent.validationMessage,
+      },
       acceptedAnswer: resolvedTrustedFormStep.acceptedAnswer,
-      validationMessage: resolvedTrustedFormStep.validationMessage,
       trustedForm: resolvedTrustedFormStep.trustedForm,
     };
   }
@@ -280,6 +299,10 @@ function createClientStep(
     kind: "text",
     type: stepDefinition.type,
   };
+}
+
+function renderDisplayCopy(value: unknown): ClientDisplayCopy {
+  return renderMarkdown(typeof value === "string" ? value : "");
 }
 
 function getDynamicResolverDependencyConfig(

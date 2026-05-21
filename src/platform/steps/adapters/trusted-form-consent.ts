@@ -13,7 +13,7 @@ export const trustedFormConsentAdapter: StepAdapter<TrustedFormConsentStep> = {
     }
 
     if (answer !== stepDefinition.acceptedAnswer) {
-      return { ok: false, message: stepDefinition.validationMessage };
+      return { ok: false, message: stepDefinition.consent.validationMessage };
     }
 
     return { ok: true, answer, includeInSubmission: false };
