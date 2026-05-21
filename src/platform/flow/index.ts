@@ -7,7 +7,7 @@ export {
   isDynamicResolver,
   resolveStepDynamicValues,
 } from "./dsl/dynamic-resolvers";
-export { autocompleteSource, md, markdown, resolve, step, text } from "./dsl/step-builders";
+export { autocompleteSource, consentMd, md, markdown, resolve, step, text, tfTag } from "./dsl/step-builders";
 export { z } from "zod";
 export type * from "./dsl/types";
 export * from "./registry";

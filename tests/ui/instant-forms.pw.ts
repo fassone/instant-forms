@@ -271,6 +271,13 @@ test.describe("instant routed form UI", () => {
     const reviewScroll = step.locator("[data-trusted-form-review-scroll]");
     const reviewTopFade = step.locator("[data-trusted-form-review-scroll-fade-top]");
     const reviewBottomFade = step.locator("[data-trusted-form-review-scroll-fade-bottom]");
+    await expect(step.locator("[data-trusted-form-field-bank] [data-tf-element-role]")).toHaveCount(0);
+    await expect(
+      step.locator('[data-trusted-form-substep="review"] [data-tf-element-role="consent-grantor-name"]'),
+    ).toHaveText("Ana Lopez");
+    await expect(
+      step.locator('[data-trusted-form-substep="review"] [data-tf-element-role="consent-grantor-phone"]'),
+    ).toHaveText("(615) 555-1234");
     await expect(reviewShell).toHaveAttribute("data-can-scroll-up", "false");
     const canReviewScroll = await reviewScroll.evaluate(
       (element) => element.scrollHeight > element.clientHeight + 1,
@@ -344,6 +351,13 @@ test.describe("instant routed form UI", () => {
     await expect(page.getByRole("button", { name: "Enviar" })).toBeEnabled();
 
     await activeStep(page).locator("[data-trusted-form-consent]").check();
+    await expect(activeStep(page).locator("[data-consent-summary]")).toHaveCount(0);
+    await expect(
+      activeStep(page).locator('[data-trusted-form-substep="consent"] [data-tf-element-role="consent-grantor-name"]'),
+    ).toHaveCount(0);
+    await expect(
+      activeStep(page).locator('[data-trusted-form-substep="consent"] [data-tf-element-role="consent-grantor-phone"]'),
+    ).toHaveCount(0);
     const submitButton = page.getByRole("button", { name: "Enviar" });
     const submissionRequest = page.waitForRequest(/\/api\/forms\/tn_custom\/native-submissions/u);
     await submitButton.click();

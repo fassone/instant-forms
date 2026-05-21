@@ -47,7 +47,7 @@ export const tnFlow = defineFormFlow({
   page: {
     name: "Seguros Aseguranza",
   },
-  steps: ({ step, text, md }) => [
+  steps: ({ step, text, md, consentMd, tfTag }) => [
     step.choice({
       key: "belongs_to_state",
       slug: "vive-en-tennessee",
@@ -232,8 +232,19 @@ export const tnFlow = defineFormFlow({
           title: text("Consentimiento"),
           description: md("Último paso antes de enviar su solicitud."),
           // Replace with approved consent language before production traffic.
-          disclosure: md(
-            "Al seleccionar esta casilla, autorizo a **Seguros Aseguranza** y a sus agentes a contactarme por teléfono o mensaje de texto sobre opciones de seguro de auto.",
+          disclosure: consentMd(
+            "Al marcar esta casilla y hacer clic en “Enviar”, yo, **",
+            tfTag("consent-grantor-name", text(answers.first_name, " ", answers.last_name)),
+            "**, autorizo a **",
+            tfTag("consent-advertiser-name", "Liderna Inc"),
+            "** y a sus socios, agentes y proveedores de seguros a contactarme al **",
+            tfTag("consent-grantor-phone", answers.phone_number),
+            "** sobre cotizaciones, productos y servicios de seguro mediante",
+            tfTag("contact-method", " llamadas, mensajes de texto y correos electrónicos,"),
+            tfTag("consent-grantor-waived-regulated-technologies", " incluso con marcación automática, voz artificial o pregrabada e inteligencia artificial, "),
+            tfTag("consent-grantor-waived-dnc", " aun si mi número figura en un registro federal o estatal de “No Llame” (DNC)."),
+            tfTag("consent-grantor-waived-purchase-condition", " Entiendo que este consentimiento no es condición de compra"),
+            " y que puedo revocarlo en cualquier momento respondiendo STOP."
           ),
           checkboxLabel: "Acepto continuar y enviar mi solicitud.",
           submitLabel: "Enviar",

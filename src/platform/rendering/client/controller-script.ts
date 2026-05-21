@@ -2270,11 +2270,7 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
         const input = step.querySelector('input[name="' + CSS.escape(field.name) + '"]');
         if (input instanceof HTMLInputElement) {
           input.value = String(field.value || "");
-          if (field.trustedForm?.role) {
-            input.dataset.tfElementRole = field.trustedForm.role;
-          } else {
-            delete input.dataset.tfElementRole;
-          }
+          delete input.dataset.tfElementRole;
         }
       });
       scheduleTrustedFormReviewScrollHints(step);

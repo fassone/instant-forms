@@ -7,6 +7,7 @@ import {
   isStepVisible,
   resolveStepDynamicValues,
   type AutocompleteStep,
+  type ConsentDisclosureCopy,
   type FormStep,
   type InstantForm,
   type InterstitialStep,
@@ -16,7 +17,7 @@ import {
   type TrustedFormReview,
 } from "../../flow";
 import { createStateAutocompleteItems } from "../../steps/autocomplete/ranking";
-import { renderMarkdown, type RenderedMarkdown } from "../markdown";
+import { renderConsentMarkdown, renderMarkdown, type RenderedMarkdown } from "../markdown";
 
 type ClientStepCondition = {
   questionKey: string;
@@ -264,7 +265,7 @@ function createClientStep(
       TrustedFormReview["fields"],
       string,
       string | undefined,
-      string
+      ConsentDisclosureCopy
     >;
 
     return {
@@ -284,7 +285,7 @@ function createClientStep(
         ...(resolvedTrustedFormStep.consent.description
           ? { description: renderDisplayCopy(resolvedTrustedFormStep.consent.description) }
           : {}),
-        disclosure: renderDisplayCopy(resolvedTrustedFormStep.consent.disclosure),
+        disclosure: renderConsentDisplayCopy(resolvedTrustedFormStep.consent.disclosure),
         checkboxLabel: resolvedTrustedFormStep.consent.checkboxLabel,
         submitLabel: resolvedTrustedFormStep.consent.submitLabel,
         validationMessage: resolvedTrustedFormStep.consent.validationMessage,
@@ -303,6 +304,10 @@ function createClientStep(
 
 function renderDisplayCopy(value: unknown): ClientDisplayCopy {
   return renderMarkdown(typeof value === "string" ? value : "");
+}
+
+function renderConsentDisplayCopy(value: unknown): ClientDisplayCopy {
+  return renderConsentMarkdown(typeof value === "string" ? value : "");
 }
 
 function getDynamicResolverDependencyConfig(

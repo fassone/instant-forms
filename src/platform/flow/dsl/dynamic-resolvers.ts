@@ -5,6 +5,7 @@ import type {
   InstantForm,
   InterstitialStep,
   InterstitialStepDynamicBody,
+  ConsentMarkdownValue,
   TrustedFormReviewField,
   TrustedFormConsentFieldRole,
   TrustedFormConsentStep,
@@ -201,7 +202,7 @@ function mergeTrustedFormConsentStepDynamicBody(
       ...stepDefinition.consent,
       title: consentTitle,
       ...(consentDescription === undefined ? {} : { description: consentDescription }),
-      disclosure,
+      disclosure: disclosure as ConsentMarkdownValue,
       checkboxLabel:
         value.consent.checkboxLabel === undefined
           ? stepDefinition.consent.checkboxLabel

@@ -116,6 +116,8 @@ export type TextValue = string & {
 export type TextPart = string | number | boolean | TextValue;
 
 declare const markdownValueBrand: unique symbol;
+declare const consentMarkdownValueBrand: unique symbol;
+declare const trustedFormConsentTagTokenBrand: unique symbol;
 
 export type MarkdownValue = string & {
   readonly [markdownValueBrand]: "MarkdownValue";
@@ -123,9 +125,35 @@ export type MarkdownValue = string & {
 
 export type PlainTextValue = string & {
   readonly [markdownValueBrand]?: never;
+  readonly [consentMarkdownValueBrand]?: never;
+  readonly [trustedFormConsentTagTokenBrand]?: never;
 };
 
 export type MarkdownPart = string | number | boolean | TextValue | MarkdownValue;
+export type TrustedFormTagTextPart = string | number | boolean | TextValue;
+
+export type TrustedFormConsentInlineTagRole =
+  | "submit-text"
+  | "consent-advertiser-name"
+  | "contact-method"
+  | "consent-grantor-name"
+  | "consent-grantor-phone"
+  | "consent-grantor-email"
+  | "consent-grantor-address"
+  | "consent-grantor-waived-dnc"
+  | "consent-grantor-waived-purchase-condition"
+  | "consent-grantor-waived-regulated-technologies";
+
+export type TrustedFormConsentTagToken = string & {
+  readonly [trustedFormConsentTagTokenBrand]: "TrustedFormConsentTagToken";
+};
+
+export type ConsentMarkdownValue = string & {
+  readonly [consentMarkdownValueBrand]: "ConsentMarkdownValue";
+  readonly [markdownValueBrand]?: never;
+};
+
+export type ConsentMarkdownPart = MarkdownPart | TrustedFormConsentTagToken;
 
 export type DynamicResolverContext<
   TDependency extends string = string,
@@ -150,7 +178,13 @@ export type StepDynamicResolver<
   TResult = unknown,
 > = DynamicResolverContext<TDependency, TResult>;
 
-export type DisplayCopy = string | MarkdownValue;
+export type DisplayPlainString = string & {
+  readonly [consentMarkdownValueBrand]?: never;
+  readonly [trustedFormConsentTagTokenBrand]?: never;
+};
+
+export type DisplayCopy = DisplayPlainString | MarkdownValue;
+export type ConsentDisclosureCopy = ConsentMarkdownValue;
 
 export type InterstitialStepDynamicBody = {
   label?: PlainTextValue;
@@ -239,7 +273,7 @@ export type TrustedFormReviewInput<
 export type TrustedFormConsentCopy<
   TTitle extends PlainTextValue = PlainTextValue,
   TDescription extends DisplayCopy | undefined = DisplayCopy | undefined,
-  TDisclosure extends DisplayCopy = DisplayCopy,
+  TDisclosure extends ConsentDisclosureCopy = ConsentDisclosureCopy,
 > = {
   title: TTitle;
   description?: TDescription;
@@ -252,7 +286,7 @@ export type TrustedFormConsentCopy<
 export type TrustedFormConsentCopyInput<
   TTitle extends PlainTextValue = PlainTextValue,
   TDescription extends DisplayCopy | undefined = DisplayCopy | undefined,
-  TDisclosure extends DisplayCopy = DisplayCopy,
+  TDisclosure extends ConsentDisclosureCopy = ConsentDisclosureCopy,
 > = {
   title: TTitle;
   description?: TDescription;
@@ -268,7 +302,7 @@ export type TrustedFormConsentStepDynamicBody = {
     MarkdownValue | undefined,
     readonly ResolverTrustedFormReviewField[]
   >;
-  consent: TrustedFormConsentCopyInput<TextValue, MarkdownValue | undefined, MarkdownValue>;
+  consent: TrustedFormConsentCopyInput<TextValue, MarkdownValue | undefined, ConsentMarkdownValue>;
 };
 
 export type TrustedFormConsentStep<
@@ -279,7 +313,7 @@ export type TrustedFormConsentStep<
   TReviewFields extends readonly TrustedFormReviewField[] = readonly TrustedFormReviewField[],
   TConsentTitle extends PlainTextValue = PlainTextValue,
   TConsentDescription extends DisplayCopy | undefined = DisplayCopy | undefined,
-  TDisclosure extends DisplayCopy = DisplayCopy,
+  TDisclosure extends ConsentDisclosureCopy = ConsentDisclosureCopy,
   TDynamic extends StepDynamicResolver<string, TrustedFormConsentStepDynamicBody> | undefined =
     | StepDynamicResolver<string, TrustedFormConsentStepDynamicBody>
     | undefined,
@@ -307,7 +341,7 @@ export type FormStep<TKey extends string = string> =
       readonly TrustedFormReviewField[],
       PlainTextValue,
       DisplayCopy | undefined,
-      DisplayCopy
+      ConsentDisclosureCopy
     >;
 
 export type AnswerStep<TKey extends string = string> =
@@ -426,7 +460,7 @@ export type TrustedFormConsentStepInput<
   TReviewFields extends readonly TrustedFormReviewField[] = readonly TrustedFormReviewField[],
   TConsentTitle extends PlainTextValue = PlainTextValue,
   TConsentDescription extends DisplayCopy | undefined = DisplayCopy | undefined,
-  TDisclosure extends DisplayCopy = DisplayCopy,
+  TDisclosure extends ConsentDisclosureCopy = ConsentDisclosureCopy,
 > = {
   key: TKey;
   slug: string;

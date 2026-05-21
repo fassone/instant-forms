@@ -1,4 +1,14 @@
-import { defineFormFlow, md, resolve, step, text, z, type TrustedFormConsentStepInput } from "../../src/platform/flow";
+import {
+  consentMd,
+  defineFormFlow,
+  md,
+  resolve,
+  step,
+  text,
+  tfTag,
+  z,
+  type TrustedFormConsentStepInput,
+} from "../../src/platform/flow";
 
 const contract = {
   context: z.object({}),
@@ -92,7 +102,7 @@ void defineFormFlow({
         },
         consent: {
           title: text("Consentimiento"),
-          disclosure: md("Consentimiento."),
+          disclosure: consentMd("Consentimiento."),
         },
       }),
     ),
@@ -117,6 +127,41 @@ void md("Hello ", maybeName);
 
 void md("Hello ", maybeName ?? "Michel");
 
+// @ts-expect-error consentMd(...) rejects undefined parts.
+void consentMd("Hello ", undefined);
+
+// @ts-expect-error consentMd(...) requires optional values to be handled before concatenation.
+void consentMd("Hello ", maybeName);
+
+void consentMd("Hello ", maybeName ?? "Michel");
+
+void tfTag("contact-method", "teléfono o mensaje de texto");
+void consentMd("Autorizo a ", tfTag("consent-advertiser-name", "Seguros Aseguranza"), ".");
+
+// @ts-expect-error tfTag(...) only accepts ActiveProspect inline consent tag roles.
+void tfTag("unknown-role", "text");
+
+// @ts-expect-error offer is structural and rendered by the platform, not an inline consent tag.
+void tfTag("offer", "text");
+
+// @ts-expect-error submit is structural and rendered by the platform, not an inline consent tag.
+void tfTag("submit", "text");
+
+// @ts-expect-error consent-language is structural and rendered by the platform, not an inline consent tag.
+void tfTag("consent-language", "text");
+
+// @ts-expect-error consent-opt-in is structural and rendered by the platform, not an inline consent tag.
+void tfTag("consent-opt-in", "text");
+
+// @ts-expect-error opted advertiser pairs require a dedicated selectable advertiser DSL.
+void tfTag("consent-opted-advertiser-input-1", "text");
+
+// @ts-expect-error opted advertiser pairs require a dedicated selectable advertiser DSL.
+void tfTag("consent-opted-advertiser-name-1", "text");
+
+// @ts-expect-error tfTag(...) requires optional values to be handled before tagging.
+void tfTag("contact-method", maybeName);
+
 void step.trustedFormConsent({
   key: "trustedform_consent",
   slug: "consentimiento",
@@ -134,7 +179,7 @@ void step.trustedFormConsent({
   consent: {
     // @ts-expect-error Titles are plain text, not markdown display copy.
     title: md("**Consentimiento**"),
-    disclosure: md("Consentimiento."),
+    disclosure: consentMd("Consentimiento."),
   },
 });
 
@@ -163,7 +208,7 @@ void step.trustedFormConsent({
   },
   consent: {
     title: text("Consentimiento"),
-    disclosure: md("Consentimiento."),
+    disclosure: consentMd("Consentimiento."),
   },
 });
 
@@ -261,7 +306,7 @@ void defineFormFlow({
         consent: {
           title: text("Consentimiento"),
           description: md("Último paso antes de enviar."),
-          disclosure: md("Autorizo a **Seguros Aseguranza** a contactarme."),
+          disclosure: consentMd("Autorizo a **Seguros Aseguranza** a contactarme."),
         },
       }),
     ),
@@ -286,7 +331,7 @@ void step.trustedFormConsent({
   },
   consent: {
     title: text("Consentimiento"),
-    disclosure: md("Autorizo a **Seguros Aseguranza** a contactarme."),
+    disclosure: consentMd("Autorizo a **Seguros Aseguranza** a contactarme."),
   },
 });
 
@@ -339,7 +384,7 @@ void defineFormFlow({
         },
         consent: {
           title: text("Consentimiento"),
-          // @ts-expect-error Dynamic display copy must be created with md(...).
+          // @ts-expect-error Dynamic disclosure copy must be created with consentMd(...).
           disclosure: "Plain dynamic disclosure",
         },
       }),
@@ -363,7 +408,7 @@ void step.trustedFormConsent({
   },
   consent: {
     title: text("Consentimiento"),
-    disclosure: md("Autorizo a **Seguros Aseguranza** a contactarme."),
+    disclosure: consentMd("Autorizo a **Seguros Aseguranza** a contactarme."),
   },
 });
 
@@ -383,9 +428,52 @@ void step.trustedFormConsent({
   },
   consent: {
     title: text("Consentimiento"),
-    disclosure: md("Autorizo a **Seguros Aseguranza** a contactarme."),
+    disclosure: consentMd("Autorizo a **Seguros Aseguranza** a contactarme."),
     // @ts-expect-error Button labels are native control text, not markdown display copy.
     submitLabel: md("**Enviar**"),
+  },
+});
+
+void step.trustedFormConsent({
+  key: "trustedform_consent",
+  slug: "consentimiento",
+  review: {
+    title: text("Consentimiento"),
+    // @ts-expect-error consentMd(...) is only for the TrustedForm disclosure.
+    description: consentMd("Revise esta información."),
+    fields: [
+      {
+        name: "review_name",
+        label: "Nombre",
+        value: "Ana",
+      },
+    ],
+  },
+  consent: {
+    title: text("Consentimiento"),
+    // @ts-expect-error consent.description is general prose and must use md(...), not consentMd(...).
+    description: consentMd("Último paso."),
+    disclosure: consentMd("Autorizo a ", tfTag("consent-advertiser-name", "Seguros Aseguranza"), "."),
+  },
+});
+
+void step.trustedFormConsent({
+  key: "trustedform_consent",
+  slug: "consentimiento",
+  review: {
+    title: text("Consentimiento"),
+    fields: [
+      {
+        name: "review_name",
+        label: "Nombre",
+        value: "Ana",
+      },
+    ],
+  },
+  consent: {
+    title: text("Consentimiento"),
+    // @ts-expect-error TrustedForm disclosure must use consentMd(...), not plain md(...).
+    disclosure: md("Autorizo a **Seguros Aseguranza** a contactarme."),
   },
 });
 
@@ -466,7 +554,7 @@ void defineFormFlow({
         },
         consent: {
           title: text("Consentimiento"),
-          disclosure: md("Consentimiento."),
+          disclosure: consentMd("Consentimiento."),
         },
       }),
     ),
@@ -500,7 +588,7 @@ void defineFormFlow({
         },
         consent: {
           title: text("Consentimiento"),
-          disclosure: md("Consentimiento."),
+          disclosure: consentMd("Consentimiento."),
         },
       }),
     ),
@@ -534,7 +622,7 @@ void ({
   },
   consent: {
     title: text("Consentimiento"),
-    disclosure: md("Consentimiento."),
+    disclosure: consentMd("Consentimiento."),
   },
 });
 
@@ -553,7 +641,7 @@ void step.trustedFormConsent({
   },
   consent: {
     title: text("Consentimiento"),
-    disclosure: md("Consentimiento."),
+    disclosure: consentMd("Consentimiento."),
   },
   // @ts-expect-error grantorSummary is intentionally removed; review.fields is the only review/tagging API.
   grantorSummary: resolve(["first_name"], ({ answers }) => ({
@@ -587,7 +675,7 @@ void step.trustedFormConsent({
   },
   consent: {
     title: text("Consentimiento"),
-    disclosure: md("Consentimiento."),
+    disclosure: consentMd("Consentimiento."),
   },
 });
 
@@ -606,7 +694,7 @@ void step.trustedFormConsent({
   },
   consent: {
     title: text("Consentimiento"),
-    disclosure: md("Consentimiento."),
+    disclosure: consentMd("Consentimiento."),
   },
   // @ts-expect-error confirmation was removed; use review.fields instead.
   confirmation: {
@@ -629,7 +717,7 @@ void step.trustedFormConsent({
   },
   consent: {
     title: text("Consentimiento"),
-    disclosure: md("Consentimiento."),
+    disclosure: consentMd("Consentimiento."),
   },
   trustedForm: {
     preloadAssets: "previous_step",
@@ -653,7 +741,7 @@ void step.trustedFormConsent({
   },
   consent: {
     title: text("Consentimiento"),
-    disclosure: md("Consentimiento."),
+    disclosure: consentMd("Consentimiento."),
   },
   trustedForm: {
     // @ts-expect-error TrustedForm readiness cannot be deferred until native submit.

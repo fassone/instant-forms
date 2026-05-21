@@ -19,7 +19,7 @@ import type {
 import { createClientFormConfig } from "./client/config";
 import { getFormControllerScript } from "./client/controller-script";
 import { prepareInlineAssetHtml } from "./inline-assets";
-import { renderMarkdownToHtml } from "./markdown";
+import { renderConsentMarkdownToHtml, renderMarkdownToHtml } from "./markdown";
 
 export const FORM_CONFIG_JSON_PLACEHOLDER = "__FORM_CONFIG_JSON__";
 export const FORM_CONFIG_PLACEHOLDER_EXPRESSION = JSON.stringify(FORM_CONFIG_JSON_PLACEHOLDER);
@@ -670,14 +670,6 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         white-space: nowrap;
       }
 
-      .consent-summary {
-        margin: 0;
-        color: var(--muted);
-        font-size: 0.95rem;
-        font-weight: 700;
-        line-height: 1.35;
-      }
-
       .consent-check {
         display: flex;
         align-items: flex-start;
@@ -1308,7 +1300,6 @@ function renderTrustedFormConsent(
     </div>
     <div class="trusted-form-panel" data-trusted-form-substep="consent" aria-hidden="true">
       <div class="consent-card">
-        ${renderTrustedFormGrantorSummary(stepDefinition)}
         <label class="consent-check" data-tf-element-role="consent-language">
           <input
             class="consent-checkbox"
@@ -1320,7 +1311,7 @@ function renderTrustedFormConsent(
             ${checked}
           >
           <span class="consent-copy">
-            <span>${renderDisplayCopyHtml(stepDefinition.consent.disclosure)}</span>
+            <span>${renderConsentDisplayCopyHtml(stepDefinition.consent.disclosure)}</span>
             <span class="consent-acceptance">${escapeHtml(stepDefinition.consent.checkboxLabel)}</span>
           </span>
         </label>
@@ -1344,7 +1335,6 @@ function renderTrustedFormConsentInput(field: TrustedFormReviewField): string {
   const role = field.trustedForm?.role;
   const inputType =
     role === "consent-grantor-email" ? "email" : role === "consent-grantor-phone" ? "tel" : "text";
-  const trustedFormAttribute = role ? ` data-tf-element-role="${escapeHtml(role)}"` : "";
 
   return `<label>
       <span>${escapeHtml(field.label)}</span>
@@ -1352,31 +1342,18 @@ function renderTrustedFormConsentInput(field: TrustedFormReviewField): string {
         type="${inputType}"
         name="${escapeHtml(field.name)}"
         value="${escapeHtml(field.value)}"
-        ${trustedFormAttribute}
         readonly
       >
     </label>`;
 }
 
-function renderTrustedFormGrantorSummary(stepDefinition: TrustedFormConsentStep): string {
-  const taggedFields = getTaggedTrustedFormReviewFields(stepDefinition);
-  if (taggedFields.length === 0) {
-    return "";
-  }
-
-  const fieldText = taggedFields
-    .map(
-      (field) =>
-        `<span data-tf-element-role="${escapeHtml(field.trustedForm.role)}">${escapeHtml(getConsentFieldDisplayValue(field))}</span>`,
-    )
-    .join(" · ");
-
-  return `<p class="consent-summary" data-consent-summary="true">${fieldText}</p>`;
-}
-
 function renderTrustedFormReviewList(stepDefinition: TrustedFormConsentStep): string {
   const fields = stepDefinition.review.fields;
-  const reviewItems = fields.map((field) => ({ label: field.label, value: getConsentFieldDisplayValue(field) }));
+  const reviewItems = fields.map((field) => ({
+    label: field.label,
+    value: getConsentFieldDisplayValue(field),
+    trustedFormRole: field.trustedForm?.role,
+  }));
 
   if (reviewItems.length === 0) {
     return "";
@@ -1399,7 +1376,7 @@ function renderTrustedFormReviewList(stepDefinition: TrustedFormConsentStep): st
         .map(
           (item) => `<div class="trusted-form-review-row">
       <dt class="trusted-form-review-label">${escapeHtml(item.label)}</dt>
-      <dd class="trusted-form-review-value">${escapeHtml(item.value)}</dd>
+      <dd class="trusted-form-review-value"${item.trustedFormRole ? ` data-tf-element-role="${escapeHtml(item.trustedFormRole)}"` : ""}>${escapeHtml(item.value)}</dd>
     </div>`,
         )
         .join("")}
@@ -1411,16 +1388,6 @@ function renderTrustedFormReviewList(stepDefinition: TrustedFormConsentStep): st
       aria-hidden="true"
     ></div>
   </div>`;
-}
-
-function getTaggedTrustedFormReviewFields(stepDefinition: TrustedFormConsentStep): Array<
-  TrustedFormReviewField & { trustedForm: NonNullable<TrustedFormReviewField["trustedForm"]> }
-> {
-  const fields = stepDefinition.review.fields;
-  return fields.filter(
-    (field): field is TrustedFormReviewField & { trustedForm: NonNullable<TrustedFormReviewField["trustedForm"]> } =>
-      Boolean(field.trustedForm),
-  );
 }
 
 function getConsentFieldDisplayValue(field: TrustedFormReviewField): string {
@@ -1438,6 +1405,10 @@ function renderOptionalDisplayCopyHtml(value: unknown): string {
 
 function renderDisplayCopyHtml(value: unknown): string {
   return typeof value === "string" ? renderMarkdownToHtml(value) : "";
+}
+
+function renderConsentDisplayCopyHtml(value: unknown): string {
+  return typeof value === "string" ? renderConsentMarkdownToHtml(value) : "";
 }
 
 function formatPhoneForDisplay(value: string): string {

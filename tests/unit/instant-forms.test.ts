@@ -8,6 +8,7 @@ import { createFetchHandler } from "../../src/platform/app/server";
 import { registerScriptRoutes } from "../../src/platform/app/routes/scripts";
 import {
   autocompleteSource,
+  consentMd,
   defineFormFlow,
   getStepDynamicResolverDependencies,
   getStepSlug,
@@ -16,6 +17,7 @@ import {
   resolveStepDynamicValues,
   step,
   text,
+  tfTag,
   z,
 } from "../../src/platform/flow";
 import { encodeCheckpointAnswers, getCheckpointCookieName } from "../../src/platform/persistence/checkpoints";
@@ -26,7 +28,7 @@ import {
   buildInlineCss,
   getInlineAssetMode,
 } from "../../src/platform/rendering/inline-assets";
-import { renderMarkdownToHtml } from "../../src/platform/rendering/markdown";
+import { renderConsentMarkdownToHtml, renderMarkdownToHtml } from "../../src/platform/rendering/markdown";
 import {
   defineFormRoutes,
   getFormRouteByRouteKey,
@@ -371,7 +373,7 @@ describe("form registry", () => {
           },
           consent: {
             title: text("Consentimiento"),
-            disclosure: md("Texto de consentimiento."),
+            disclosure: consentMd("Texto de consentimiento."),
           },
         }),
       ],
@@ -456,7 +458,7 @@ describe("form registry", () => {
           },
           consent: {
             title: text("Consentimiento"),
-            disclosure: md("Texto de consentimiento."),
+            disclosure: consentMd("Texto de consentimiento."),
           },
           trustedForm: {
             delivery: "main_thread",
@@ -1105,7 +1107,7 @@ describe("form registry", () => {
         mapping: ({ answers }: { answers: { phone_number: string } }) => ({ phone: answers.phone_number }),
       },
       page: { name: "Page" },
-      steps: ({ step, text, md }) => [
+      steps: ({ step, text, md, consentMd }) => [
         step.text({ key: "first_name", slug: "nombre", label: "Nombre", autocomplete: "given-name" }),
         step.text({ key: "last_name", slug: "apellido", label: "Apellido", autocomplete: "family-name" }),
         step.phone({ key: "phone_number", slug: "telefono", label: "Telefono" }),
@@ -1139,7 +1141,7 @@ describe("form registry", () => {
             },
             consent: {
               title: text("Consentimiento"),
-              disclosure: md("Texto de consentimiento."),
+              disclosure: consentMd("Texto de consentimiento."),
             },
           }),
         ),
@@ -3263,8 +3265,16 @@ describe("form rendering", () => {
       answers: preConsentAnswers,
     });
     const unsafeHtml = renderMarkdownToHtml("Hola <script>alert(1)</script> ![bad](https://example.com/bad.png)");
+    const unsafeConsentHtml = renderConsentMarkdownToHtml(
+      consentMd(
+        "Hola <script>alert(1)</script> ",
+        tfTag("contact-method", "<teléfono>"),
+        " y **negrita**.",
+      ),
+    );
 
-    expect(html).toContain("<strong>Seguros Aseguranza</strong>");
+    expect(html).toContain('data-tf-element-role="consent-advertiser-name"');
+    expect(html).toContain('data-tf-element-role="contact-method"');
     expect(html).toContain(".question-description {\n        max-width: 100%;");
     expect(html).toContain("margin: 0;");
     expect(html).toContain("font-weight: 400;");
@@ -3277,6 +3287,10 @@ describe("form rendering", () => {
     expect(unsafeHtml).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
     expect(unsafeHtml).not.toContain("<script>");
     expect(unsafeHtml).not.toContain("<img");
+    expect(unsafeConsentHtml).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+    expect(unsafeConsentHtml).toContain('<span data-tf-element-role="contact-method">&lt;teléfono&gt;</span>');
+    expect(unsafeConsentHtml).toContain("<strong>negrita</strong>");
+    expect(unsafeConsentHtml).not.toContain("<script>");
   });
 
   it("renders TrustedForm consent as an authored final step", async () => {
@@ -3314,6 +3328,12 @@ describe("form rendering", () => {
     expect(html).toContain('"fields":[{"name":"review_belongs_to_state"');
     expect(html).toContain('"consent":{"title":"Consentimiento"');
     expect(html).toContain('"disclosure":{"text":"Al seleccionar esta casilla, autorizo a Seguros Aseguranza');
+    expect(html).toContain(
+      '\\u003cspan data-tf-element-role=\\"consent-advertiser-name\\"\\u003eSeguros Aseguranza\\u003c/span\\u003e',
+    );
+    expect(html).toContain(
+      '\\u003cspan data-tf-element-role=\\"contact-method\\"\\u003eteléfono o mensaje de texto\\u003c/span\\u003e',
+    );
     expect(html).toContain('"name":"trusted_form_grantor_name","label":"Nombre completo","value":"Ana Lopez","trustedForm":{"role":"consent-grantor-name"}');
     expect(html).not.toContain('"grantorSummary"');
     expect(html).not.toContain('"nameKeys"');
@@ -3334,13 +3354,23 @@ describe("form rendering", () => {
     expect(html).toContain('name="trusted_form_grantor_name"');
     expect(html).toContain('name="trusted_form_grantor_phone"');
     expect(html).toContain('name="review_belongs_to_state"');
+    const fieldBankHtml = html.match(/<div class="trusted-form-field-bank"[\s\S]*?<\/div>/)?.[0] ?? "";
+    expect(fieldBankHtml).not.toContain("data-tf-element-role");
     expect(html).toContain('Vive en Tennessee');
     expect(html).toContain("Por favor, confirme su informacion");
     expect(html).toContain("Continuar");
     expect(html).toContain('data-tf-element-role="consent-language"');
     expect(html).toContain('data-tf-element-role="consent-opt-in"');
-    expect(html).toContain('data-tf-element-role="consent-grantor-name"');
-    expect(html).toContain('data-tf-element-role="consent-grantor-phone"');
+    expect(html).not.toContain("data-consent-summary");
+    expect(html).not.toContain("consent-summary");
+    expect(html).toContain(
+      '<dd class="trusted-form-review-value" data-tf-element-role="consent-grantor-name">Ana Lopez</dd>',
+    );
+    expect(html).toContain(
+      '<dd class="trusted-form-review-value" data-tf-element-role="consent-grantor-phone">(615) 555-1234</dd>',
+    );
+    expect(html.match(/data-tf-element-role="consent-grantor-name"/g)?.length).toBe(1);
+    expect(html.match(/data-tf-element-role="consent-grantor-phone"/g)?.length).toBe(1);
     expect(html).toContain("Ana Lopez");
     expect(html).toContain("(615) 555-1234");
     expect(html).toContain("function loadTrustedFormSdk(trustedForm)");

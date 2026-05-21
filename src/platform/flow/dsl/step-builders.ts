@@ -12,6 +12,8 @@ import type {
   DynamicResolverContext,
   FormContract,
   InterstitialStepDynamicBody,
+  ConsentMarkdownPart,
+  ConsentMarkdownValue,
   MarkdownPart,
   MarkdownValue,
   InterstitialStep,
@@ -22,11 +24,15 @@ import type {
   TextStep,
   TextPart,
   TextValue,
+  TrustedFormConsentInlineTagRole,
+  TrustedFormConsentTagToken,
+  TrustedFormTagTextPart,
   TrustedFormReviewField,
   TrustedFormConsentStepDynamicBody,
   TrustedFormConsentStep,
   TrustedFormConsentStepInput,
 } from "./types";
+import { encodeTrustedFormConsentTag } from "./consent-markdown";
 
 type RawStepCondition = {
   questionKey: string;
@@ -200,7 +206,7 @@ export type FlowStepBuilders<TContract extends FormContract> = Omit<
       [],
       "",
       undefined,
-      "",
+      ConsentMarkdownValue,
       DynamicResolverContext<TDependencies[number], TrustedFormConsentStepDynamicBody>
     >;
   };
@@ -218,6 +224,8 @@ export type FlowAuthoringHelpers<TContract extends FormContract> = {
   readonly text: typeof text;
   readonly md: typeof md;
   readonly markdown: typeof markdown;
+  readonly consentMd: typeof consentMd;
+  readonly tfTag: typeof tfTag;
 };
 
 export const autocompleteSource = {
@@ -240,6 +248,17 @@ export function md<const TParts extends readonly MarkdownPart[]>(...parts: TPart
 }
 
 export const markdown = md;
+
+export function tfTag<
+  const TRole extends TrustedFormConsentInlineTagRole,
+  const TParts extends readonly TrustedFormTagTextPart[],
+>(role: TRole, ...parts: TParts): TrustedFormConsentTagToken {
+  return encodeTrustedFormConsentTag(role, parts.join("")) as TrustedFormConsentTagToken;
+}
+
+export function consentMd<const TParts extends readonly ConsentMarkdownPart[]>(...parts: TParts): ConsentMarkdownValue {
+  return parts.join("") as ConsentMarkdownValue;
+}
 
 export function resolve<const TDependencies extends readonly string[], TResult>(
   dependencies: TDependencies,
@@ -264,6 +283,8 @@ export function createFlowAuthoringHelpers<TContract extends FormContract>(
     text,
     md,
     markdown,
+    consentMd,
+    tfTag,
   };
 }
 
@@ -335,7 +356,7 @@ function createTrustedFormConsentStep<
   [],
   "",
   undefined,
-  "",
+  ConsentMarkdownValue,
   DynamicResolverContext<TDependencies[number], TrustedFormConsentStepDynamicBody>
 >;
 function createTrustedFormConsentStep(
@@ -357,7 +378,7 @@ function createTrustedFormConsentStep(
   };
   const consent: TrustedFormConsentStepInput["consent"] = staticInput.consent ?? {
     title: "",
-    disclosure: "",
+    disclosure: consentMd(""),
     checkboxLabel: "Acepto y quiero enviar mi solicitud.",
     submitLabel: "Enviar",
     validationMessage: "Debe aceptar el consentimiento para enviar la solicitud.",
