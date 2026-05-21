@@ -1351,7 +1351,7 @@ function renderTrustedFormReviewList(stepDefinition: TrustedFormConsentStep): st
   const fields = stepDefinition.review.fields;
   const reviewItems = fields.map((field) => ({
     label: field.label,
-    value: getConsentFieldDisplayValue(field),
+    value: field.value,
     trustedFormRole: field.trustedForm?.role,
   }));
 
@@ -1390,11 +1390,6 @@ function renderTrustedFormReviewList(stepDefinition: TrustedFormConsentStep): st
   </div>`;
 }
 
-function getConsentFieldDisplayValue(field: TrustedFormReviewField): string {
-  const value = field.value.trim();
-  return field.trustedForm?.role === "consent-grantor-phone" ? formatPhoneForDisplay(value) : value;
-}
-
 function renderOptionalDisplayCopyHtml(value: unknown): string {
   if (value === undefined) {
     return "";
@@ -1409,22 +1404,6 @@ function renderDisplayCopyHtml(value: unknown): string {
 
 function renderConsentDisplayCopyHtml(value: unknown): string {
   return typeof value === "string" ? renderConsentMarkdownToHtml(value) : "";
-}
-
-function formatPhoneForDisplay(value: string): string {
-  const digitsOnly = value.replace(/\D/g, "");
-  const nationalDigits = digitsOnly.startsWith("1") && digitsOnly.length > 10 ? digitsOnly.slice(1, 11) : digitsOnly.slice(0, 10);
-  if (nationalDigits.length === 0) {
-    return value;
-  }
-  if (nationalDigits.length <= 3) {
-    return `(${nationalDigits}`;
-  }
-  if (nationalDigits.length <= 6) {
-    return `(${nationalDigits.slice(0, 3)}) ${nationalDigits.slice(3)}`;
-  }
-
-  return `(${nationalDigits.slice(0, 3)}) ${nationalDigits.slice(3, 6)}-${nationalDigits.slice(6, 10)}`;
 }
 
 function renderBaseTextInput(

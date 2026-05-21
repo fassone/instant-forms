@@ -354,10 +354,10 @@ test.describe("instant routed form UI", () => {
     await expect(activeStep(page).locator("[data-consent-summary]")).toHaveCount(0);
     await expect(
       activeStep(page).locator('[data-trusted-form-substep="consent"] [data-tf-element-role="consent-grantor-name"]'),
-    ).toHaveCount(0);
+    ).toHaveText("Ana Lopez");
     await expect(
       activeStep(page).locator('[data-trusted-form-substep="consent"] [data-tf-element-role="consent-grantor-phone"]'),
-    ).toHaveCount(0);
+    ).toHaveText("(615) 555-1234");
     const submitButton = page.getByRole("button", { name: "Enviar" });
     const submissionRequest = page.waitForRequest(/\/api\/forms\/tn_custom\/native-submissions/u);
     await submitButton.click();

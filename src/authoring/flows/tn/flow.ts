@@ -47,7 +47,7 @@ export const tnFlow = defineFormFlow({
   page: {
     name: "Seguros Aseguranza",
   },
-  steps: ({ step, text, md, consentMd, tfTag }) => [
+  steps: ({ step, text, md, phoneDisplay, stateDisplay, consentMd, tfTag }) => [
     step.choice({
       key: "belongs_to_state",
       slug: "vive-en-tennessee",
@@ -184,11 +184,7 @@ export const tnFlow = defineFormFlow({
             {
               name: "review_residence_state",
               label: "Estado",
-              value: text(
-                answers.belongs_to_state === "yes"
-                  ? (context.areaName ?? context.areaCode)
-                  : (answers.residence_state ?? "No indicado"),
-              ),
+              value: stateDisplay(answers.residence_state ?? context.areaCode),
             },
             {
               name: "review_has_license",
@@ -221,7 +217,7 @@ export const tnFlow = defineFormFlow({
             {
               name: "trusted_form_grantor_phone",
               label: "Teléfono",
-              value: text(answers.phone_number),
+              value: phoneDisplay(answers.phone_number),
               trustedForm: {
                 role: "consent-grantor-phone",
               },
@@ -238,13 +234,13 @@ export const tnFlow = defineFormFlow({
             "**, autorizo a **",
             tfTag("consent-advertiser-name", "Liderna Inc"),
             "** y a sus socios, agentes y proveedores de seguros a contactarme al **",
-            tfTag("consent-grantor-phone", answers.phone_number),
+            tfTag("consent-grantor-phone", phoneDisplay(answers.phone_number)),
             "** sobre cotizaciones, productos y servicios de seguro mediante",
             tfTag("contact-method", " llamadas, mensajes de texto y correos electrónicos,"),
             tfTag("consent-grantor-waived-regulated-technologies", " incluso con marcación automática, voz artificial o pregrabada e inteligencia artificial, "),
             tfTag("consent-grantor-waived-dnc", " aun si mi número figura en un registro federal o estatal de “No Llame” (DNC)."),
             tfTag("consent-grantor-waived-purchase-condition", " Entiendo que este consentimiento no es condición de compra"),
-            " y que puedo revocarlo en cualquier momento respondiendo STOP."
+            " y que puedo revocarlo en cualquier momento respondiendo STOP.",
           ),
           checkboxLabel: "Acepto continuar y enviar mi solicitud.",
           submitLabel: "Enviar",

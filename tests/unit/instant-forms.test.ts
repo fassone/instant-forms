@@ -14,7 +14,9 @@ import {
   getStepSlug,
   isCountedStep,
   md,
+  phoneDisplay,
   resolveStepDynamicValues,
+  stateDisplay,
   step,
   text,
   tfTag,
@@ -1038,7 +1040,7 @@ describe("form registry", () => {
     ).toThrow('Resolver for step "matching_offer" references unknown contract.answers key "unknown_answer"');
   });
 
-  it("resolves dynamic text values and rejects unsafe resolver output", () => {
+  it("resolves dynamic text values and rejects unsafe resolver output", async () => {
     const matchingFlow = defineFormFlow({
       name: "Safe Resolver Flow",
       status: "ACTIVE",
@@ -1177,6 +1179,22 @@ describe("form registry", () => {
         ],
       },
     });
+
+    const rawPhoneReviewHtml = await renderFormPage(consentFlow, {
+      routeKey: "safe_summary",
+      activeStepIndex: 3,
+      answers: {
+        first_name: "Ana",
+        last_name: "Lopez",
+        phone_number: "+16155551234",
+      },
+    });
+    expect(rawPhoneReviewHtml).toContain(
+      '<dd class="trusted-form-review-value" data-tf-element-role="consent-grantor-phone">+16155551234</dd>',
+    );
+    expect(rawPhoneReviewHtml).not.toContain(
+      '<dd class="trusted-form-review-value" data-tf-element-role="consent-grantor-phone">(615) 555-1234</dd>',
+    );
 
     const undefinedFlow = defineFormFlow({
       name: "Unsafe Resolver Flow",
@@ -3273,6 +3291,13 @@ describe("form rendering", () => {
       ),
     );
 
+    expect(String(phoneDisplay("+17864746654"))).toBe("(786) 474-6654");
+    expect(String(phoneDisplay("17864746654"))).toBe("(786) 474-6654");
+    expect(String(phoneDisplay("not a phone"))).toBe("not a phone");
+    expect(String(stateDisplay("TN"))).toBe("Tennessee");
+    expect(String(stateDisplay("Texas"))).toBe("Texas");
+    expect(String(stateDisplay("dc"))).toBe("District of Columbia");
+    expect(String(stateDisplay("No indicado"))).toBe("No indicado");
     expect(html).toContain('data-tf-element-role="consent-advertiser-name"');
     expect(html).toContain('data-tf-element-role="contact-method"');
     expect(html).toContain(".question-description {\n        max-width: 100%;");
@@ -3327,12 +3352,15 @@ describe("form rendering", () => {
     expect(html).toContain('"description":{"text":"Por favor, confirme su informacion","html":"\\u003cp\\u003ePor favor, confirme su informacion\\u003c/p\\u003e"}');
     expect(html).toContain('"fields":[{"name":"review_belongs_to_state"');
     expect(html).toContain('"consent":{"title":"Consentimiento"');
-    expect(html).toContain('"disclosure":{"text":"Al seleccionar esta casilla, autorizo a Seguros Aseguranza');
+    expect(html).toContain('"disclosure":{"text":"Al marcar esta casilla y hacer clic en “Enviar”, yo, Ana Lopez');
     expect(html).toContain(
-      '\\u003cspan data-tf-element-role=\\"consent-advertiser-name\\"\\u003eSeguros Aseguranza\\u003c/span\\u003e',
+      '\\u003cspan data-tf-element-role=\\"consent-advertiser-name\\"\\u003eLiderna Inc\\u003c/span\\u003e',
     );
     expect(html).toContain(
-      '\\u003cspan data-tf-element-role=\\"contact-method\\"\\u003eteléfono o mensaje de texto\\u003c/span\\u003e',
+      '\\u003cspan data-tf-element-role=\\"consent-grantor-phone\\"\\u003e(615) 555-1234\\u003c/span\\u003e',
+    );
+    expect(html).toContain(
+      '\\u003cspan data-tf-element-role=\\"contact-method\\"\\u003e llamadas, mensajes de texto y correos electrónicos,\\u003c/span\\u003e',
     );
     expect(html).toContain('"name":"trusted_form_grantor_name","label":"Nombre completo","value":"Ana Lopez","trustedForm":{"role":"consent-grantor-name"}');
     expect(html).not.toContain('"grantorSummary"');
@@ -3369,8 +3397,8 @@ describe("form rendering", () => {
     expect(html).toContain(
       '<dd class="trusted-form-review-value" data-tf-element-role="consent-grantor-phone">(615) 555-1234</dd>',
     );
-    expect(html.match(/data-tf-element-role="consent-grantor-name"/g)?.length).toBe(1);
-    expect(html.match(/data-tf-element-role="consent-grantor-phone"/g)?.length).toBe(1);
+    expect(html.match(/data-tf-element-role="consent-grantor-name"/g)?.length).toBe(2);
+    expect(html.match(/data-tf-element-role="consent-grantor-phone"/g)?.length).toBe(2);
     expect(html).toContain("Ana Lopez");
     expect(html).toContain("(615) 555-1234");
     expect(html).toContain("function loadTrustedFormSdk(trustedForm)");

@@ -1,4 +1,4 @@
-import { US_STATE_VALIDATION_MESSAGE, normalizeUsState } from "../../../shared/data/us-states";
+import { US_STATES, US_STATE_VALIDATION_MESSAGE, normalizeUsState } from "../../../shared/data/us-states";
 import type {
   AutocompleteSourceDefinition,
   AutocompleteStep,
@@ -18,6 +18,8 @@ import type {
   MarkdownValue,
   InterstitialStep,
   PhoneStep,
+  PhoneDisplayInput,
+  StateDisplayInput,
   StepBehavior,
   StepCondition,
   StepTemplateKey,
@@ -224,6 +226,8 @@ export type FlowAuthoringHelpers<TContract extends FormContract> = {
   readonly text: typeof text;
   readonly md: typeof md;
   readonly markdown: typeof markdown;
+  readonly phoneDisplay: typeof phoneDisplay;
+  readonly stateDisplay: typeof stateDisplay;
   readonly consentMd: typeof consentMd;
   readonly tfTag: typeof tfTag;
 };
@@ -248,6 +252,14 @@ export function md<const TParts extends readonly MarkdownPart[]>(...parts: TPart
 }
 
 export const markdown = md;
+
+export function phoneDisplay(value: PhoneDisplayInput): TextValue {
+  return formatUsPhoneDisplay(value) as TextValue;
+}
+
+export function stateDisplay(value: StateDisplayInput): TextValue {
+  return formatUsStateDisplay(value) as TextValue;
+}
 
 export function tfTag<
   const TRole extends TrustedFormConsentInlineTagRole,
@@ -283,6 +295,8 @@ export function createFlowAuthoringHelpers<TContract extends FormContract>(
     text,
     md,
     markdown,
+    phoneDisplay,
+    stateDisplay,
     consentMd,
     tfTag,
   };
@@ -488,6 +502,29 @@ function getStaticDisplayCopyLabel(value: unknown): string | undefined {
   }
 
   return value.trim() || undefined;
+}
+
+function formatUsPhoneDisplay(value: string): string {
+  const trimmedValue = value.trim();
+  const digitsOnly = trimmedValue.replace(/\D/g, "");
+  const nationalDigits =
+    digitsOnly.length === 11 && digitsOnly.startsWith("1")
+      ? digitsOnly.slice(1)
+      : digitsOnly.length === 10
+        ? digitsOnly
+        : undefined;
+
+  if (!nationalDigits) {
+    return value;
+  }
+
+  return `(${nationalDigits.slice(0, 3)}) ${nationalDigits.slice(3, 6)}-${nationalDigits.slice(6)}`;
+}
+
+function formatUsStateDisplay(value: string): string {
+  const stateCode = normalizeUsState(value);
+  const state = stateCode ? US_STATES.find((candidate) => candidate.code === stateCode) : undefined;
+  return state?.name ?? value;
 }
 
 function baseStep<const TInput extends RawBaseStepInput>(

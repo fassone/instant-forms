@@ -130,6 +130,8 @@ export type PlainTextValue = string & {
 };
 
 export type MarkdownPart = string | number | boolean | TextValue | MarkdownValue;
+export type PhoneDisplayInput = string | TextValue;
+export type StateDisplayInput = string | TextValue;
 export type TrustedFormTagTextPart = string | number | boolean | TextValue;
 
 export type TrustedFormConsentInlineTagRole =

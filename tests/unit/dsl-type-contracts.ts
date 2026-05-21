@@ -2,7 +2,9 @@ import {
   consentMd,
   defineFormFlow,
   md,
+  phoneDisplay,
   resolve,
+  stateDisplay,
   step,
   text,
   tfTag,
@@ -119,6 +121,28 @@ void text("Hello ", maybeName);
 
 void text("Hello ", maybeName ?? "Michel");
 
+void phoneDisplay("+17864746654");
+void phoneDisplay(text("+17864746654"));
+
+// @ts-expect-error phoneDisplay(...) rejects undefined values.
+void phoneDisplay(undefined);
+
+// @ts-expect-error phoneDisplay(...) requires optional values to be handled before formatting.
+void phoneDisplay(maybeName);
+
+void phoneDisplay(maybeName ?? "+17864746654");
+
+void stateDisplay("TN");
+void stateDisplay(text("TN"));
+
+// @ts-expect-error stateDisplay(...) rejects undefined values.
+void stateDisplay(undefined);
+
+// @ts-expect-error stateDisplay(...) requires optional values to be handled before formatting.
+void stateDisplay(maybeName);
+
+void stateDisplay(maybeName ?? "No indicado");
+
 // @ts-expect-error md(...) rejects undefined parts.
 void md("Hello ", undefined);
 
@@ -136,6 +160,8 @@ void consentMd("Hello ", maybeName);
 void consentMd("Hello ", maybeName ?? "Michel");
 
 void tfTag("contact-method", "teléfono o mensaje de texto");
+void tfTag("consent-grantor-phone", phoneDisplay("+17864746654"));
+void tfTag("consent-grantor-address", stateDisplay("TN"));
 void consentMd("Autorizo a ", tfTag("consent-advertiser-name", "Seguros Aseguranza"), ".");
 
 // @ts-expect-error tfTag(...) only accepts ActiveProspect inline consent tag roles.
