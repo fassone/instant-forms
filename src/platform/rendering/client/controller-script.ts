@@ -2247,6 +2247,8 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
       ctx.updateNextButton();
       if (activeSubstep === "review") {
         scheduleTrustedFormReviewScrollHints(step);
+      } else {
+        scheduleTrustedFormConsentScrollHints(step);
       }
     }
 
@@ -2289,6 +2291,22 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
       shell.dataset.canScrollUp = String(canScroll && reviewScroll.scrollTop > 1);
       shell.dataset.canScrollDown = String(
         canScroll && reviewScroll.scrollTop + reviewScroll.clientHeight < reviewScroll.scrollHeight - 1,
+      );
+    }
+
+    function scheduleTrustedFormConsentScrollHints(step) {
+      const consentScroll = step.querySelector("[data-trusted-form-consent-scroll]");
+      if (!(consentScroll instanceof HTMLElement)) return;
+      window.requestAnimationFrame(() => updateTrustedFormConsentScrollHints(consentScroll));
+    }
+
+    function updateTrustedFormConsentScrollHints(consentScroll) {
+      const shell = consentScroll.closest("[data-trusted-form-consent-scroll-shell]");
+      if (!(shell instanceof HTMLElement)) return;
+      const canScroll = consentScroll.scrollHeight > consentScroll.clientHeight + 1;
+      shell.dataset.canScrollUp = String(canScroll && consentScroll.scrollTop > 1);
+      shell.dataset.canScrollDown = String(
+        canScroll && consentScroll.scrollTop + consentScroll.clientHeight < consentScroll.scrollHeight - 1,
       );
     }
 
@@ -2721,6 +2739,9 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
         const target = event.target;
         if (target instanceof HTMLElement && target.matches("[data-trusted-form-review-scroll]")) {
           updateTrustedFormReviewScrollHints(target);
+        }
+        if (target instanceof HTMLElement && target.matches("[data-trusted-form-consent-scroll]")) {
+          updateTrustedFormConsentScrollHints(target);
         }
       },
       unmount,

@@ -368,6 +368,52 @@ test.describe("instant routed form UI", () => {
     await expect(page.getByRole("heading", { name: "Gracias." })).toBeVisible();
   });
 
+  test("TrustedForm consent copy scrolls on small mobile without covering actions", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 600 });
+    await mockTrustedFormCertify(page);
+    await seedCheckpoint(page, {
+      ...seenMatchingAnswers,
+      first_name: "Michel",
+      last_name: "Fassone",
+      phone_number: "+17864746654",
+    });
+    await page.goto("/tn/custom/consentimiento");
+    await continueTrustedFormReview(page);
+
+    const step = activeStep(page);
+    const consentShell = step.locator("[data-trusted-form-consent-scroll-shell]");
+    const consentScroll = step.locator("[data-trusted-form-consent-scroll]");
+    const topFade = step.locator("[data-trusted-form-consent-scroll-fade-top]");
+    const bottomFade = step.locator("[data-trusted-form-consent-scroll-fade-bottom]");
+
+    await expect(consentShell).toBeVisible();
+    await expect(consentScroll).toBeVisible();
+    await expect(consentShell).toHaveAttribute("data-can-scroll-up", "false");
+    await expect(consentShell).toHaveAttribute("data-can-scroll-down", "true");
+    await expect(bottomFade).toHaveCSS("opacity", "1");
+
+    const consentBox = await step.locator('[data-tf-element-role="consent-language"]').boundingBox();
+    const submitBox = await page.getByRole("button", { name: "Enviar" }).boundingBox();
+    if (!consentBox || !submitBox) {
+      throw new Error("Expected consent language and submit button boxes to be visible.");
+    }
+    expect(consentBox.y + consentBox.height).toBeLessThanOrEqual(submitBox.y);
+
+    await consentScroll.evaluate((element) => {
+      element.scrollTop = Math.floor(element.scrollHeight / 2);
+      element.dispatchEvent(new Event("scroll", { bubbles: true }));
+    });
+    await expect(consentShell).toHaveAttribute("data-can-scroll-up", "true");
+    await expect(topFade).toHaveCSS("opacity", "1");
+
+    await consentScroll.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+      element.dispatchEvent(new Event("scroll", { bubbles: true }));
+    });
+    await expect(consentShell).toHaveAttribute("data-can-scroll-down", "false");
+    await expect(bottomFade).toHaveCSS("opacity", "0");
+  });
+
   test("unchecked TrustedForm consent stays clickable and shows the modal", async ({ page }) => {
     await mockTrustedFormCertify(page);
     await seedCheckpoint(page, {
@@ -530,9 +576,9 @@ async function continueTrustedFormReview(page: Page): Promise<void> {
   await expect(activeStep(page).getByText("Por favor, confirme su informacion")).toBeVisible();
   await expect(activeStep(page).locator("[data-trusted-form-review-scroll]")).toBeVisible();
   await expect(activeStep(page).locator(".trusted-form-review-label", { hasText: "Vive en Tennessee" })).toBeVisible();
+  await expect(activeStep(page).locator('[data-trusted-form-substep="consent"]')).toBeHidden();
   await page.getByRole("button", { name: "Continuar" }).click();
   await expect(activeStep(page).getByRole("heading", { name: "Consentimiento" })).toBeVisible({ timeout: 7000 });
-  await expect(activeStep(page).getByText("Último paso antes de enviar su solicitud.")).toBeVisible();
   await expect(activeStep(page).locator("[data-trusted-form-consent]")).toBeVisible({ timeout: 7000 });
   await expect(page.getByRole("button", { name: "Enviar" })).toBeEnabled({ timeout: 7000 });
 }

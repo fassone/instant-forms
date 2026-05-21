@@ -565,7 +565,11 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
 
       .consent-card {
         display: grid;
+        grid-template-rows: minmax(0, 1fr);
         width: min(100%, 620px);
+        height: 100%;
+        min-height: 0;
+        overflow: hidden;
         gap: 14px;
       }
 
@@ -584,6 +588,12 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
       .trusted-form-review {
         display: grid;
         grid-template-rows: minmax(0, 1fr);
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      .trusted-form-panel[data-trusted-form-substep="consent"][aria-hidden="false"] {
+        display: grid;
         min-height: 0;
         overflow: hidden;
       }
@@ -674,6 +684,9 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         display: flex;
         align-items: flex-start;
         gap: 14px;
+        height: 100%;
+        min-height: 0;
+        overflow: hidden;
         border: 1px solid var(--border);
         border-radius: 8px;
         background: #ffffff;
@@ -692,6 +705,52 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         flex: 0 0 auto;
         margin: 2px 0 0;
         accent-color: var(--accent);
+      }
+
+      .consent-scroll-shell {
+        position: relative;
+        align-self: stretch;
+        flex: 1 1 auto;
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      .consent-scroll {
+        display: block;
+        height: 100%;
+        min-height: 0;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        padding: 0 4px 6px 0;
+        scrollbar-gutter: stable;
+        -webkit-overflow-scrolling: touch;
+      }
+
+      .consent-scroll-fade {
+        position: absolute;
+        right: 0;
+        left: 0;
+        z-index: 2;
+        height: 32px;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 140ms ease;
+      }
+
+      .consent-scroll-fade-top {
+        top: 0;
+        background: linear-gradient(180deg, #ffffff, rgba(255, 255, 255, 0));
+      }
+
+      .consent-scroll-fade-bottom {
+        bottom: 0;
+        background: linear-gradient(0deg, #ffffff, rgba(255, 255, 255, 0));
+      }
+
+      .consent-scroll-shell[data-can-scroll-up="true"] .consent-scroll-fade-top,
+      .consent-scroll-shell[data-can-scroll-down="true"] .consent-scroll-fade-bottom {
+        opacity: 1;
       }
 
       .consent-copy {
@@ -987,6 +1046,18 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
 
         .button-secondary {
           order: 2;
+        }
+
+        .step[data-step-kind="trusted_form_consent"][aria-hidden="false"] {
+          gap: 14px;
+        }
+
+        .consent-card {
+          gap: 10px;
+        }
+
+        .consent-check {
+          padding: 14px;
         }
       }
     </style>
@@ -1314,9 +1385,18 @@ function renderTrustedFormConsent(
             data-tf-element-role="consent-opt-in"
             ${checked}
           >
-          <span class="consent-copy">
-            <span class="consent-disclosure">${renderConsentDisplayCopyHtml(stepDefinition.consent.disclosure)}</span>
-            <span class="consent-acceptance">${escapeHtml(stepDefinition.consent.checkboxLabel)}</span>
+          <span
+            class="consent-scroll-shell"
+            data-trusted-form-consent-scroll-shell
+            data-can-scroll-up="false"
+            data-can-scroll-down="false"
+          >
+            <span class="consent-scroll-fade consent-scroll-fade-top" data-trusted-form-consent-scroll-fade-top aria-hidden="true"></span>
+            <span class="consent-copy consent-scroll" data-trusted-form-consent-scroll>
+              <span class="consent-disclosure">${renderConsentDisplayCopyHtml(stepDefinition.consent.disclosure)}</span>
+              <span class="consent-acceptance">${escapeHtml(stepDefinition.consent.checkboxLabel)}</span>
+            </span>
+            <span class="consent-scroll-fade consent-scroll-fade-bottom" data-trusted-form-consent-scroll-fade-bottom aria-hidden="true"></span>
           </span>
         </label>
       </div>

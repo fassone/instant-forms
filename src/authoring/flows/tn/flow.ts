@@ -115,13 +115,13 @@ export const tnFlow = defineFormFlow({
           { text: "Descubra cuánto puede ahorrar.", color: "accent" },
         ],
       },
-      [],
-      ({ context }) => ({
+      ["residence_state"],
+      ({ context, answers }) => ({
         benefits: [
           text("Revisando sus respuestas"),
           text("Buscando agentes disponibles"),
           text("Priorizando atención en español"),
-          text("Preparando opciones en ", context.areaName ?? context.areaCode),
+          text("Preparando opciones en ", stateDisplay(answers.residence_state ?? context.areaCode)),
         ],
       }),
     ),
@@ -226,7 +226,7 @@ export const tnFlow = defineFormFlow({
         },
         consent: {
           title: text("Consentimiento"),
-          description: md("Último paso antes de enviar su solicitud."),
+
           // Replace with approved consent language before production traffic.
           disclosure: consentMd(
             "Al marcar esta casilla y hacer clic en “Enviar”, yo, **",

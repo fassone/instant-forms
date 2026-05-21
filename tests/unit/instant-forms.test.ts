@@ -2932,11 +2932,15 @@ describe("form rendering", () => {
     expect(tokenizedReviewHtml).toContain('class="bd bf"');
     expect(tokenizedReviewHtml).toContain('".bd"');
     const tokenizedConsentHtml = applyProductionTokens(
-      '<style>.consent-disclosure{font-size:0.8rem}.consent-acceptance{font-weight:800}</style><span class="consent-disclosure"></span><span class="consent-acceptance"></span>',
+      '<style>.consent-scroll-shell{overflow:hidden}.consent-scroll-fade-bottom{opacity:1}.consent-disclosure{font-size:0.8rem}.consent-acceptance{font-weight:800}</style><span class="consent-scroll-shell consent-scroll-fade-bottom consent-disclosure"></span><span class="consent-acceptance"></span>',
     );
     expect(tokenizedConsentHtml).not.toContain("consent-disclosure");
+    expect(tokenizedConsentHtml).not.toContain("consent-scroll-shell");
+    expect(tokenizedConsentHtml).not.toContain("consent-scroll-fade-bottom");
+    expect(tokenizedConsentHtml).toContain(".bm{overflow:hidden}");
+    expect(tokenizedConsentHtml).toContain(".bk{opacity:1}");
     expect(tokenizedConsentHtml).toContain(".bh{font-size:0.8rem}");
-    expect(tokenizedConsentHtml).toContain('class="bh"');
+    expect(tokenizedConsentHtml).toContain('class="bm bk bh"');
   });
 
   it("builds a static non-PII transition JS asset for snappy production step changes", async () => {
@@ -3396,6 +3400,12 @@ describe("form rendering", () => {
     expect(html).toContain('data-tf-element-role="consent-language"');
     expect(html).toContain('data-tf-element-role="consent-opt-in"');
     expect(html).toContain(".consent-disclosure {\n        font-size: 0.8rem;\n      }");
+    expect(html).toContain('data-trusted-form-consent-scroll-shell');
+    expect(html).toContain('data-trusted-form-consent-scroll');
+    expect(html).toContain('data-trusted-form-consent-scroll-fade-top');
+    expect(html).toContain('data-trusted-form-consent-scroll-fade-bottom');
+    expect(html).toContain('.trusted-form-panel[data-trusted-form-substep="consent"][aria-hidden="false"]');
+    expect(html).toContain('.consent-scroll-shell[data-can-scroll-down="true"] .consent-scroll-fade-bottom');
     expect(html).toContain(
       '<span class="consent-disclosure"><p>Al marcar esta casilla y hacer clic en “Enviar”, yo, <strong><span data-tf-element-role="consent-grantor-name">Ana Lopez</span></strong>',
     );
@@ -3426,6 +3436,7 @@ describe("form rendering", () => {
     expect(html).not.toContain("function preloadTrustedFormSdk(trustedForm)");
     expect(html).toContain("function ensureTrustedFormReady(trustedForm)");
     expect(html).toContain("function waitForTrustedFormCertUrl(trustedForm)");
+    expect(html).toContain("function updateTrustedFormConsentScrollHints(consentScroll)");
     expect(html).toContain("function getTrustedFormCertUrl(trustedForm = window.__FORM_CONFIG__.currentStep.trustedForm)");
     expect(html).not.toContain('ctx.updateNextButton("Preparando...", true)');
     expect(html).toContain('const accessibleLoadingLabel = "Enviando..."');
