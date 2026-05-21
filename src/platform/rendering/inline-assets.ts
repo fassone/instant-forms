@@ -31,6 +31,7 @@ const productionClassTokenMap = {
   "consent-check": "aw",
   "consent-checkbox": "ax",
   "consent-copy": "ay",
+  "consent-disclosure": "bh",
   "area-pill": "i",
   "brand-identity": "j",
   "brand-logo": "k",

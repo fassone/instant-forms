@@ -2931,6 +2931,12 @@ describe("form rendering", () => {
     expect(tokenizedReviewHtml).toContain(".bf{opacity:1}");
     expect(tokenizedReviewHtml).toContain('class="bd bf"');
     expect(tokenizedReviewHtml).toContain('".bd"');
+    const tokenizedConsentHtml = applyProductionTokens(
+      '<style>.consent-disclosure{font-size:0.8rem}.consent-acceptance{font-weight:800}</style><span class="consent-disclosure"></span><span class="consent-acceptance"></span>',
+    );
+    expect(tokenizedConsentHtml).not.toContain("consent-disclosure");
+    expect(tokenizedConsentHtml).toContain(".bh{font-size:0.8rem}");
+    expect(tokenizedConsentHtml).toContain('class="bh"');
   });
 
   it("builds a static non-PII transition JS asset for snappy production step changes", async () => {
@@ -3389,6 +3395,13 @@ describe("form rendering", () => {
     expect(html).toContain("Continuar");
     expect(html).toContain('data-tf-element-role="consent-language"');
     expect(html).toContain('data-tf-element-role="consent-opt-in"');
+    expect(html).toContain(".consent-disclosure {\n        font-size: 0.8rem;\n      }");
+    expect(html).toContain(
+      '<span class="consent-disclosure"><p>Al marcar esta casilla y hacer clic en “Enviar”, yo, <strong><span data-tf-element-role="consent-grantor-name">Ana Lopez</span></strong>',
+    );
+    expect(html).toContain(
+      '.consent-acceptance {\n        display: block;\n        margin-top: 8px;\n        color: var(--brand-navy);\n        font-weight: 800;\n      }',
+    );
     expect(html).not.toContain("data-consent-summary");
     expect(html).not.toContain("consent-summary");
     expect(html).toContain(

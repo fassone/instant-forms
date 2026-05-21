@@ -701,6 +701,10 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         line-height: 1.5;
       }
 
+      .consent-disclosure {
+        font-size: 0.8rem;
+      }
+
       .consent-acceptance {
         display: block;
         margin-top: 8px;
@@ -1311,7 +1315,7 @@ function renderTrustedFormConsent(
             ${checked}
           >
           <span class="consent-copy">
-            <span>${renderConsentDisplayCopyHtml(stepDefinition.consent.disclosure)}</span>
+            <span class="consent-disclosure">${renderConsentDisplayCopyHtml(stepDefinition.consent.disclosure)}</span>
             <span class="consent-acceptance">${escapeHtml(stepDefinition.consent.checkboxLabel)}</span>
           </span>
         </label>
