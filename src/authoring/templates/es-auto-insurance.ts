@@ -1,4 +1,5 @@
 import { autocompleteSource, defineFormFlow, defineFormTemplate, z } from "../../platform/flow";
+import { trustedFormCertify } from "../integrations/trusted-form";
 
 const esUiCopy = {
   actions: {
@@ -221,16 +222,10 @@ export const esAutoInsuranceTemplate = defineFormTemplate({
                 },
               },
             },
-            trustedForm: {
-              fieldName: "xxTrustedFormCertUrl",
-              delivery: "main_thread",
-              scriptProxyKey: "tfc",
-              scriptBaseUrl: "/_instant/scripts/trustedform.com/tfc.js",
-              preloadAssets: "when_reachable",
-              execute: "on_review_mount",
-              requireReadyBefore: "consent_substep",
+            trustedForm: trustedFormCertify({
+              delivery: "partytown",
               allowSubmitWithoutCert: true,
-            },
+            }),
           },
           [
             "belongs_to_state",

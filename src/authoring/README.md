@@ -7,6 +7,7 @@
 ## Belongs Here
 
 - Area-specific form definitions.
+- Integration presets for stable third-party authoring defaults.
 - Reusable form templates for shared flow structures.
 - Area-to-flow registration.
 - Public route-folder placement for authored flows.

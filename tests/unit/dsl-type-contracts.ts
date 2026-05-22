@@ -12,6 +12,7 @@ import {
   z,
   type TrustedFormConsentStepInput,
 } from "../../src/platform/flow";
+import { trustedFormCertify } from "../../src/authoring/integrations/trusted-form";
 
 const contract = {
   context: z.object({}),
@@ -117,6 +118,18 @@ void typedTemplate.create({ flowName: "Typed Template", areaCode: "TX", extraVar
 
 // @ts-expect-error template variables use the Zod input type.
 void typedTemplate.create({ flowName: "Typed Template", areaCode: 123 });
+
+void trustedFormCertify({ delivery: "partytown", allowSubmitWithoutCert: false });
+
+void trustedFormCertify({
+  // @ts-expect-error TrustedForm preset delivery only accepts supported runtime modes.
+  delivery: "worker",
+});
+
+void trustedFormCertify({
+  // @ts-expect-error TrustedForm preset overrides do not expose stable low-level config.
+  fieldName: "otherField",
+});
 
 void defineFormFlow({
   name: "Desktop Height Type Fixture",
@@ -955,7 +968,7 @@ void step.trustedFormConsent({
   },
   trustedForm: {
     preloadAssets: "previous_step",
-    execute: "on_review_mount",
+    execute: "on_step_mount",
     requireReadyBefore: "consent_substep",
   },
 });

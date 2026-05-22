@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { Hono } from "hono";
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { trustedFormCertify } from "../../src/authoring/integrations/trusted-form";
 import { selectedScripts } from "../../src/authoring/scripts/registry";
 import { formRoutes } from "../../src/authoring/routes/registry";
 import { createFetchHandler } from "../../src/platform/app/server";
@@ -476,7 +477,7 @@ describe("form registry", () => {
         delivery: "main_thread",
         scriptBaseUrl: "https://api.trustedform.com/trustedform.js",
         preloadAssets: "when_reachable",
-        execute: "on_review_mount",
+        execute: "on_step_mount",
         requireReadyBefore: "consent_substep",
       },
       substeps: {
@@ -539,9 +540,33 @@ describe("form registry", () => {
         scriptProxyKey: "tfc",
         scriptBaseUrl: "/_instant/scripts/tfc.js",
         preloadAssets: "when_reachable",
-        execute: "on_review_mount",
+        execute: "on_step_mount",
         requireReadyBefore: "consent_substep",
       },
+    });
+  });
+
+  it("centralizes stable TrustedForm Certify settings in an authoring preset", () => {
+    expect(trustedFormCertify()).toEqual({
+      fieldName: "xxTrustedFormCertUrl",
+      delivery: "main_thread",
+      scriptProxyKey: "tfc",
+      scriptBaseUrl: "/_instant/scripts/trustedform.com/tfc.js",
+      preloadAssets: "when_reachable",
+      execute: "on_step_mount",
+      requireReadyBefore: "consent_substep",
+      allowSubmitWithoutCert: true,
+    });
+
+    expect(trustedFormCertify({ delivery: "partytown", allowSubmitWithoutCert: false })).toEqual({
+      fieldName: "xxTrustedFormCertUrl",
+      delivery: "partytown",
+      scriptProxyKey: "tfc",
+      scriptBaseUrl: "/_instant/scripts/trustedform.com/tfc.js",
+      preloadAssets: "when_reachable",
+      execute: "on_step_mount",
+      requireReadyBefore: "consent_substep",
+      allowSubmitWithoutCert: false,
     });
   });
 
@@ -3746,13 +3771,13 @@ describe("form rendering", () => {
     expect(html).toContain('"slug":"consentimiento"');
     expect(html).toContain('"submitLabel":"Cotizar"');
     expect(html).toContain('"trustedForm":{"fieldName":"xxTrustedFormCertUrl"');
-    expect(html).toContain('"delivery":"main_thread"');
+    expect(html).toContain('"delivery":"partytown"');
     expect(html).toContain('"scriptProxyKey":"tfc"');
     expect(html).toContain('"scriptBaseUrl":"/_instant/scripts/trustedform.com/tfc.js"');
     expect(html).toContain('"partytownLib":"/~partytown/"');
     expect(html).toContain('"partytownScriptUrl":"/~partytown/partytown.js"');
     expect(html).toContain('"preloadAssets":"when_reachable"');
-    expect(html).toContain('"execute":"on_review_mount"');
+    expect(html).toContain('"execute":"on_step_mount"');
     expect(html).toContain('"requireReadyBefore":"consent_substep"');
     expect(html).not.toContain("preloadOnPreviousStep");
     expect(html).toContain('"allowSubmitWithoutCert":true');

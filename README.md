@@ -137,7 +137,7 @@ The `trustedform_consent` step is authored as explicit `review` and `consent` su
 
 ## Selected Scripts
 
-Selected third-party scripts are declared in `src/authoring/scripts/registry.ts` and served by an allowlisted proxy. The first entry is `tfc`, which maps short public query aliases (`f`, `t`, `s`) to the TrustedForm SDK parameters (`field`, `use_tagged_consent`, `sandbox`). The proxy does not accept arbitrary URLs or forward visitor cookies. TrustedForm uses the Node fetch runtime because Bun 1.3.9 can hang on the TrustedForm CDN response while Node fetch resolves it normally.
+Selected third-party scripts are declared in `src/authoring/scripts/registry.ts` and served by an allowlisted proxy. The first entry is `tfc`, which maps short public query aliases (`f`, `t`, `s`) to the TrustedForm SDK parameters (`field`, `use_tagged_consent`, `sandbox`). Flow templates use `trustedFormCertify(...)` from `src/authoring/integrations/` to reuse the stable Certify field name, proxy URL, preload, execution, and readiness settings without repeating them in every flow. The proxy does not accept arbitrary URLs or forward visitor cookies. TrustedForm uses the Node fetch runtime because Bun 1.3.9 can hang on the TrustedForm CDN response while Node fetch resolves it normally.
 
 ## Checkpoints
 

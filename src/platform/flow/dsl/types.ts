@@ -247,7 +247,7 @@ export type TrustedFormConsentConfig = {
   useTaggedConsent: boolean;
   sandbox: boolean;
   preloadAssets: "when_reachable" | "previous_step" | "never";
-  execute: "on_review_mount";
+  execute: "on_step_mount";
   requireReadyBefore: "consent_substep";
   allowSubmitWithoutCert: boolean;
 };

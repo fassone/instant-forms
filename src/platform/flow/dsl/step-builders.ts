@@ -515,7 +515,7 @@ function buildTrustedFormConsentConfig(
     useTaggedConsent: input?.useTaggedConsent ?? true,
     sandbox: input?.sandbox ?? false,
     preloadAssets: input?.preloadAssets ?? "when_reachable",
-    execute: input?.execute ?? "on_review_mount",
+    execute: input?.execute ?? "on_step_mount",
     requireReadyBefore: input?.requireReadyBefore ?? "consent_substep",
     allowSubmitWithoutCert: input?.allowSubmitWithoutCert ?? true,
   };
