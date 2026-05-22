@@ -362,7 +362,7 @@ function getCoreRuntimeScript(): string {
     form.dataset.activeKind = question.kind;
     setFormChrome(getStepFormChrome(question));
     if (stepCount) {
-      stepCount.textContent = "Paso " + countedStepNumber + " de " + countedStepCount;
+      stepCount.textContent = formatStepCountLabel(countedStepNumber, countedStepCount);
       stepCount.setAttribute("aria-hidden", String(!question.countsAsStep));
     }
 
@@ -391,8 +391,8 @@ function getCoreRuntimeScript(): string {
     const question = getQuestion();
     const behavior = getActiveBehavior();
     const isLoading = isNextButtonLoading();
-    const label = labelOverride ?? behavior?.getNextLabel?.(getContext(), question, getStepElement()) ?? (isCurrentStepFinal() ? "Enviar" : "Siguiente");
-    const accessibleLoadingLabel = "Enviando...";
+    const label = labelOverride ?? behavior?.getNextLabel?.(getContext(), question, getStepElement()) ?? (isCurrentStepFinal() ? config.ui.actions.submit : config.ui.actions.next);
+    const accessibleLoadingLabel = config.ui.actions.loading;
     if (isLoading) {
       freezeNextButtonSize();
       renderNextButtonContent(accessibleLoadingLabel, true);
@@ -484,6 +484,10 @@ function getCoreRuntimeScript(): string {
 
   function setFormChrome(chrome) {
     form.dataset.formChrome = normalizeFormChrome(chrome);
+  }
+
+  function formatStepCountLabel(current, total) {
+    return String(config.ui.progress.stepCount).replaceAll("{{current}}", String(current)).replaceAll("{{total}}", String(total));
   }
 
   function getStepFormChrome(question) {
@@ -981,7 +985,7 @@ function getCoreRuntimeScript(): string {
 
     const answer = getCurrentAnswer();
     if (!answer) {
-      showErrorModal("Esta respuesta es requerida.", { returnFocusTarget: getValidationErrorReturnFocusTarget(options.focusInvalid !== false) });
+      showErrorModal(config.ui.errors.requiredAnswer, { returnFocusTarget: getValidationErrorReturnFocusTarget(options.focusInvalid !== false) });
       return false;
     }
 
@@ -1043,7 +1047,7 @@ function getCoreRuntimeScript(): string {
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
       const firstError = Array.isArray(body.errors) ? body.errors[0] : undefined;
-      throw new Error(firstError && firstError.message ? firstError.message : "No pudimos guardar esta respuesta.");
+      throw new Error(firstError && firstError.message ? firstError.message : config.ui.errors.checkpointSaveFailed);
     }
 
     if (body.answers && typeof body.answers === "object") {
@@ -1245,10 +1249,10 @@ function getCoreRuntimeScript(): string {
       const body = await response.json().catch(() => ({}));
       if (!response.ok) {
         const firstError = Array.isArray(body.errors) ? body.errors[0] : undefined;
-        throw new Error(firstError && firstError.message ? firstError.message : "No pudimos preparar este paso.");
+        throw new Error(firstError && firstError.message ? firstError.message : config.ui.errors.stepResolutionFailed);
       }
       if (!body.step) {
-        throw new Error("No pudimos preparar este paso.");
+        throw new Error(config.ui.errors.stepResolutionFailed);
       }
       cacheResolvedStepPayload(body.step);
       return body.step;
@@ -1265,7 +1269,7 @@ function getCoreRuntimeScript(): string {
       return;
     }
 
-    const message = error instanceof Error ? error.message : "No pudimos guardar esta respuesta.";
+    const message = error instanceof Error ? error.message : config.ui.errors.checkpointSaveFailed;
     if (options.stepUrl) {
       replaceToUrl(options.stepUrl);
     }
@@ -1303,14 +1307,14 @@ function getCoreRuntimeScript(): string {
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
         const firstError = Array.isArray(body.errors) ? body.errors[0] : undefined;
-        throw new Error(firstError && firstError.message ? firstError.message : "No pudimos enviar el formulario.");
+        throw new Error(firstError && firstError.message ? firstError.message : config.ui.errors.submissionFailed);
       }
 
       form.hidden = true;
       thanks.hidden = false;
       thanks.focus();
     } catch (submitError) {
-      submitErrorMessage = submitError instanceof Error ? submitError.message : "No pudimos enviar el formulario.";
+      submitErrorMessage = submitError instanceof Error ? submitError.message : config.ui.errors.submissionFailed;
     } finally {
       isSubmitting = false;
       updateNextButton();
@@ -1380,7 +1384,7 @@ function getCoreRuntimeScript(): string {
       const nextUrl = await queueCheckpoint(question.key, answer, { stepUrl, predictedUrl, mode, reconcile: false });
       navigateToUrl(nextUrl ?? predictedUrl);
     } catch (checkpointError) {
-      showErrorModal(checkpointError instanceof Error ? checkpointError.message : "No pudimos guardar esta respuesta.");
+      showErrorModal(checkpointError instanceof Error ? checkpointError.message : config.ui.errors.checkpointSaveFailed);
     } finally {
       setNextButtonLoading("navigation", false);
     }
@@ -1450,7 +1454,7 @@ function getChoiceBehaviorScript(registerExpression: string): string {
     function validate(ctx, question, step) {
       const answer = getAnswer(ctx, question, step);
       if (!answer) {
-        ctx.showErrorModal("Esta respuesta es requerida.");
+        ctx.showErrorModal(ctx.config.ui.errors.requiredAnswer);
         return false;
       }
 
@@ -1564,7 +1568,7 @@ function getTextBehaviorScript(registerExpression: string): string {
       const answer = getAnswer(ctx, question, step);
       if (!answer) {
         const returnFocusTarget = options.focusInvalid !== false ? step.querySelector(".text-input") : undefined;
-        ctx.showErrorModal("Esta respuesta es requerida.", { returnFocusTarget });
+        ctx.showErrorModal(ctx.config.ui.errors.requiredAnswer, { returnFocusTarget });
         return false;
       }
       ctx.answers[question.key] = answer;
@@ -1635,10 +1639,11 @@ function getPhoneBehaviorScript(registerExpression: string): string {
     }
 
     function validate(ctx, question, step, options = {}) {
-      const normalizedPhone = normalizeUsPhoneNumber(getAnswer(ctx, question, step));
+      const answer = getAnswer(ctx, question, step);
+      const normalizedPhone = normalizeUsPhoneNumber(answer);
       if (!normalizedPhone) {
         const returnFocusTarget = options.focusInvalid !== false ? step.querySelector(".text-input") : undefined;
-        ctx.showErrorModal("Ingrese un número de teléfono válido de Estados Unidos.", { returnFocusTarget });
+        ctx.showErrorModal(answer ? ctx.config.ui.errors.invalidPhone : ctx.config.ui.errors.requiredAnswer, { returnFocusTarget });
         return false;
       }
       ctx.answers[question.key] = normalizedPhone;
@@ -1796,7 +1801,7 @@ function getAutocompleteBehaviorScript(registerExpression: string): string {
       const normalizedState = normalizeUsState(ctx, getAnswer(ctx, question, step));
       if (!normalizedState) {
         const returnFocusTarget = options.focusInvalid !== false ? step.querySelector(".text-input") : undefined;
-        ctx.showErrorModal(question.validationMessage || "Ingrese un estado válido de Estados Unidos.", { returnFocusTarget });
+        ctx.showErrorModal(question.validationMessage || ctx.config.ui.errors.invalidAutocomplete, { returnFocusTarget });
         return false;
       }
       ctx.answers[question.key] = normalizedState;
@@ -2136,12 +2141,12 @@ function getInterstitialBehaviorScript(registerExpression: string): string {
       try {
         await ctx.saveCheckpoint(question.key, question.completionAnswer);
       } catch (checkpointError) {
-        ctx.showErrorModal(checkpointError instanceof Error ? checkpointError.message : "No pudimos guardar este paso.");
+        ctx.showErrorModal(checkpointError instanceof Error ? checkpointError.message : ctx.config.ui.errors.checkpointStepSaveFailed);
       }
       if (runId !== activeMatchingRunId) return;
       completedMatchingSteps.add(question.key);
       ctx.setNextButtonLoading(getMatchingLoadingReason(question), false);
-      ctx.updateNextButton("Siguiente", false);
+      ctx.updateNextButton(ctx.config.ui.actions.next, false);
     }
 
     return {
@@ -2170,7 +2175,7 @@ function getInterstitialBehaviorScript(registerExpression: string): string {
           ctx.replaceToUrl(nextUrl ?? ctx.getRenderedNextUrl());
         } catch (checkpointError) {
           ctx.setNextButtonLoading(getMatchingLoadingReason(question), false);
-          ctx.showErrorModal(checkpointError instanceof Error ? checkpointError.message : "No pudimos guardar este paso.");
+          ctx.showErrorModal(checkpointError instanceof Error ? checkpointError.message : ctx.config.ui.errors.checkpointStepSaveFailed);
         }
         return true;
       },
@@ -2184,7 +2189,7 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
   ${registerExpression}("trusted_form_consent", (() => {
     const trustedFormReadyPollMs = 100;
     const trustedFormReadyTimeoutMs = 5000;
-    const trustedFormReadyErrorMessage = "No pudimos preparar el certificado de consentimiento. Revise su conexión e intente de nuevo.";
+    const trustedFormReadyErrorMessage = window.__FORM_CONFIG__.ui.errors.trustedFormCertFailed;
     const trustedFormReviewLoadingReason = "trusted-form-review";
     const trustedFormSubmitLoadingReason = "trusted-form-submit";
     let trustedFormSdkLoaded = false;
@@ -2224,7 +2229,9 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
     }
 
     function getNextLabel(_ctx, question) {
-      return activeSubstep === "review" ? question.review.nextLabel : question.consent.submitLabel;
+      return activeSubstep === "review"
+        ? question.review.nextLabel || window.__FORM_CONFIG__.ui.actions.next
+        : question.consent.submitLabel || window.__FORM_CONFIG__.ui.actions.submit;
     }
 
     function mount(ctx, question, step) {
@@ -2712,12 +2719,12 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
       },
       getAnswer,
       getNextLabel,
-      getNextButtonState(_ctx, question) {
+      getNextButtonState(ctx, question) {
         if (activeSubstep === "consent") {
           return {
             type: "submit",
             name: "trusted_form_submit",
-            value: question.consent.submitLabel,
+            value: question.consent.submitLabel || ctx.config.ui.actions.submit,
             tfRole: "submit",
           };
         }
@@ -2725,7 +2732,7 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
         return {
           type: "button",
           name: "next",
-          value: question.review.nextLabel,
+          value: question.review.nextLabel || ctx.config.ui.actions.next,
         };
       },
       hydrate,

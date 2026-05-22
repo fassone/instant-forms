@@ -12,6 +12,7 @@ export const formRoutes = defineFormRoutes({
   },
 
   notFound: unavailable({
+    locale: "es",
     status: 404,
     title: "404",
     message: "Esta página no existe o ya no está disponible.",

@@ -9,6 +9,7 @@ import {
   type AutocompleteStep,
   type ConsentDisclosureCopy,
   type FormStep,
+  type FormUiCopy,
   type InstantForm,
   type InterstitialStep,
   type PhoneStep,
@@ -100,6 +101,8 @@ export type ClientStep =
 
 export type ClientFormConfig = {
   routeKey: string;
+  locale: string;
+  ui: FormUiCopy;
   customVariables: Readonly<Record<string, string>>;
   activeStepIndex: number;
   initialAnswers: Record<string, string>;
@@ -159,6 +162,8 @@ export function createClientFormConfig(
   );
   return {
     routeKey: options.routeKey ?? "preview",
+    locale: form.locale,
+    ui: form.ui,
     customVariables: form.customVariables,
     activeStepIndex: 0,
     initialAnswers,

@@ -1,35 +1,33 @@
 import type { PhoneStep } from "../../flow";
-import { US_PHONE_VALIDATION_MESSAGE, normalizeUsPhoneNumber } from "../phone/us-phone";
+import { normalizeUsPhoneNumber } from "../phone/us-phone";
 import type { StepAdapter } from "./index";
-
-const requiredMessage = "Esta respuesta es requerida.";
 
 export const phoneAdapter: StepAdapter<PhoneStep> = {
   kind: "phone",
-  validateCheckpoint(stepDefinition, input) {
+  validateCheckpoint(stepDefinition, input, errors) {
     const answer = getStringAnswer(input);
 
     if (!answer) {
-      return { ok: false, message: requiredMessage };
+      return { ok: false, message: errors.requiredAnswer };
     }
 
     if (!normalizeUsPhoneNumber(answer)) {
-      return { ok: false, message: US_PHONE_VALIDATION_MESSAGE };
+      return { ok: false, message: errors.invalidPhone };
     }
 
     return { ok: true, answer, includeInSubmission: true };
   },
-  validateSubmission(stepDefinition, input) {
+  validateSubmission(stepDefinition, input, errors) {
     const answer = getStringAnswer(input);
 
     if (!answer) {
-      return { ok: false, message: requiredMessage };
+      return { ok: false, message: errors.requiredAnswer };
     }
 
     const normalizedPhone = normalizeUsPhoneNumber(answer);
 
     if (!normalizedPhone) {
-      return { ok: false, message: US_PHONE_VALIDATION_MESSAGE };
+      return { ok: false, message: errors.invalidPhone };
     }
 
     return { ok: true, answer: normalizedPhone, includeInSubmission: true };

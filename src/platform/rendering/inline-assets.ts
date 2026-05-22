@@ -185,7 +185,7 @@ function tokenizeScriptSelectorLiterals(script: string): string {
 
 function replaceScriptClassToken(script: string, sourceClass: string, builtClass: string): string {
   return replaceScriptStringLiteralToken(script, sourceClass, builtClass)
-    .replace(new RegExp(`\\.${escapeRegExp(sourceClass)}(?=[^a-zA-Z0-9_-])`, "g"), `.${builtClass}`)
+    .replace(new RegExp(`(["'])\\.${escapeRegExp(sourceClass)}\\1`, "g"), `$1.${builtClass}$1`)
     .replace(new RegExp(`class=\\\\\\"${escapeRegExp(sourceClass)}\\\\\\"`, "g"), `class=\\"${builtClass}\\"`)
     .replace(new RegExp(`class="${escapeRegExp(sourceClass)}"`, "g"), `class="${builtClass}"`);
 }

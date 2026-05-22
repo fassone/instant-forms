@@ -1,4 +1,4 @@
-import { US_STATES, US_STATE_VALIDATION_MESSAGE, normalizeUsState } from "../../../shared/data/us-states";
+import { US_STATES, normalizeUsState } from "../../../shared/data/us-states";
 import type {
   AutocompleteSourceDefinition,
   AutocompleteStep,
@@ -252,7 +252,7 @@ export const autocompleteSource = {
       key: "us_states",
       clientKey: "usStates",
       normalize: normalizeUsState,
-      validationMessage: US_STATE_VALIDATION_MESSAGE,
+      validationMessage: "",
     };
   },
 } as const;
@@ -404,7 +404,7 @@ function createTrustedFormConsentStep(
   const review: TrustedFormConsentStepInput["review"] = {
     title: reviewInput && "title" in reviewInput ? reviewInput.title : "",
     ...(reviewInput && "description" in reviewInput && reviewInput.description ? { description: reviewInput.description } : {}),
-    nextLabel: reviewInput && "nextLabel" in reviewInput && reviewInput.nextLabel ? reviewInput.nextLabel : "Continuar",
+    nextLabel: reviewInput && "nextLabel" in reviewInput && reviewInput.nextLabel ? reviewInput.nextLabel : "",
     fields: reviewInput && "fields" in reviewInput && reviewInput.fields ? reviewInput.fields : [],
   };
   const consent: TrustedFormConsentStepInput["consent"] = {
@@ -414,14 +414,14 @@ function createTrustedFormConsentStep(
     checkboxLabel:
       consentInput && "checkboxLabel" in consentInput && consentInput.checkboxLabel
         ? consentInput.checkboxLabel
-        : "Acepto y quiero enviar mi solicitud.",
-    submitLabel: consentInput && "submitLabel" in consentInput && consentInput.submitLabel ? consentInput.submitLabel : "Enviar",
+        : "",
+    submitLabel: consentInput && "submitLabel" in consentInput && consentInput.submitLabel ? consentInput.submitLabel : "",
     validationMessage:
       consentInput && "validationMessage" in consentInput && consentInput.validationMessage
         ? consentInput.validationMessage
-        : "Debe aceptar el consentimiento para enviar la solicitud.",
+        : "",
   };
-  const label = getStaticDisplayCopyLabel(review.title) ?? "Antes de enviar";
+  const label = getStaticDisplayCopyLabel(review.title) ?? staticInput.key;
 
   return {
     ...baseStep({ ...staticInput, label }, "trusted_form_consent", "checkpoint_only", { trustedForm: "certify" }),
@@ -430,16 +430,16 @@ function createTrustedFormConsentStep(
     review: {
       title: review.title,
       ...(review.description ? { description: review.description } : {}),
-      nextLabel: review.nextLabel ?? "Continuar",
+      nextLabel: review.nextLabel ?? "",
       fields: review.fields,
     },
     consent: {
       title: consent.title,
       ...(consent.description ? { description: consent.description } : {}),
       disclosure: consent.disclosure,
-      checkboxLabel: consent.checkboxLabel ?? "Acepto y quiero enviar mi solicitud.",
-      submitLabel: consent.submitLabel ?? "Enviar",
-      validationMessage: consent.validationMessage ?? "Debe aceptar el consentimiento para enviar la solicitud.",
+      checkboxLabel: consent.checkboxLabel ?? "",
+      submitLabel: consent.submitLabel ?? "",
+      validationMessage: consent.validationMessage ?? "",
     },
     ...(staticInput.substeps ? { substeps: staticInput.substeps } : {}),
     acceptedAnswer: staticInput.acceptedAnswer ?? "accepted",

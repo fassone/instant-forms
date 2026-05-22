@@ -1,27 +1,25 @@
 import type { AutocompleteStep } from "../../flow";
 import type { StepAdapter } from "./index";
 
-const requiredMessage = "Esta respuesta es requerida.";
-
 export const autocompleteAdapter: StepAdapter<AutocompleteStep> = {
   kind: "autocomplete",
-  validateCheckpoint(stepDefinition, input) {
+  validateCheckpoint(stepDefinition, input, errors) {
     const answer = getStringAnswer(input);
 
     if (!answer) {
-      return { ok: false, message: requiredMessage };
+      return { ok: false, message: errors.requiredAnswer };
     }
 
     const normalizedAnswer = stepDefinition.normalize(answer);
 
     if (!normalizedAnswer) {
-      return { ok: false, message: stepDefinition.validationMessage };
+      return { ok: false, message: stepDefinition.validationMessage || errors.invalidAutocomplete };
     }
 
     return { ok: true, answer: normalizedAnswer, includeInSubmission: true };
   },
-  validateSubmission(stepDefinition, input) {
-    return autocompleteAdapter.validateCheckpoint(stepDefinition, input);
+  validateSubmission(stepDefinition, input, errors) {
+    return autocompleteAdapter.validateCheckpoint(stepDefinition, input, errors);
   },
   isAnswered(stepDefinition, answers) {
     return Boolean(answers[stepDefinition.key]);

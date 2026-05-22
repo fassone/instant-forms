@@ -5,6 +5,47 @@ import { z } from "../../../platform/flow";
 export const tnFlow = defineFormFlow({
   name: "ES - TN - v6",
   status: "ACTIVE",
+  locale: "es",
+  ui: {
+    actions: {
+      back: "Atrás",
+      next: "Siguiente",
+      submit: "Enviar",
+      loading: "Enviando...",
+    },
+    progress: {
+      stepCount: "Paso {{current}} de {{total}}",
+    },
+    errorModal: {
+      title: "Revise esta respuesta",
+      closeLabel: "Entendido",
+    },
+    errors: {
+      requiredAnswer: "Esta respuesta es requerida.",
+      invalidChoice: "Seleccione una opción válida.",
+      invalidPhone: "Ingrese un número de teléfono válido de Estados Unidos.",
+      invalidAutocomplete: "Ingrese un estado válido de Estados Unidos.",
+      unavailableQuestion: "Esta pregunta no está disponible.",
+      incompleteStep: "No pudimos completar este paso.",
+      checkpointSaveFailed: "No pudimos guardar esta respuesta.",
+      checkpointStepSaveFailed: "No pudimos guardar este paso.",
+      stepResolutionFailed: "No pudimos preparar este paso.",
+      submissionFailed: "No pudimos enviar el formulario.",
+      trustedFormCertFailed:
+        "No pudimos preparar el certificado de consentimiento. Revise su conexión e intente de nuevo.",
+    },
+    pages: {
+      thankYou: {
+        title: "Gracias.",
+        message: "Recibimos su información. Un agente se pondrá en contacto con usted pronto.",
+      },
+      nativeSubmissionError: {
+        title: "No pudimos enviar el formulario",
+        heading: "No pudimos enviar el formulario.",
+        fallbackMessage: "No pudimos enviar el formulario.",
+      },
+    },
+  },
   contract: {
     context: z.object({
       areaCode: z.string(),
@@ -148,7 +189,7 @@ export const tnFlow = defineFormFlow({
       {
         key: "trustedform_consent",
         slug: "consentimiento",
-        /*substeps: {
+        substeps: {
           consent: {
             presentation: {
               chrome: "hidden_on_mobile",
@@ -159,7 +200,7 @@ export const tnFlow = defineFormFlow({
               chrome: "hidden_on_mobile",
             },
           },
-        },*/
+        },
         trustedForm: {
           fieldName: "xxTrustedFormCertUrl",
           delivery: "main_thread",
@@ -256,6 +297,7 @@ export const tnFlow = defineFormFlow({
           ),
           checkboxLabel: "Acepto continuar y enviar mi solicitud.",
           submitLabel: "Cotizar",
+          validationMessage: "Debe aceptar el consentimiento para enviar la solicitud.",
         },
       }),
     ),

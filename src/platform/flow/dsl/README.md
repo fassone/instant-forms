@@ -9,6 +9,7 @@
 - Shared form and step types.
 - Step builders for `choice`, `text`, `phone`, `autocomplete`, `interstitial`, and `trusted_form_consent`.
 - Zod-backed contract typing for authored context, produced answers, and outbound payloads.
+- Required flow-level `locale` and `ui` copy for platform-owned labels and error surfaces.
 - Compile-time and runtime checks that answer-producing step keys, choice option keys, `showWhen` conditions, and step-level resolver dependencies match prior `contract.answers`.
 - Typed payload mappings that receive grouped `{ context, answers }` input.
 - Safe authored copy helpers: `text(...)` for submitted/plain values, `phoneDisplay(...)` for explicit human-readable US phone display, `stateDisplay(...)` for explicit US state-name display, and `md(...)` / `markdown(...)` for rendered display prose.
@@ -22,6 +23,8 @@
 ## Change Safely
 
 Adding a step kind requires updating DSL types, builders, adapters, rendering contracts, and tests together. Contract changes must keep TypeScript inference and runtime validation aligned so authored flows fail early when context, answer keys, choice values, conditional visibility, answer ordering, dynamic copy dependencies, or payload mappings drift.
+
+Flow `locale` and `ui` are required. The renderer, client runtime, checkpoint/submission validation, and native submission pages all read platform-owned copy from that `ui` object, so multilingual support is per-flow and explicit rather than inherited from hidden defaults.
 
 Dynamic authoring happens at the step boundary: a step is either static, or the builder receives one dependency list and one resolver that returns that step's dynamic display/body props. Nested `resolve(...)` calls inside fields are intentionally rejected so dependency ownership stays obvious.
 

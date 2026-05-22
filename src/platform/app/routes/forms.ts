@@ -49,21 +49,21 @@ export function registerFormRoutes(app: Hono, routes: FormRoutes, logger: Submis
     const body = await parseJsonBody(c.req.raw);
 
     if (!body.ok || !isRecord(body.value)) {
-      return jsonResponse(c, { ok: false, errors: [{ field: "body", message: "Request body must be valid JSON." }] }, 400);
+      return jsonResponse(c, { ok: false, errors: [{ field: "body", message: form.ui.errors.checkpointSaveFailed }] }, 400);
     }
 
     const questionKey = typeof body.value.questionKey === "string" ? body.value.questionKey : "";
     const stepDefinition = getStepByKey(form, questionKey);
 
     if (!stepDefinition) {
-      return jsonResponse(c, { ok: false, errors: [{ field: "questionKey", message: "Question is not available." }] }, 404);
+      return jsonResponse(c, { ok: false, errors: [{ field: "questionKey", message: form.ui.errors.unavailableQuestion }] }, 404);
     }
 
     const answers = readCheckpointAnswers(c, form, routeEntry.routeKey);
     const stepIndex = form.steps.findIndex((candidate) => candidate.key === stepDefinition.key);
 
     if (stepDefinition.kind === "interstitial" && (stepIndex === -1 || !canAccessStep(form, stepIndex, answers))) {
-      return jsonResponse(c, { ok: false, errors: [{ field: stepDefinition.key, message: "Question is not available yet." }] }, 400);
+      return jsonResponse(c, { ok: false, errors: [{ field: stepDefinition.key, message: form.ui.errors.unavailableQuestion }] }, 400);
     }
 
     const requestedAnswer = typeof body.value.answer === "string" ? body.value.answer.trim() : "";
@@ -74,14 +74,14 @@ export function registerFormRoutes(app: Hono, routes: FormRoutes, logger: Submis
       answers[stepDefinition.key] !== stepDefinition.completionAnswer &&
       answers[stepDefinition.key] !== stepDefinition.seenAnswer
     ) {
-      return jsonResponse(c, { ok: false, errors: [{ field: stepDefinition.key, message: "Question is not complete yet." }] }, 400);
+      return jsonResponse(c, { ok: false, errors: [{ field: stepDefinition.key, message: form.ui.errors.incompleteStep }] }, 400);
     }
 
     if (!isStepVisible(stepDefinition, answers)) {
-      return jsonResponse(c, { ok: false, errors: [{ field: stepDefinition.key, message: "Question is not available yet." }] }, 400);
+      return jsonResponse(c, { ok: false, errors: [{ field: stepDefinition.key, message: form.ui.errors.unavailableQuestion }] }, 400);
     }
 
-    const validation = validateCheckpointAnswer(stepDefinition, body.value.answer);
+    const validation = validateCheckpointAnswer(form, stepDefinition, body.value.answer);
 
     if (!validation.ok) {
       return jsonResponse(c, { ok: false, errors: [{ field: stepDefinition.key, message: validation.message }] }, 400);
@@ -132,14 +132,18 @@ export function registerFormRoutes(app: Hono, routes: FormRoutes, logger: Submis
     const body = await parseJsonBody(c.req.raw);
 
     if (!body.ok || !isRecord(body.value)) {
-      return jsonResponse(c, { ok: false, errors: [{ field: "body", message: "Request body must be valid JSON." }] }, 400);
+      return jsonResponse(
+        c,
+        { ok: false, errors: [{ field: "body", message: routeEntry.form.ui.errors.stepResolutionFailed }] },
+        400,
+      );
     }
 
     const stepKey = typeof body.value.stepKey === "string" ? body.value.stepKey : "";
     const stepDefinition = getStepByKey(routeEntry.form, stepKey);
 
     if (!stepDefinition) {
-      return jsonResponse(c, { ok: false, errors: [{ field: "stepKey", message: "Question is not available." }] }, 404);
+      return jsonResponse(c, { ok: false, errors: [{ field: "stepKey", message: routeEntry.form.ui.errors.unavailableQuestion }] }, 404);
     }
 
     const answerSnapshot = isRecord(body.value.answers) ? body.value.answers : {};
@@ -147,11 +151,11 @@ export function registerFormRoutes(app: Hono, routes: FormRoutes, logger: Submis
     const stepIndex = routeEntry.form.steps.findIndex((candidate) => candidate.key === stepDefinition.key);
 
     if (stepIndex === -1 || !canAccessStep(routeEntry.form, stepIndex, sanitizedAnswers)) {
-      return jsonResponse(c, { ok: false, errors: [{ field: stepDefinition.key, message: "Question is not available yet." }] }, 400);
+      return jsonResponse(c, { ok: false, errors: [{ field: stepDefinition.key, message: routeEntry.form.ui.errors.unavailableQuestion }] }, 400);
     }
 
     if (hasStepDynamicResolvers(stepDefinition) && !canResolveStepDynamicValues(routeEntry.form, stepDefinition, sanitizedAnswers)) {
-      return jsonResponse(c, { ok: false, errors: [{ field: stepDefinition.key, message: "Question is not ready yet." }] }, 400);
+      return jsonResponse(c, { ok: false, errors: [{ field: stepDefinition.key, message: routeEntry.form.ui.errors.stepResolutionFailed }] }, 400);
     }
 
     try {
@@ -173,7 +177,7 @@ export function registerFormRoutes(app: Hono, routes: FormRoutes, logger: Submis
           errors: [
             {
               field: stepDefinition.key,
-              message: error instanceof Error ? error.message : "No pudimos preparar este paso.",
+              message: error instanceof Error ? error.message : routeEntry.form.ui.errors.stepResolutionFailed,
             },
           ],
         },
@@ -197,7 +201,7 @@ export function registerFormRoutes(app: Hono, routes: FormRoutes, logger: Submis
     const body = await parseJsonBody(c.req.raw);
 
     if (!body.ok) {
-      return jsonResponse(c, { ok: false, errors: [{ field: "body", message: "Request body must be valid JSON." }] }, 400);
+      return jsonResponse(c, { ok: false, errors: [{ field: "body", message: routeEntry.form.ui.errors.submissionFailed }] }, 400);
     }
 
     const validation = validateSubmission(routeEntry.form, routeEntry.routeKey, body.value);
@@ -222,7 +226,7 @@ export function registerFormRoutes(app: Hono, routes: FormRoutes, logger: Submis
 
     const formDataResult = await parseFormData(c.req.raw);
     if (!formDataResult.ok) {
-      return htmlResponse(renderNativeSubmissionErrorPage(["Submission body must be form data."]), 400, "no-store");
+      return htmlResponse(renderNativeSubmissionErrorPage(routeEntry.form, [routeEntry.form.ui.errors.submissionFailed]), 400, "no-store");
     }
 
     const checkpointAnswers = readCheckpointAnswers(c, routeEntry.form, routeEntry.routeKey);
@@ -238,7 +242,7 @@ export function registerFormRoutes(app: Hono, routes: FormRoutes, logger: Submis
 
     if (validation.ok === false) {
       return htmlResponse(
-        renderNativeSubmissionErrorPage(validation.errors.map((error) => error.message)),
+        renderNativeSubmissionErrorPage(routeEntry.form, validation.errors.map((error) => error.message)),
         400,
         "no-store",
       );
@@ -247,7 +251,7 @@ export function registerFormRoutes(app: Hono, routes: FormRoutes, logger: Submis
     logger(validation.payload);
     clearCheckpointAnswers(c, routeEntry.routeKey);
 
-    const response = htmlResponse(renderNativeSubmissionThanksPage(), 200, "no-store");
+    const response = htmlResponse(renderNativeSubmissionThanksPage(routeEntry.form), 200, "no-store");
     const setCookie = c.res.headers.get("Set-Cookie");
     if (setCookie) {
       response.headers.set("Set-Cookie", setCookie);
@@ -321,13 +325,13 @@ function getNativeTrustedFormCertUrl(form: InstantForm, formData: NativeFormData
   return undefined;
 }
 
-function renderNativeSubmissionThanksPage(): string {
+function renderNativeSubmissionThanksPage(form: InstantForm): string {
   return `<!doctype html>
-<html lang="es">
+<html lang="${escapeHtml(form.locale)}">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Gracias</title>
+    <title>${escapeHtml(form.ui.pages.thankYou.title)}</title>
     <style>
       body {
         min-height: 100vh;
@@ -361,22 +365,37 @@ function renderNativeSubmissionThanksPage(): string {
   </head>
   <body>
     <main>
-      <h1>Gracias.</h1>
-      <p>Recibimos su información. Un agente se pondrá en contacto con usted pronto.</p>
+      <h1>${escapeHtml(form.ui.pages.thankYou.title)}</h1>
+      <p>${escapeHtml(form.ui.pages.thankYou.message)}</p>
     </main>
   </body>
 </html>`;
 }
 
-function renderNativeSubmissionErrorPage(messages: readonly string[]): string {
-  const message = messages[0] ?? "No pudimos enviar el formulario.";
+function renderNativeSubmissionErrorPage(form: InstantForm, messages: readonly string[]): string;
+function renderNativeSubmissionErrorPage(messages: readonly string[]): string;
+function renderNativeSubmissionErrorPage(formOrMessages: InstantForm | readonly string[], maybeMessages?: readonly string[]): string {
+  if (isNativeSubmissionErrorForm(formOrMessages)) {
+    return renderNativeSubmissionErrorPageContent(formOrMessages, maybeMessages ?? []);
+  }
+
+  return renderNativeSubmissionErrorPageContent(undefined, formOrMessages);
+}
+
+function renderNativeSubmissionErrorPageContent(form: InstantForm | undefined, messages: readonly string[]): string {
+  const locale = form?.locale ?? "en";
+  const pageCopy = form?.ui.pages.nativeSubmissionError;
+  const fallbackMessage = pageCopy?.fallbackMessage ?? "Unable to submit the form.";
+  const message = messages[0] ?? fallbackMessage;
+  const title = pageCopy?.title ?? "Unable to submit the form";
+  const heading = pageCopy?.heading ?? title;
 
   return `<!doctype html>
-<html lang="es">
+<html lang="${escapeHtml(locale)}">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>No pudimos enviar el formulario</title>
+    <title>${escapeHtml(title)}</title>
     <style>
       body {
         min-height: 100vh;
@@ -411,11 +430,15 @@ function renderNativeSubmissionErrorPage(messages: readonly string[]): string {
   </head>
   <body>
     <main>
-      <h1>No pudimos enviar el formulario.</h1>
+      <h1>${escapeHtml(heading)}</h1>
       <p>${escapeHtml(message)}</p>
     </main>
   </body>
 </html>`;
+}
+
+function isNativeSubmissionErrorForm(value: InstantForm | readonly string[]): value is InstantForm {
+  return !Array.isArray(value);
 }
 
 function escapeHtml(value: string): string {

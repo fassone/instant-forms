@@ -6,6 +6,9 @@ const routeKey = "tn_custom";
 const appPort = Number(process.env.PLAYWRIGHT_PORT ?? 51234);
 const appUrl = `http://127.0.0.1:${appPort}`;
 const trustedFormCertUrl = "https://cert.trustedform.com/454a35b802f3e7b63ffabb4efedb7c6ebe67886c";
+const trustedFormReviewTitle = "Antes de cotizar";
+const trustedFormReviewDescription = "Ya tenemos posibles opciones para usted. Confirme que sus datos estén correctos antes de continuar.";
+const trustedFormSubmitLabel = "Cotizar";
 const preContactAnswers = {
   belongs_to_state: "yes",
   has_license: "yes",
@@ -82,7 +85,7 @@ test.describe("instant routed form UI", () => {
     await waitForTransitionAsset(page, transitionAssetUrl);
     await expect.poll(() => consentResolutionRequests).toBeGreaterThan(0);
     await expect(activeStep(page).getByRole("heading", { name: "¿Usted vive en Tennessee?" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Antes de enviar" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: trustedFormReviewTitle })).toHaveCount(0);
     await expect(activeStep(page).locator("[data-trusted-form-review-scroll]")).toHaveCount(0);
   });
 
@@ -243,9 +246,9 @@ test.describe("instant routed form UI", () => {
 
     await continueTrustedFormReview(page);
     await activeStep(page).locator("[data-trusted-form-consent]").check();
-    await expect(page.getByRole("button", { name: "Enviar" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: trustedFormSubmitLabel })).toBeEnabled();
     const submissionRequest = page.waitForRequest(/\/api\/forms\/tn_custom\/native-submissions/u);
-    await page.getByRole("button", { name: "Enviar" }).click();
+    await page.getByRole("button", { name: trustedFormSubmitLabel }).click();
     expect((await submissionRequest).postData() ?? "").toContain(
       "trustedFormCertUrl=https%3A%2F%2Fcert.trustedform.com%2F454a35b802f3e7b63ffabb4efedb7c6ebe67886c",
     );
@@ -264,7 +267,7 @@ test.describe("instant routed form UI", () => {
 
     const step = activeStep(page);
     const description = step.locator("[data-question-description]");
-    await expect(step.getByRole("heading", { name: "Antes de enviar" })).toBeVisible();
+    await expect(step.getByRole("heading", { name: trustedFormReviewTitle })).toBeVisible();
     await expect(description).toBeVisible();
     await expect(description).toHaveCSS("font-weight", "400");
     const reviewShell = step.locator("[data-trusted-form-review-scroll-shell]");
@@ -348,7 +351,7 @@ test.describe("instant routed form UI", () => {
     expect(Math.abs(buttonBoxWhileLoading.width - buttonBoxBeforeLoading.width)).toBeLessThanOrEqual(1);
     expect(Math.abs(buttonBoxWhileLoading.height - buttonBoxBeforeLoading.height)).toBeLessThanOrEqual(1);
 
-    await expect(page.getByRole("button", { name: "Enviar" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: trustedFormSubmitLabel })).toBeEnabled();
 
     await activeStep(page).locator("[data-trusted-form-consent]").check();
     await expect(activeStep(page).locator("[data-consent-summary]")).toHaveCount(0);
@@ -358,7 +361,7 @@ test.describe("instant routed form UI", () => {
     await expect(
       activeStep(page).locator('[data-trusted-form-substep="consent"] [data-tf-element-role="consent-grantor-phone"]'),
     ).toHaveText("(615) 555-1234");
-    const submitButton = page.getByRole("button", { name: "Enviar" });
+    const submitButton = page.getByRole("button", { name: trustedFormSubmitLabel });
     const submissionRequest = page.waitForRequest(/\/api\/forms\/tn_custom\/native-submissions/u);
     await submitButton.click();
 
@@ -402,7 +405,7 @@ test.describe("instant routed form UI", () => {
     await expect(bottomFade).toHaveCSS("opacity", "1");
 
     const consentBox = await step.locator('[data-tf-element-role="consent-language"]').boundingBox();
-    const submitBox = await page.getByRole("button", { name: "Enviar" }).boundingBox();
+    const submitBox = await page.getByRole("button", { name: trustedFormSubmitLabel }).boundingBox();
     if (!consentBox || !submitBox) {
       throw new Error("Expected consent language and submit button boxes to be visible.");
     }
@@ -482,7 +485,7 @@ test.describe("instant routed form UI", () => {
     await page.goto("/tn/custom/consentimiento");
     await continueTrustedFormReview(page);
 
-    const submitButton = page.getByRole("button", { name: "Enviar" });
+    const submitButton = page.getByRole("button", { name: trustedFormSubmitLabel });
     await expect(submitButton).toBeEnabled();
     await submitButton.click();
 
@@ -567,12 +570,12 @@ test.describe("instant routed form UI", () => {
     await page.goto("/tn/custom/consentimiento");
 
     await page.getByRole("button", { name: "Continuar" }).click();
-    await expect(page.getByRole("button", { name: "Enviar" })).toBeEnabled({ timeout: 7000 });
+    await expect(page.getByRole("button", { name: trustedFormSubmitLabel })).toBeEnabled({ timeout: 7000 });
     await expect(page.getByRole("alertdialog")).toBeHidden();
 
     await activeStep(page).locator("[data-trusted-form-consent]").check();
     const submissionRequest = page.waitForRequest(/\/api\/forms\/tn_custom\/native-submissions/u);
-    await page.getByRole("button", { name: "Enviar" }).click();
+    await page.getByRole("button", { name: trustedFormSubmitLabel }).click();
     expect((await submissionRequest).postData() ?? "").not.toContain("trustedFormCertUrl=");
     await expect(page.getByRole("heading", { name: "Gracias." })).toBeVisible();
   });
@@ -624,15 +627,15 @@ async function clickActiveOption(page: Page, label: string): Promise<void> {
 }
 
 async function continueTrustedFormReview(page: Page): Promise<void> {
-  await expect(activeStep(page).getByRole("heading", { name: "Antes de enviar" })).toBeVisible();
-  await expect(activeStep(page).getByText("Por favor, confirme su informacion")).toBeVisible();
+  await expect(activeStep(page).getByRole("heading", { name: trustedFormReviewTitle })).toBeVisible();
+  await expect(activeStep(page).getByText(trustedFormReviewDescription)).toBeVisible();
   await expect(activeStep(page).locator("[data-trusted-form-review-scroll]")).toBeVisible();
   await expect(activeStep(page).locator(".trusted-form-review-label", { hasText: "Vive en Tennessee" })).toBeVisible();
   await expect(activeStep(page).locator('[data-trusted-form-substep="consent"]')).toBeHidden();
   await page.getByRole("button", { name: "Continuar" }).click();
-  await expect(activeStep(page).getByRole("heading", { name: "Consentimiento" })).toBeVisible({ timeout: 7000 });
+  await expect(activeStep(page).getByRole("heading", { name: trustedFormReviewTitle })).toBeVisible({ timeout: 7000 });
   await expect(activeStep(page).locator("[data-trusted-form-consent]")).toBeVisible({ timeout: 7000 });
-  await expect(page.getByRole("button", { name: "Enviar" })).toBeEnabled({ timeout: 7000 });
+  await expect(page.getByRole("button", { name: trustedFormSubmitLabel })).toBeEnabled({ timeout: 7000 });
   const isMobileChromeHidden = (page.viewportSize()?.width ?? Number.POSITIVE_INFINITY) <= 560;
   if (isMobileChromeHidden) {
     await expect(page.locator('img[alt="Seguros Aseguranza"]')).toBeHidden();

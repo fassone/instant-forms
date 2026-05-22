@@ -29,9 +29,53 @@ const payload = {
   }),
 } as const;
 
+const testFlowCopy = {
+  locale: "en",
+  ui: {
+    actions: {
+      back: "Back",
+      next: "Next",
+      submit: "Submit",
+      loading: "Submitting...",
+    },
+    progress: {
+      stepCount: "Step {{current}} of {{total}}",
+    },
+    errorModal: {
+      title: "Check this answer",
+      closeLabel: "Got it",
+    },
+    errors: {
+      requiredAnswer: "This answer is required.",
+      invalidChoice: "Select a valid option.",
+      invalidPhone: "Enter a valid United States phone number.",
+      invalidAutocomplete: "Enter a valid answer.",
+      unavailableQuestion: "This question is not available.",
+      incompleteStep: "We could not complete this step.",
+      checkpointSaveFailed: "We could not save this answer.",
+      checkpointStepSaveFailed: "We could not save this step.",
+      stepResolutionFailed: "We could not prepare this step.",
+      submissionFailed: "We could not submit the form.",
+      trustedFormCertFailed: "We could not prepare the consent certificate. Check your connection and try again.",
+    },
+    pages: {
+      thankYou: {
+        title: "Thanks.",
+        message: "We received your information.",
+      },
+      nativeSubmissionError: {
+        title: "We could not submit the form",
+        heading: "We could not submit the form.",
+        fallbackMessage: "We could not submit the form.",
+      },
+    },
+  },
+} as const;
+
 void defineFormFlow({
   name: "Valid Type Fixture",
   status: "ACTIVE",
+  ...testFlowCopy,
   contract,
   context: {},
   payload,
@@ -65,6 +109,7 @@ void defineFormFlow({
 void defineFormFlow({
   name: "Valid Resolver Fixture",
   status: "ACTIVE",
+  ...testFlowCopy,
   contract,
   context: {},
   payload,
@@ -304,6 +349,7 @@ const optionalContextContract = {
 void defineFormFlow({
   name: "Optional Context Resolver Fixture",
   status: "ACTIVE",
+  ...testFlowCopy,
   contract: optionalContextContract,
   context: { areaCode: "TN" },
   payload: {
@@ -344,6 +390,7 @@ void defineFormFlow({
 void defineFormFlow({
   name: "Dynamic Markdown Fixture",
   status: "ACTIVE",
+  ...testFlowCopy,
   contract,
   context: {},
   payload,
@@ -416,6 +463,7 @@ void step.trustedFormConsent({
 void defineFormFlow({
   name: "Invalid Dynamic Resolver Body",
   status: "ACTIVE",
+  ...testFlowCopy,
   contract,
   context: {},
   payload,
@@ -581,6 +629,7 @@ const optionalAnswerContract = {
 void defineFormFlow({
   name: "Optional Answer Resolver Fixture",
   status: "ACTIVE",
+  ...testFlowCopy,
   contract: optionalAnswerContract,
   context: {},
   payload: {
@@ -861,6 +910,7 @@ const orderingPayload = {
 void defineFormFlow({
   name: "Invalid Forward Condition",
   status: "ACTIVE",
+  ...testFlowCopy,
   contract: orderingContract,
   context: {},
   payload: orderingPayload,
@@ -907,6 +957,7 @@ void defineFormFlow({
 void defineFormFlow({
   name: "Invalid Forward Resolver",
   status: "ACTIVE",
+  ...testFlowCopy,
   contract: orderingContract,
   context: {},
   payload: orderingPayload,
@@ -961,6 +1012,7 @@ void defineFormFlow({
 void defineFormFlow({
   name: "Invalid Choice Options",
   status: "ACTIVE",
+  ...testFlowCopy,
   contract,
   context: {},
   payload,
@@ -988,6 +1040,7 @@ void defineFormFlow({
 void defineFormFlow({
   name: "Invalid Condition Key",
   status: "ACTIVE",
+  ...testFlowCopy,
   contract,
   context: {},
   payload,
@@ -1019,6 +1072,7 @@ void defineFormFlow({
 void defineFormFlow({
   name: "Invalid Condition Answer",
   status: "ACTIVE",
+  ...testFlowCopy,
   contract,
   context: {},
   payload,

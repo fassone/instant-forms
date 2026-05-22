@@ -1,5 +1,5 @@
 import { isStepVisible, type FormContract, type InstantForm } from "../flow";
-import { US_PHONE_VALIDATION_MESSAGE, normalizeUsPhoneNumber } from "../steps/phone/us-phone";
+import { normalizeUsPhoneNumber } from "../steps/phone/us-phone";
 import { validateStepSubmissionAnswer } from "../steps/adapters";
 
 export type AnswerMap = Record<string, string>;
@@ -34,7 +34,7 @@ export type SubmissionValidationResult =
       errors: SubmissionValidationError[];
     };
 
-export { US_PHONE_VALIDATION_MESSAGE, normalizeUsPhoneNumber };
+export { normalizeUsPhoneNumber };
 
 export function validateSubmission(
   form: InstantForm,
@@ -45,7 +45,7 @@ export function validateSubmission(
   if (!isRecord(input) || !isRecord(input.answers)) {
     return {
       ok: false,
-      errors: [{ field: "answers", message: "Answers are required." }],
+      errors: [{ field: "answers", message: form.ui.errors.submissionFailed }],
     };
   }
 
@@ -59,7 +59,7 @@ export function validateSubmission(
     trustedFormCertUrlError = true;
     errors.push({
       field: "trustedFormCertUrl",
-      message: "TrustedForm certificate URL is not valid.",
+      message: form.ui.errors.trustedFormCertFailed,
     });
   }
 
@@ -72,12 +72,12 @@ export function validateSubmission(
       requiresTrustedFormCertUrl = true;
     }
 
-    const validation = validateStepSubmissionAnswer(stepDefinition, input.answers[stepDefinition.key]);
+    const validation = validateStepSubmissionAnswer(stepDefinition, input.answers[stepDefinition.key], form.ui.errors);
 
     if (!validation.ok) {
       errors.push({
         field: stepDefinition.key,
-        message: validation.message === "Esta respuesta es requerida." ? "This answer is required." : validation.message,
+        message: validation.message,
       });
       continue;
     }
@@ -92,7 +92,7 @@ export function validateSubmission(
   if (requiresTrustedFormCertUrl && !trustedFormCertUrl && !trustedFormCertUrlError) {
     errors.push({
       field: "trustedFormCertUrl",
-      message: "TrustedForm certificate URL is required.",
+      message: form.ui.errors.trustedFormCertFailed,
     });
   }
 

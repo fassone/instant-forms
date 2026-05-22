@@ -84,6 +84,7 @@ export function redirectTo(to: string): RedirectRouteAction {
 export function unavailable(input: UnavailablePageContent & { status?: number }): UnavailableRouteAction {
   return {
     type: "unavailable",
+    locale: input.locale,
     title: input.title,
     message: input.message,
     cta: input.cta,
@@ -332,6 +333,7 @@ async function renderUnavailableResponse(action: UnavailableRouteAction, preferP
 
 function getUnavailablePageContent(action: UnavailableRouteAction): UnavailablePageContent {
   return {
+    locale: action.locale,
     title: action.title,
     message: action.message,
     cta: action.cta,
@@ -433,10 +435,11 @@ function getRedirectTarget(to: string, redirectPrefix: string | undefined): stri
 function getPreviewUnavailableAction(routeSegments: readonly string[]): UnavailableRouteAction {
   return unavailable({
     status: 404,
-    title: "Página no encontrada",
-    message: "Esta página no existe o ya no está disponible.",
+    locale: "en",
+    title: "Page not found",
+    message: "This page does not exist or is no longer available.",
     cta: {
-      label: "Ir al formulario",
+      label: "Go to the form",
       href: getFolderRoot(routeSegments),
     },
   });

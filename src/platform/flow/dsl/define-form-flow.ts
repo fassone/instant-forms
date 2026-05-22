@@ -45,6 +45,8 @@ export function defineFormFlow<const TContract extends FormContract, const TStep
   return {
     name: input.name,
     status: input.status,
+    locale: input.locale,
+    ui: input.ui,
     contract: input.contract,
     context,
     customVariables: context,

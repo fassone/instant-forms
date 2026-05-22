@@ -1,25 +1,23 @@
 import type { ChoiceStep } from "../../flow";
 import type { StepAdapter } from "./index";
 
-const requiredMessage = "Esta respuesta es requerida.";
-
 export const choiceAdapter: StepAdapter<ChoiceStep> = {
   kind: "choice",
-  validateCheckpoint(stepDefinition, input) {
+  validateCheckpoint(stepDefinition, input, errors) {
     const answer = getStringAnswer(input);
 
     if (!answer) {
-      return { ok: false, message: requiredMessage };
+      return { ok: false, message: errors.requiredAnswer };
     }
 
     if (!stepDefinition.options.some((option) => option.key === answer)) {
-      return { ok: false, message: "Answer is not a valid option." };
+      return { ok: false, message: errors.invalidChoice };
     }
 
     return { ok: true, answer, includeInSubmission: true };
   },
-  validateSubmission(stepDefinition, input) {
-    return choiceAdapter.validateCheckpoint(stepDefinition, input);
+  validateSubmission(stepDefinition, input, errors) {
+    return choiceAdapter.validateCheckpoint(stepDefinition, input, errors);
   },
   isAnswered(stepDefinition, answers) {
     return Boolean(answers[stepDefinition.key]);

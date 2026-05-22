@@ -36,6 +36,7 @@ export type RenderFormPageOptions = {
 };
 
 export type UnavailablePageContent = {
+  locale?: string;
   title: string;
   message: string;
   cta?: {
@@ -63,10 +64,10 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
   const initialFormChrome = getInitialFormChrome(activeStep);
   const initialNextButtonLabel =
     activeStep?.kind === "trusted_form_consent"
-      ? activeStep.review.nextLabel
+      ? activeStep.review.nextLabel || form.ui.actions.next
       : activeStepIndex === lastStepIndex
-        ? "Enviar"
-        : "Siguiente";
+        ? form.ui.actions.submit
+        : form.ui.actions.next;
   const formAttributes = usesNativeTrustedFormSubmit
     ? ` data-form-chrome="${escapeHtml(initialFormChrome)}" method="post" action="/api/forms/${escapeHtml(routeKey)}/native-submissions" enctype="application/x-www-form-urlencoded" data-tf-element-role="offer"`
     : ` data-form-chrome="${escapeHtml(initialFormChrome)}" novalidate`;
@@ -84,7 +85,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
   const formConfigExpression = options.formConfigExpression ?? serializeForScript(clientConfig);
 
   const html = `<!doctype html>
-<html lang="es">
+<html lang="${escapeHtml(form.locale)}">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1299,7 +1300,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         </header>
         <div class="progress-area">
           <div class="progress-meta">
-            <p class="step-count" data-step-count${initialStepCountAriaHidden}>${escapeHtml(initialStepCountLabels[activeStepIndex] ?? "Paso 1 de 1")}</p>
+            <p class="step-count" data-step-count${initialStepCountAriaHidden}>${escapeHtml(initialStepCountLabels[activeStepIndex] ?? formatStepCountLabel(form.ui.progress.stepCount, 1, 1))}</p>
           </div>
           <div class="progress-shell" aria-hidden="true">
             <div class="progress-bar" id="progress-bar" style="width: ${initialProgressPercent}%"></div>
@@ -1310,14 +1311,14 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         </section>
         <footer>
           <div class="actions">
-            <button class="button button-secondary" id="back-button" name="back" type="button">Atrás</button>
+            <button class="button button-secondary" id="back-button" name="back" type="button">${escapeHtml(form.ui.actions.back)}</button>
             <button class="button button-primary" id="next-button" name="next" type="button">${escapeHtml(initialNextButtonLabel)}</button>
           </div>
         </footer>
       </form>
       <section class="thanks" id="thanks" tabindex="-1" hidden>
-        <h1>Gracias.</h1>
-        <p>Recibimos su información. Un agente se pondrá en contacto con usted pronto.</p>
+        <h1>${escapeHtml(form.ui.pages.thankYou.title)}</h1>
+        <p>${escapeHtml(form.ui.pages.thankYou.message)}</p>
       </section>
       <div
         class="error-modal"
@@ -1329,9 +1330,9 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         hidden
       >
         <div class="error-modal-panel">
-          <h2 class="error-modal-title" id="error-modal-title">Revise esta respuesta</h2>
+          <h2 class="error-modal-title" id="error-modal-title">${escapeHtml(form.ui.errorModal.title)}</h2>
           <p class="error-modal-message" id="error-modal-message"></p>
-          <button class="button button-primary error-modal-close" id="error-modal-close" type="button">Entendido</button>
+          <button class="button button-primary error-modal-close" id="error-modal-close" type="button">${escapeHtml(form.ui.errorModal.closeLabel)}</button>
         </div>
       </div>
     </main>
@@ -1353,7 +1354,7 @@ export async function renderUnavailablePage(content: UnavailablePageContent): Pr
     : "";
 
   const html = `<!doctype html>
-<html lang="es">
+<html lang="${escapeHtml(content.locale ?? "en")}">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1457,7 +1458,11 @@ function getStepCountLabel(form: InstantForm, stepIndex: number, answers: Record
   const countedStepNumber = getCountedStepNumberForIndex(countedStepIndexes, stepIndex);
   const countedStepCount = Math.max(countedStepIndexes.length, 1);
 
-  return `Paso ${countedStepNumber} de ${countedStepCount}`;
+  return formatStepCountLabel(form.ui.progress.stepCount, countedStepNumber, countedStepCount);
+}
+
+function formatStepCountLabel(template: string, current: number, total: number): string {
+  return template.replaceAll("{{current}}", String(current)).replaceAll("{{total}}", String(total));
 }
 
 function getStepProgressPercent(form: InstantForm, stepIndex: number, answers: Record<string, string>): number {

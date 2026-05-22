@@ -368,9 +368,61 @@ export type AnswerStep<TKey extends string = string> =
   | PhoneStep<TKey, StepCondition | undefined>
   | AutocompleteStep<TKey, StepCondition | undefined>;
 
+export type FormUiActionCopy = {
+  back: string;
+  next: string;
+  submit: string;
+  loading: string;
+};
+
+export type FormUiProgressCopy = {
+  stepCount: string;
+};
+
+export type FormUiErrorModalCopy = {
+  title: string;
+  closeLabel: string;
+};
+
+export type FormUiErrorCopy = {
+  requiredAnswer: string;
+  invalidChoice: string;
+  invalidPhone: string;
+  invalidAutocomplete: string;
+  unavailableQuestion: string;
+  incompleteStep: string;
+  checkpointSaveFailed: string;
+  checkpointStepSaveFailed: string;
+  stepResolutionFailed: string;
+  submissionFailed: string;
+  trustedFormCertFailed: string;
+};
+
+export type FormUiPageCopy = {
+  thankYou: {
+    title: string;
+    message: string;
+  };
+  nativeSubmissionError: {
+    title: string;
+    heading: string;
+    fallbackMessage: string;
+  };
+};
+
+export type FormUiCopy = {
+  actions: FormUiActionCopy;
+  progress: FormUiProgressCopy;
+  errorModal: FormUiErrorModalCopy;
+  errors: FormUiErrorCopy;
+  pages: FormUiPageCopy;
+};
+
 export type InstantForm = {
   name: string;
   status: FormStatus;
+  locale: string;
+  ui: FormUiCopy;
   contract: FormContract;
   context: Readonly<Record<string, string>>;
   customVariables: Readonly<Record<string, string>>;
@@ -629,6 +681,8 @@ export type EnforceAnswerStepKeys<TContract extends FormContract, TSteps extends
 export type FormFlowDefinitionBase<TContract extends FormContract = FormContract> = {
   name: string;
   status: FormStatus;
+  locale: string;
+  ui: FormUiCopy;
   contract: TContract;
   context: Readonly<Partial<ContractContextInput<TContract>>>;
   payload: FormPayloadDelivery<TContract>;

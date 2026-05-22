@@ -58,7 +58,7 @@ export function sanitizeCheckpointAnswers(form: InstantForm, input: unknown): Ch
     }
 
     const rawAnswer = input[stepDefinition.key];
-    const validation = validateCheckpointAnswer(stepDefinition, rawAnswer);
+    const validation = validateCheckpointAnswer(form, stepDefinition, rawAnswer);
 
     if (validation.ok) {
       answers[stepDefinition.key] = validation.answer;
@@ -68,8 +68,12 @@ export function sanitizeCheckpointAnswers(form: InstantForm, input: unknown): Ch
   return answers;
 }
 
-export function validateCheckpointAnswer(stepDefinition: FormStep, input: unknown): CheckpointValidationResult {
-  const validation = validateStepCheckpointAnswer(stepDefinition, input);
+export function validateCheckpointAnswer(
+  form: InstantForm,
+  stepDefinition: FormStep,
+  input: unknown,
+): CheckpointValidationResult {
+  const validation = validateStepCheckpointAnswer(stepDefinition, input, form.ui.errors);
 
   if (!validation.ok) {
     return validation;

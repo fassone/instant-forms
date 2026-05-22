@@ -1,19 +1,17 @@
 import type { InterstitialStep } from "../../flow";
 import type { StepAdapter } from "./index";
 
-const requiredMessage = "Esta respuesta es requerida.";
-
 export const interstitialAdapter: StepAdapter<InterstitialStep> = {
   kind: "interstitial",
-  validateCheckpoint(stepDefinition, input) {
+  validateCheckpoint(stepDefinition, input, errors) {
     const answer = getStringAnswer(input);
 
     if (!answer) {
-      return { ok: false, message: requiredMessage };
+      return { ok: false, message: errors.requiredAnswer };
     }
 
     if (answer !== stepDefinition.completionAnswer && answer !== stepDefinition.seenAnswer) {
-      return { ok: false, message: "No pudimos completar este paso." };
+      return { ok: false, message: errors.incompleteStep };
     }
 
     return { ok: true, answer, includeInSubmission: false };

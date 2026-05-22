@@ -88,7 +88,51 @@ const validAnswers = {
 const trustedFormCertUrl = "https://cert.trustedform.com/454a35b802f3e7b63ffabb4efedb7c6ebe67886c";
 const routeKey = "tn_custom";
 
+const testFlowCopy = {
+  locale: "en",
+  ui: {
+    actions: {
+      back: "Back",
+      next: "Next",
+      submit: "Submit",
+      loading: "Submitting...",
+    },
+    progress: {
+      stepCount: "Step {{current}} of {{total}}",
+    },
+    errorModal: {
+      title: "Check this answer",
+      closeLabel: "Got it",
+    },
+    errors: {
+      requiredAnswer: "This answer is required.",
+      invalidChoice: "Select a valid option.",
+      invalidPhone: "Enter a valid United States phone number.",
+      invalidAutocomplete: "Enter a valid answer.",
+      unavailableQuestion: "This question is not available.",
+      incompleteStep: "We could not complete this step.",
+      checkpointSaveFailed: "We could not save this answer.",
+      checkpointStepSaveFailed: "We could not save this step.",
+      stepResolutionFailed: "We could not prepare this step.",
+      submissionFailed: "We could not submit the form.",
+      trustedFormCertFailed: "We could not prepare the consent certificate. Check your connection and try again.",
+    },
+    pages: {
+      thankYou: {
+        title: "Thanks.",
+        message: "We received your information.",
+      },
+      nativeSubmissionError: {
+        title: "We could not submit the form",
+        heading: "We could not submit the form.",
+        fallbackMessage: "We could not submit the form.",
+      },
+    },
+  },
+} as const;
+
 const unavailableContent = {
+  locale: "es",
   title: "404",
   message: "Esta página no existe o ya no está disponible.",
   cta: {
@@ -296,6 +340,7 @@ describe("form registry", () => {
     const flow = defineFormFlow({
       name: "Test Flow",
       status: "ACTIVE",
+  ...testFlowCopy,
       contract: {
         context: z.object({
           areaCode: z.string(),
@@ -445,6 +490,7 @@ describe("form registry", () => {
     const flow = defineFormFlow({
       name: "Proxy Test",
       status: "ACTIVE",
+  ...testFlowCopy,
       contract: {
         context: z.object({}),
         answers: z.object({}),
@@ -502,6 +548,7 @@ describe("form registry", () => {
     const flow = defineFormFlow({
       name: "Contract Test",
       status: "ACTIVE",
+  ...testFlowCopy,
       contract: {
         context: z.object({
           areaCode: z.string(),
@@ -568,6 +615,7 @@ describe("form registry", () => {
       defineFormFlow({
         name: "Missing Variable",
         status: "ACTIVE",
+  ...testFlowCopy,
         contract: {
           context: z.object({ areaCode: z.string(), product: z.string() }),
           answers: z.object({ choice_key: z.enum(["yes"]) }),
@@ -588,6 +636,7 @@ describe("form registry", () => {
       defineFormFlow({
         name: "Invalid Variable",
         status: "ACTIVE",
+  ...testFlowCopy,
         contract: {
           context: z.object({ areaCode: z.string().min(2) }),
           answers: z.object({ choice_key: z.enum(["yes"]) }),
@@ -608,6 +657,7 @@ describe("form registry", () => {
       defineFormFlow({
         name: "Unknown Variable",
         status: "ACTIVE",
+  ...testFlowCopy,
         contract: {
           context: z.object({ areaCode: z.string() }),
           answers: z.object({ choice_key: z.enum(["yes"]) }),
@@ -628,6 +678,7 @@ describe("form registry", () => {
       defineFormFlow({
         name: "Unknown Template",
         status: "ACTIVE",
+  ...testFlowCopy,
         contract: {
           context: z.object({ areaCode: z.string() }),
           answers: z.object({}),
@@ -658,6 +709,7 @@ describe("form registry", () => {
       defineFormFlow({
         name: "Unknown Answer Step",
         status: "ACTIVE",
+  ...testFlowCopy,
         contract: {
           context: z.object({ areaCode: z.string() }),
           answers: z.object({ known_answer: z.string() }),
@@ -685,6 +737,7 @@ describe("form registry", () => {
       defineFormFlow({
         name: "Missing Answer Step",
         status: "ACTIVE",
+  ...testFlowCopy,
         contract: {
           context: z.object({ areaCode: z.string() }),
           answers: z.object({ missing_answer: z.string() }),
@@ -713,6 +766,7 @@ describe("form registry", () => {
       defineFormFlow({
         name: "Duplicate Answer Step",
         status: "ACTIVE",
+  ...testFlowCopy,
         contract: {
           context: z.object({ areaCode: z.string() }),
           answers: z.object({ duplicate_answer: z.enum(["yes"]) }),
@@ -778,6 +832,7 @@ describe("form registry", () => {
       defineFormFlow({
         name: "Invalid Choice Options",
         status: "ACTIVE",
+  ...testFlowCopy,
         contract,
         context,
         payload,
@@ -801,6 +856,7 @@ describe("form registry", () => {
       defineFormFlow({
         name: "Missing Choice Option",
         status: "ACTIVE",
+  ...testFlowCopy,
         contract,
         context,
         payload,
@@ -821,6 +877,7 @@ describe("form registry", () => {
       defineFormFlow({
         name: "Invalid ShowWhen Key",
         status: "ACTIVE",
+  ...testFlowCopy,
         contract,
         context,
         payload,
@@ -845,6 +902,7 @@ describe("form registry", () => {
       defineFormFlow({
         name: "Invalid ShowWhen Answer",
         status: "ACTIVE",
+  ...testFlowCopy,
         contract,
         context,
         payload,
@@ -871,6 +929,7 @@ describe("form registry", () => {
       defineFormFlow({
         name: "Forward ShowWhen",
         status: "ACTIVE",
+  ...testFlowCopy,
         contract: {
           context: z.object({ areaCode: z.string() }),
           answers: z.object({
@@ -944,6 +1003,7 @@ describe("form registry", () => {
     const validFlow = defineFormFlow({
       name: "Resolver Flow",
       status: "ACTIVE",
+  ...testFlowCopy,
       contract,
       context,
       payload,
@@ -989,6 +1049,7 @@ describe("form registry", () => {
       defineFormFlow({
         name: "Future Resolver",
         status: "ACTIVE",
+  ...testFlowCopy,
         contract,
         context,
         payload,
@@ -1024,6 +1085,7 @@ describe("form registry", () => {
       defineFormFlow({
         name: "Unknown Resolver",
         status: "ACTIVE",
+  ...testFlowCopy,
         contract,
         context,
         payload,
@@ -1060,6 +1122,7 @@ describe("form registry", () => {
     const matchingFlow = defineFormFlow({
       name: "Safe Resolver Flow",
       status: "ACTIVE",
+  ...testFlowCopy,
       contract: {
         context: z.object({ areaName: z.string().optional(), areaCode: z.string() }),
         answers: z.object({ first_answer: z.enum(["yes"]) }),
@@ -1109,6 +1172,7 @@ describe("form registry", () => {
     const consentFlow = defineFormFlow({
       name: "Safe Summary Flow",
       status: "ACTIVE",
+  ...testFlowCopy,
       contract: {
         context: z.object({}),
         answers: z.object({
@@ -1215,6 +1279,7 @@ describe("form registry", () => {
     const undefinedFlow = defineFormFlow({
       name: "Unsafe Resolver Flow",
       status: "ACTIVE",
+  ...testFlowCopy,
       contract: {
         context: z.object({}),
         answers: z.object({ first_answer: z.enum(["yes"]) }),
@@ -1254,6 +1319,7 @@ describe("form registry", () => {
     const unresolvedStringFlow = defineFormFlow({
       name: "Unsafe Text Resolver Flow",
       status: "ACTIVE",
+  ...testFlowCopy,
       contract: {
         context: z.object({}),
         answers: z.object({ first_answer: z.enum(["yes"]) }),
@@ -1295,6 +1361,7 @@ describe("form registry", () => {
     const staticFieldFlow = defineFormFlow({
       name: "Static Field Resolver Flow",
       status: "ACTIVE",
+  ...testFlowCopy,
       contract: {
         context: z.object({}),
         answers: z.object({ first_answer: z.enum(["yes"]) }),
@@ -1340,6 +1407,7 @@ describe("form registry", () => {
     const flow = defineFormFlow({
       name: "Payload Contract",
       status: "ACTIVE",
+  ...testFlowCopy,
       contract: {
         context: z.object({ areaCode: z.string() }),
         answers: z.object({ choice_key: z.enum(["yes"]) }),
@@ -1444,7 +1512,7 @@ describe("submission validation", () => {
     if (!result.ok) {
       expect(result.errors).toContainEqual({
         field: "has_license",
-        message: "This answer is required.",
+        message: "Esta respuesta es requerida.",
       });
     }
   });
@@ -1456,7 +1524,7 @@ describe("submission validation", () => {
     if (!result.ok) {
       expect(result.errors).toContainEqual({
         field: "belongs_to_state",
-        message: "Answer is not a valid option.",
+        message: "Seleccione una opción válida.",
       });
     }
   });
@@ -1525,7 +1593,7 @@ describe("submission validation", () => {
     if (!missingState.ok) {
       expect(missingState.errors).toContainEqual({
         field: "residence_state",
-        message: "This answer is required.",
+        message: "Esta respuesta es requerida.",
       });
     }
 
@@ -1570,7 +1638,7 @@ describe("submission validation", () => {
     if (!invalidResult.ok) {
       expect(invalidResult.errors).toContainEqual({
         field: "trustedFormCertUrl",
-        message: "TrustedForm certificate URL is not valid.",
+        message: "No pudimos preparar el certificado de consentimiento. Revise su conexión e intente de nuevo.",
       });
     }
   });
@@ -1596,7 +1664,7 @@ describe("submission validation", () => {
     if (!result.ok) {
       expect(result.errors).toContainEqual({
         field: "trustedFormCertUrl",
-        message: "TrustedForm certificate URL is required.",
+        message: "No pudimos preparar el certificado de consentimiento. Revise su conexión e intente de nuevo.",
       });
     }
   });
@@ -2768,19 +2836,19 @@ describe("server routing", () => {
     );
 
     expect(invalidChoice.status).toBe(400);
-    await expect(invalidChoice.text()).resolves.toContain("Answer is not a valid option.");
+    await expect(invalidChoice.text()).resolves.toContain("Seleccione una opción válida.");
     expect(invalidPhone.status).toBe(400);
     await expect(invalidPhone.text()).resolves.toContain("Ingrese un número de teléfono válido de Estados Unidos.");
     expect(invalidState.status).toBe(400);
     await expect(invalidState.text()).resolves.toContain("Ingrese un estado válido de Estados Unidos.");
     expect(hiddenState.status).toBe(400);
-    await expect(hiddenState.text()).resolves.toContain("Question is not available yet.");
+    await expect(hiddenState.text()).resolves.toContain("Esta pregunta no está disponible.");
     expect(invalidMatching.status).toBe(400);
     await expect(invalidMatching.text()).resolves.toContain("No pudimos completar este paso.");
     expect(prematureSeenMatching.status).toBe(400);
-    await expect(prematureSeenMatching.text()).resolves.toContain("Question is not complete yet.");
+    await expect(prematureSeenMatching.text()).resolves.toContain("No pudimos completar este paso.");
     expect(tooEarlyMatching.status).toBe(400);
-    await expect(tooEarlyMatching.text()).resolves.toContain("Question is not available yet.");
+    await expect(tooEarlyMatching.text()).resolves.toContain("Esta pregunta no está disponible.");
   });
 
   it("prefills rendered fields from sanitized checkpoint cookies", async () => {
@@ -2896,6 +2964,68 @@ describe("server routing", () => {
 });
 
 describe("form rendering", () => {
+  it("renders per-flow English UI copy without platform Spanish defaults", async () => {
+    const flow = defineFormFlow({
+      name: "English Fixture",
+      status: "ACTIVE",
+      ...testFlowCopy,
+      contract: {
+        context: z.object({}),
+        answers: z.object({
+          wants_quote: z.enum(["yes", "no"]),
+        }),
+        payload: z.object({
+          wantsQuote: z.string(),
+        }),
+      },
+      context: {},
+      payload: {
+        method: "POST",
+        encoding: "json",
+        mapping: ({ answers }) => ({
+          wantsQuote: answers.wants_quote,
+        }),
+      },
+      page: {
+        name: "English Form",
+      },
+      steps: [
+        step.choice({
+          key: "wants_quote",
+          slug: "quote",
+          label: "Do you want a quote?",
+          options: [
+            { key: "yes", label: "Yes" },
+            { key: "no", label: "No" },
+          ],
+        }),
+      ],
+    });
+
+    const html = await renderFormPage(flow, { routeKey: "en_custom" });
+    const missingSubmission = validateSubmission(flow, "en_custom", { answers: {} });
+
+    expect(html).toContain('<html lang="en">');
+    expect(html).toContain("Step 1 of 1");
+    expect(html).toContain(">Back</button>");
+    expect(html).toContain(">Submit</button>");
+    expect(html).toContain("Check this answer");
+    expect(html).toContain("Got it");
+    expect(html).toContain("<h1>Thanks.</h1>");
+    expect(html).toContain("<p>We received your information.</p>");
+    expect(html).toContain('"requiredAnswer":"This answer is required."');
+    expect(html).not.toContain("Revise esta respuesta");
+    expect(html).not.toContain("Entendido");
+
+    expect(missingSubmission.ok).toBe(false);
+    if (!missingSubmission.ok) {
+      expect(missingSubmission.errors).toContainEqual({
+        field: "wants_quote",
+        message: "This answer is required.",
+      });
+    }
+  });
+
   it("keeps source inline assets in dev and serves built inline assets in production", async () => {
     const devHtml = await withNodeEnv("development", () => renderTennesseeForm());
     const productionHtml = await withNodeEnv("production", () => renderTennesseeForm());
@@ -2930,6 +3060,12 @@ describe("form rendering", () => {
     expect(applyProductionTokensToScript("const body = { step: true }; if (!body.step) throw new Error();")).toContain(
       "body.step",
     );
+    const tokenizedScript = applyProductionTokensToScript(
+      "config.ui.actions.next; document.querySelector('.actions'); target.closest(\".text-input\");",
+    );
+    expect(tokenizedScript).toContain("config.ui.actions.next");
+    expect(tokenizedScript).toContain("document.querySelector('.au')");
+    expect(tokenizedScript).toContain('target.closest(".ar")');
     const tokenizedHtml = applyProductionTokens(
       '<style>.step{display:block}.actions{display:flex}</style><article class="step actions"></article><script>document.querySelector(".actions"); if (!body.step) throw new Error();</script>',
     );
@@ -3069,6 +3205,7 @@ describe("form rendering", () => {
     const flow = defineFormFlow({
       name: "Chrome Test",
       status: "ACTIVE",
+  ...testFlowCopy,
       contract: {
         context: z.object({}),
         answers: z.object({ choice_key: z.enum(["yes"]) }),
@@ -3318,7 +3455,7 @@ describe("form rendering", () => {
     expect(html).toContain('ctx.setNextButtonLoading(getMatchingLoadingReason(question), true)');
     expect(html).toContain('ctx.setNextButtonLoading(getMatchingLoadingReason(question), false)');
     expect(html).toContain("ctx.replaceToUrl(nextUrl ?? ctx.getRenderedNextUrl())");
-    expect(html).toContain('ctx.updateNextButton("Siguiente", false)');
+    expect(html).toContain("ctx.updateNextButton(ctx.config.ui.actions.next, false)");
     expect(html).not.toContain("matching-loader");
     expect(html).not.toContain("data-matching-retry");
     expect(html).not.toContain('.form-panel[data-active-kind="interstitial"] footer');
@@ -3419,7 +3556,7 @@ describe("form rendering", () => {
     expect(phoneHtml).not.toContain('"fieldName":"xxTrustedFormCertUrl"');
     expect(html).toContain('"kind":"trusted_form_consent"');
     expect(html).toContain('"slug":"consentimiento"');
-    expect(html).toContain('"submitLabel":"Enviar"');
+    expect(html).toContain('"submitLabel":"Cotizar"');
     expect(html).toContain('"trustedForm":{"fieldName":"xxTrustedFormCertUrl"');
     expect(html).toContain('"delivery":"main_thread"');
     expect(html).toContain('"scriptProxyKey":"tfc"');
@@ -3434,10 +3571,10 @@ describe("form rendering", () => {
     expect(html).toContain(
       '"dynamicResolverDependencies":["belongs_to_state","residence_state","has_license","has_insurance","is_clean_title","number_of_registered_cars","first_name","last_name","phone_number"]',
     );
-    expect(html).toContain('"review":{"title":"Antes de enviar"');
-    expect(html).toContain('"description":{"text":"Por favor, confirme su informacion","html":"\\u003cp\\u003ePor favor, confirme su informacion\\u003c/p\\u003e"}');
+    expect(html).toContain('"review":{"title":"Antes de cotizar"');
+    expect(html).toContain("Ya tenemos posibles opciones para usted");
     expect(html).toContain('"fields":[{"name":"review_belongs_to_state"');
-    expect(html).toContain('"consent":{"title":"Consentimiento"');
+    expect(html).toContain('"consent":{"title":"Antes de cotizar"');
     expect(html).toContain('"substeps":{"consent":{"presentation":{"chrome":"hidden_on_mobile"}},"review":{"presentation":{"chrome":"hidden_on_mobile"}}}');
     expect(html).toContain('"disclosure":{"text":"Al marcar esta casilla y hacer clic en “Enviar”, yo, Ana Lopez');
     expect(html).toContain(
@@ -3455,8 +3592,8 @@ describe("form rendering", () => {
     expect(html).not.toContain('"phoneKey"');
     expect(html).toContain('data-step="10" data-step-kind="trusted_form_consent"');
     expect(html).toContain('data-form-chrome="hidden_on_mobile"');
-    expect(html).toContain('<h1 class="question-title" data-question-title>Antes de enviar</h1>');
-    expect(html).not.toContain('<h1 class="question-title" data-question-title><p>Antes de enviar</p></h1>');
+    expect(html).toContain('<h1 class="question-title" data-question-title>Antes de cotizar</h1>');
+    expect(html).not.toContain('<h1 class="question-title" data-question-title><p>Antes de cotizar</p></h1>');
     expect(html).toContain('method="post" action="/api/forms/tn_custom/native-submissions"');
     expect(html).toContain('data-trusted-form-substep="review"');
     expect(html).toContain('data-trusted-form-review-scroll-shell');
@@ -3473,7 +3610,7 @@ describe("form rendering", () => {
     const fieldBankHtml = html.match(/<div class="trusted-form-field-bank"[\s\S]*?<\/div>/)?.[0] ?? "";
     expect(fieldBankHtml).not.toContain("data-tf-element-role");
     expect(html).toContain('Vive en Tennessee');
-    expect(html).toContain("Por favor, confirme su informacion");
+    expect(html).toContain("Ya tenemos posibles opciones para usted");
     expect(html).toContain("Continuar");
     expect(html).toContain('data-tf-element-role="consent-language"');
     expect(html).toContain('data-tf-element-role="consent-opt-in"');
@@ -3520,7 +3657,7 @@ describe("form rendering", () => {
     expect(html).toContain("ctx.setFormChrome(getTrustedFormSubstepChrome(question, activeSubstep))");
     expect(html).toContain("function getTrustedFormCertUrl(trustedForm = window.__FORM_CONFIG__.currentStep.trustedForm)");
     expect(html).not.toContain('ctx.updateNextButton("Preparando...", true)');
-    expect(html).toContain('const accessibleLoadingLabel = "Enviando..."');
+    expect(html).toContain("const accessibleLoadingLabel = config.ui.actions.loading");
     expect(html).toContain('"Enviando..."');
     expect(html).toContain('nextButton.setAttribute("aria-label", accessibleLoadingLabel)');
     expect(html).toContain('nextButton.removeAttribute("aria-label")');
@@ -3564,9 +3701,9 @@ describe("form rendering", () => {
     expect(html).toContain('errorModalClose.addEventListener("click"');
     expect(html).toContain("event.target === errorModal");
     expect(html).toContain('event.key === "Escape"');
-    expect(html).toContain('showErrorModal("Esta respuesta es requerida."');
+    expect(html).toContain("showErrorModal(config.ui.errors.requiredAnswer");
     expect(html).toContain("showErrorModal(submitErrorMessage)");
-    expect(html).toContain('checkpointError instanceof Error ? checkpointError.message : "No pudimos guardar esta respuesta."');
+    expect(html).toContain("checkpointError instanceof Error ? checkpointError.message : config.ui.errors.checkpointSaveFailed");
   });
 
   it("synthetically submits focused text fields on mobile blur", async () => {

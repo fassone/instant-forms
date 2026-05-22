@@ -1,15 +1,13 @@
 import type { TrustedFormConsentStep } from "../../flow";
 import type { StepAdapter } from "./index";
 
-const requiredMessage = "Esta respuesta es requerida.";
-
 export const trustedFormConsentAdapter: StepAdapter<TrustedFormConsentStep> = {
   kind: "trusted_form_consent",
-  validateCheckpoint(stepDefinition, input) {
+  validateCheckpoint(stepDefinition, input, errors) {
     const answer = getStringAnswer(input);
 
     if (!answer) {
-      return { ok: false, message: requiredMessage };
+      return { ok: false, message: stepDefinition.consent.validationMessage || errors.requiredAnswer };
     }
 
     if (answer !== stepDefinition.acceptedAnswer) {
@@ -18,8 +16,8 @@ export const trustedFormConsentAdapter: StepAdapter<TrustedFormConsentStep> = {
 
     return { ok: true, answer, includeInSubmission: false };
   },
-  validateSubmission(stepDefinition, input) {
-    return trustedFormConsentAdapter.validateCheckpoint(stepDefinition, input);
+  validateSubmission(stepDefinition, input, errors) {
+    return trustedFormConsentAdapter.validateCheckpoint(stepDefinition, input, errors);
   },
   isAnswered(stepDefinition, answers) {
     return answers[stepDefinition.key] === stepDefinition.acceptedAnswer;

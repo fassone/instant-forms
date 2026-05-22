@@ -1,5 +1,3 @@
-export const US_PHONE_VALIDATION_MESSAGE = "Ingrese un número de teléfono válido de Estados Unidos.";
-
 export function normalizeUsPhoneNumber(value: string): string | undefined {
   const trimmedValue = value.trim();
   const digitsOnly = value.replace(/\D/g, "");

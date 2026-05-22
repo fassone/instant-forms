@@ -3,8 +3,6 @@ export type UsState = {
   name: string;
 };
 
-export const US_STATE_VALIDATION_MESSAGE = "Ingrese un estado válido de Estados Unidos.";
-
 export const US_STATES = [
   { code: "AL", name: "Alabama" },
   { code: "AK", name: "Alaska" },
