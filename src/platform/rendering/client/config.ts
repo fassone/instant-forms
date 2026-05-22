@@ -29,6 +29,7 @@ type ClientStepBase = {
   slug: string;
   url: string;
   countsAsStep: boolean;
+  presentation?: FormStep["presentation"];
   behavior: FormStep["behavior"];
   showWhen?: ClientStepCondition;
   dynamicResolverDependencies?: readonly string[];
@@ -92,6 +93,7 @@ export type ClientStep =
         submitLabel: string;
         validationMessage: string;
       };
+      substeps?: TrustedFormConsentStep["substeps"];
       acceptedAnswer: TrustedFormConsentStep["acceptedAnswer"];
       trustedForm: TrustedFormConsentStep["trustedForm"];
     });
@@ -209,6 +211,7 @@ function createClientStep(
     slug: getStepSlug(stepDefinition),
     url,
     countsAsStep: isCountedStep(stepDefinition),
+    ...(stepDefinition.presentation ? { presentation: stepDefinition.presentation } : {}),
     behavior: stepDefinition.behavior,
     showWhen: stepDefinition.showWhen,
     ...getDynamicResolverDependencyConfig(form, stepDefinition),
@@ -290,6 +293,7 @@ function createClientStep(
         submitLabel: resolvedTrustedFormStep.consent.submitLabel,
         validationMessage: resolvedTrustedFormStep.consent.validationMessage,
       },
+      ...(resolvedTrustedFormStep.substeps ? { substeps: resolvedTrustedFormStep.substeps } : {}),
       acceptedAnswer: resolvedTrustedFormStep.acceptedAnswer,
       trustedForm: resolvedTrustedFormStep.trustedForm,
     };

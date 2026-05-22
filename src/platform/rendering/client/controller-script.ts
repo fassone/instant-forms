@@ -151,6 +151,7 @@ function getCoreRuntimeScript(): string {
       },
       advanceOptimistically,
       setSubmitting,
+      setFormChrome,
       setNextButtonLoading,
       getQuestion,
       getStepElement,
@@ -359,6 +360,7 @@ function getCoreRuntimeScript(): string {
     });
 
     form.dataset.activeKind = question.kind;
+    setFormChrome(getStepFormChrome(question));
     if (stepCount) {
       stepCount.textContent = "Paso " + countedStepNumber + " de " + countedStepCount;
       stepCount.setAttribute("aria-hidden", String(!question.countsAsStep));
@@ -478,6 +480,26 @@ function getCoreRuntimeScript(): string {
       nextButtonLoadingReasons.delete(reason);
     }
     updateNextButton();
+  }
+
+  function setFormChrome(chrome) {
+    form.dataset.formChrome = normalizeFormChrome(chrome);
+  }
+
+  function getStepFormChrome(question) {
+    return normalizeFormChrome(question?.presentation?.chrome);
+  }
+
+  function getTrustedFormSubstepChrome(question, substep) {
+    if (question?.kind !== "trusted_form_consent") {
+      return getStepFormChrome(question);
+    }
+
+    return normalizeFormChrome(question.substeps?.[substep]?.presentation?.chrome ?? question.presentation?.chrome);
+  }
+
+  function normalizeFormChrome(chrome) {
+    return chrome === "hidden" || chrome === "hidden_on_mobile" ? chrome : "visible";
   }
 
   function getActiveBehavior() {
@@ -1150,6 +1172,7 @@ function getCoreRuntimeScript(): string {
       if (stepIndex === currentStep) {
         if (activeTrustedFormSubstep === "consent" && config.steps[stepIndex]?.kind === "trusted_form_consent") {
           setTrustedFormSubstepDom(steps[stepIndex], activeTrustedFormSubstep);
+          setFormChrome(getTrustedFormSubstepChrome(config.steps[stepIndex], activeTrustedFormSubstep));
           hydrateCurrentStepAnswer(config.steps[stepIndex]);
           updateNextButton();
           return;
@@ -2234,6 +2257,7 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
 
     function setTrustedFormSubstep(ctx, question, step, nextSubstep) {
       activeSubstep = nextSubstep;
+      ctx.setFormChrome(getTrustedFormSubstepChrome(question, activeSubstep));
       const panels = step.querySelector("[data-trusted-form-substeps]");
       if (panels instanceof HTMLElement) {
         panels.dataset.trustedFormActiveSubstep = activeSubstep;
@@ -2250,6 +2274,10 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
       } else {
         scheduleTrustedFormConsentScrollHints(step);
       }
+    }
+
+    function getTrustedFormSubstepChrome(question, substep) {
+      return question.substeps?.[substep]?.presentation?.chrome ?? question.presentation?.chrome ?? "visible";
     }
 
     function updateTrustedFormDisplayCopy(step, question) {

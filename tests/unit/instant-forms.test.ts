@@ -330,6 +330,9 @@ describe("form registry", () => {
           key: "choice_key",
           slug: "elige",
           label: "Elige",
+          presentation: {
+            chrome: "hidden",
+          },
           options: [{ key: "yes", label: "Si" }],
         }),
         step.text({
@@ -377,6 +380,13 @@ describe("form registry", () => {
             title: text("Consentimiento"),
             disclosure: consentMd("Texto de consentimiento."),
           },
+          substeps: {
+            consent: {
+              presentation: {
+                chrome: "hidden_on_mobile",
+              },
+            },
+          },
         }),
       ],
     });
@@ -399,6 +409,7 @@ describe("form registry", () => {
       ["trusted_form_consent", "trusted_form_consent"],
     ]);
     expect(flow.steps[0]?.behavior.autoAdvance).toBe(true);
+    expect(flow.steps[0]?.presentation).toEqual({ chrome: "hidden" });
     expect(flow.steps[2]?.behavior.mask).toBe("us_phone");
     expect(flow.steps[3]?.behavior.suggestions).toBe("autocomplete");
     expect(flow.steps[4]?.countsAsStep).toBeUndefined();
@@ -421,6 +432,11 @@ describe("form registry", () => {
         preloadAssets: "when_reachable",
         execute: "on_review_mount",
         requireReadyBefore: "consent_substep",
+      },
+      substeps: {
+        consent: {
+          presentation: { chrome: "hidden_on_mobile" },
+        },
       },
     });
   });
@@ -2990,6 +3006,13 @@ describe("form rendering", () => {
       review: {
         fields: [],
       },
+      substeps: {
+        consent: {
+          presentation: {
+            chrome: "hidden_on_mobile",
+          },
+        },
+      },
     });
     expect(transitionSteps.find((stepDefinition) => stepDefinition.key === "trustedform_consent")?.config).not.toHaveProperty(
       "grantorSummary",
@@ -3040,6 +3063,46 @@ describe("form rendering", () => {
     expect(html).toContain("--brand-blue: #064df6");
     expect(html).toContain("--brand-pink: #f80057");
     expect(html).toContain("background: var(--accent)");
+  });
+
+  it("renders step chrome presentation attributes and hiding CSS", async () => {
+    const flow = defineFormFlow({
+      name: "Chrome Test",
+      status: "ACTIVE",
+      contract: {
+        context: z.object({}),
+        answers: z.object({ choice_key: z.enum(["yes"]) }),
+        payload: z.object({ choice: z.string() }),
+      },
+      context: {},
+      payload: {
+        method: "POST",
+        encoding: "json",
+        mapping: ({ answers }) => ({ choice: answers.choice_key }),
+      },
+      page: { name: "Chrome Test" },
+      steps: [
+        step.choice({
+          key: "choice_key",
+          slug: "elige",
+          label: "Elige",
+          presentation: {
+            chrome: "hidden",
+          },
+          options: [{ key: "yes", label: "Si" }],
+        }),
+      ],
+    });
+    const html = await renderFormPage(flow);
+
+    expect(html).toContain('data-form-chrome="hidden"');
+    expect(html).toContain('.form-panel[data-form-chrome="hidden"]');
+    expect(html).toContain('.form-panel[data-form-chrome="hidden_on_mobile"]');
+    expect(html).toContain('.form-panel[data-form-chrome="hidden"] .brand');
+    expect(html).toContain('.form-panel[data-form-chrome="hidden_on_mobile"] .brand');
+    expect(html).toContain("grid-template-rows: minmax(0, 1fr) auto;");
+    expect(html).toContain("function setFormChrome(chrome)");
+    expect(html).toContain("function getStepFormChrome(question)");
   });
 
   it("uses larger desktop controls while preserving mobile sizing rules", async () => {
@@ -3362,6 +3425,7 @@ describe("form rendering", () => {
     expect(html).toContain('"description":{"text":"Por favor, confirme su informacion","html":"\\u003cp\\u003ePor favor, confirme su informacion\\u003c/p\\u003e"}');
     expect(html).toContain('"fields":[{"name":"review_belongs_to_state"');
     expect(html).toContain('"consent":{"title":"Consentimiento"');
+    expect(html).toContain('"substeps":{"consent":{"presentation":{"chrome":"hidden_on_mobile"}}}');
     expect(html).toContain('"disclosure":{"text":"Al marcar esta casilla y hacer clic en “Enviar”, yo, Ana Lopez');
     expect(html).toContain(
       '\\u003cspan data-tf-element-role=\\"consent-advertiser-name\\"\\u003eLiderna Inc\\u003c/span\\u003e',
@@ -3377,6 +3441,7 @@ describe("form rendering", () => {
     expect(html).not.toContain('"nameKeys"');
     expect(html).not.toContain('"phoneKey"');
     expect(html).toContain('data-step="10" data-step-kind="trusted_form_consent"');
+    expect(html).toContain('data-form-chrome="visible"');
     expect(html).toContain('<h1 class="question-title" data-question-title>Antes de enviar</h1>');
     expect(html).not.toContain('<h1 class="question-title" data-question-title><p>Antes de enviar</p></h1>');
     expect(html).toContain('method="post" action="/api/forms/tn_custom/native-submissions"');
@@ -3437,6 +3502,8 @@ describe("form rendering", () => {
     expect(html).toContain("function ensureTrustedFormReady(trustedForm)");
     expect(html).toContain("function waitForTrustedFormCertUrl(trustedForm)");
     expect(html).toContain("function updateTrustedFormConsentScrollHints(consentScroll)");
+    expect(html).toContain("function setFormChrome(chrome)");
+    expect(html).toContain("ctx.setFormChrome(getTrustedFormSubstepChrome(question, activeSubstep))");
     expect(html).toContain("function getTrustedFormCertUrl(trustedForm = window.__FORM_CONFIG__.currentStep.trustedForm)");
     expect(html).not.toContain('ctx.updateNextButton("Preparando...", true)');
     expect(html).toContain('const accessibleLoadingLabel = "Enviando..."');

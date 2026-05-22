@@ -22,6 +22,7 @@ import type {
   StateDisplayInput,
   StepBehavior,
   StepCondition,
+  StepPresentation,
   StepTemplateKey,
   TextStep,
   TextPart,
@@ -45,6 +46,7 @@ type RawBaseStepInput = {
   slug: string;
   label: string;
   countsAsStep?: boolean;
+  presentation?: StepPresentation;
   showWhen?: RawStepCondition;
 };
 type RawChoiceStepInput = RawBaseStepInput & {
@@ -76,9 +78,11 @@ type RawTrustedFormConsentStepInput = {
   key: string;
   slug: string;
   countsAsStep?: boolean;
+  presentation?: StepPresentation;
   showWhen?: RawStepCondition;
   review: TrustedFormConsentStepInput["review"];
   consent: TrustedFormConsentStepInput["consent"];
+  substeps?: TrustedFormConsentStepInput["substeps"];
   acceptedAnswer?: "accepted";
   trustedForm?: TrustedFormConsentStepInput["trustedForm"];
 };
@@ -86,7 +90,9 @@ type RawTrustedFormConsentStepDynamicInput = {
   key: string;
   slug: string;
   countsAsStep?: boolean;
+  presentation?: StepPresentation;
   showWhen?: RawStepCondition;
+  substeps?: TrustedFormConsentStepInput["substeps"];
   acceptedAnswer?: "accepted";
   trustedForm?: TrustedFormConsentStepInput["trustedForm"];
 };
@@ -140,6 +146,14 @@ type ResolverAnswerMap<
 
 type ExactResolverResult<TActual, TExpected> = TActual & {
   readonly [TKey in Exclude<keyof TActual, keyof TExpected>]: never;
+};
+
+type ExactTrustedFormConsentStepDynamicBody<TActual extends TrustedFormConsentStepDynamicBody> = ExactResolverResult<
+  TActual,
+  TrustedFormConsentStepDynamicBody
+> & {
+  review: ExactResolverResult<TActual["review"], TrustedFormConsentStepDynamicBody["review"]>;
+  consent: ExactResolverResult<TActual["consent"], TrustedFormConsentStepDynamicBody["consent"]>;
 };
 
 type ScopedResolver<
@@ -199,7 +213,7 @@ export type FlowStepBuilders<TContract extends FormContract> = Omit<
     >(
       input: TInput & RejectRemovedTrustedFormConsentInputKeys<TInput>,
       dependencies: TDependencies,
-      resolver: ScopedResolver<TContract, TDependencies, ExactResolverResult<TBody, TrustedFormConsentStepDynamicBody>>,
+      resolver: ScopedResolver<TContract, TDependencies, ExactTrustedFormConsentStepDynamicBody<TBody>>,
     ): TrustedFormConsentStep<
       TInput["key"],
       InputShowWhen<TInput>,
@@ -361,7 +375,7 @@ function createTrustedFormConsentStep<
 >(
   input: TInput & RejectRemovedTrustedFormConsentInputKeys<TInput>,
   dependencies: TDependencies,
-  resolver: RawResolver<TDependencies, ExactResolverResult<TBody, TrustedFormConsentStepDynamicBody>>,
+  resolver: RawResolver<TDependencies, ExactTrustedFormConsentStepDynamicBody<TBody>>,
 ): TrustedFormConsentStep<
   TInput["key"],
   InputShowWhen<TInput>,
@@ -385,17 +399,27 @@ function createTrustedFormConsentStep(
 ): TrustedFormConsentStep<string, StepCondition | undefined> {
   const dynamic = dependencies && resolver ? resolve(dependencies, resolver) : undefined;
   const staticInput = input as Partial<RawTrustedFormConsentStepInput> & RawTrustedFormConsentStepDynamicInput;
-  const review: TrustedFormConsentStepInput["review"] = staticInput.review ?? {
-    title: "",
-    nextLabel: "Continuar",
-    fields: [],
+  const reviewInput = staticInput.review;
+  const consentInput = staticInput.consent;
+  const review: TrustedFormConsentStepInput["review"] = {
+    title: reviewInput && "title" in reviewInput ? reviewInput.title : "",
+    ...(reviewInput && "description" in reviewInput && reviewInput.description ? { description: reviewInput.description } : {}),
+    nextLabel: reviewInput && "nextLabel" in reviewInput && reviewInput.nextLabel ? reviewInput.nextLabel : "Continuar",
+    fields: reviewInput && "fields" in reviewInput && reviewInput.fields ? reviewInput.fields : [],
   };
-  const consent: TrustedFormConsentStepInput["consent"] = staticInput.consent ?? {
-    title: "",
-    disclosure: consentMd(""),
-    checkboxLabel: "Acepto y quiero enviar mi solicitud.",
-    submitLabel: "Enviar",
-    validationMessage: "Debe aceptar el consentimiento para enviar la solicitud.",
+  const consent: TrustedFormConsentStepInput["consent"] = {
+    title: consentInput && "title" in consentInput ? consentInput.title : "",
+    ...(consentInput && "description" in consentInput && consentInput.description ? { description: consentInput.description } : {}),
+    disclosure: consentInput && "disclosure" in consentInput ? consentInput.disclosure : consentMd(""),
+    checkboxLabel:
+      consentInput && "checkboxLabel" in consentInput && consentInput.checkboxLabel
+        ? consentInput.checkboxLabel
+        : "Acepto y quiero enviar mi solicitud.",
+    submitLabel: consentInput && "submitLabel" in consentInput && consentInput.submitLabel ? consentInput.submitLabel : "Enviar",
+    validationMessage:
+      consentInput && "validationMessage" in consentInput && consentInput.validationMessage
+        ? consentInput.validationMessage
+        : "Debe aceptar el consentimiento para enviar la solicitud.",
   };
   const label = getStaticDisplayCopyLabel(review.title) ?? "Antes de enviar";
 
@@ -417,6 +441,7 @@ function createTrustedFormConsentStep(
       submitLabel: consent.submitLabel ?? "Enviar",
       validationMessage: consent.validationMessage ?? "Debe aceptar el consentimiento para enviar la solicitud.",
     },
+    ...(staticInput.substeps ? { substeps: staticInput.substeps } : {}),
     acceptedAnswer: staticInput.acceptedAnswer ?? "accepted",
     trustedForm: buildTrustedFormConsentConfig(staticInput.trustedForm),
     ...(dynamic ? { dynamic } : {}),
@@ -541,6 +566,7 @@ function baseStep<const TInput extends RawBaseStepInput>(
     checkpointMode,
     behavior,
     countsAsStep: input.countsAsStep,
+    ...(input.presentation ? { presentation: input.presentation } : {}),
     showWhen: input.showWhen as InputShowWhen<TInput>,
   };
 }

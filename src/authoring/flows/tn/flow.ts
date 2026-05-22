@@ -148,6 +148,18 @@ export const tnFlow = defineFormFlow({
       {
         key: "trustedform_consent",
         slug: "consentimiento",
+        substeps: {
+          consent: {
+            presentation: {
+              chrome: "hidden_on_mobile",
+            },
+          },
+          review: {
+            presentation: {
+              chrome: "hidden_on_mobile",
+            },
+          },
+        },
         trustedForm: {
           fieldName: "xxTrustedFormCertUrl",
           delivery: "main_thread",
@@ -232,8 +244,8 @@ export const tnFlow = defineFormFlow({
             "Al marcar esta casilla y hacer clic en “Enviar”, yo, **",
             tfTag("consent-grantor-name", text(answers.first_name, " ", answers.last_name)),
             "**, autorizo a **",
-            tfTag("consent-advertiser-name", "Liderna Inc"),
-            "** y a sus socios, agentes y proveedores de seguros a contactarme al **",
+            tfTag("consent-advertiser-name", "Liderna Inc y a sus socios, agentes y proveedores de seguros"),
+            "** a contactarme al **",
             tfTag("consent-grantor-phone", phoneDisplay(answers.phone_number)),
             "** sobre cotizaciones, productos y servicios de seguro mediante",
             tfTag("contact-method", " llamadas, mensajes de texto y correos electrónicos,"),

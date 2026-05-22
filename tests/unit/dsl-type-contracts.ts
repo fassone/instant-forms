@@ -41,6 +41,9 @@ void defineFormFlow({
       key: "belongs_to_state",
       slug: "vive",
       label: "Vive aqui?",
+      presentation: {
+        chrome: "hidden_on_mobile",
+      },
       options: [
         { key: "yes", label: "Si" },
         { key: "no", label: "No" },
@@ -86,6 +89,16 @@ void defineFormFlow({
       {
         key: "trustedform_consent",
         slug: "consentimiento",
+        presentation: {
+          chrome: "visible",
+        },
+        substeps: {
+          consent: {
+            presentation: {
+              chrome: "hidden_on_mobile",
+            },
+          },
+        },
       },
       ["first_name"],
       ({ answers }) => ({
@@ -120,6 +133,45 @@ void text("Hello ", undefined);
 void text("Hello ", maybeName);
 
 void text("Hello ", maybeName ?? "Michel");
+
+step.choice({
+  key: "belongs_to_state",
+  slug: "vive",
+  label: "Vive aqui?",
+  // @ts-expect-error presentation.chrome only accepts visible, hidden, or hidden_on_mobile.
+  presentation: { chrome: "hidden_on_tablet" },
+  options: [
+    { key: "yes", label: "Si" },
+    { key: "no", label: "No" },
+  ],
+});
+
+void step.trustedFormConsent({
+  key: "trustedform_consent",
+  slug: "consentimiento",
+  review: {
+    title: text("Consentimiento"),
+    // @ts-expect-error Substep-specific presentation belongs under substeps.review, not review copy.
+    presentation: {
+      chrome: "hidden_on_mobile",
+    },
+    fields: [
+      {
+        name: "review_name",
+        label: "Nombre",
+        value: "Ana",
+      },
+    ],
+  },
+  consent: {
+    title: text("Consentimiento"),
+    disclosure: consentMd("Consentimiento."),
+    // @ts-expect-error Substep-specific presentation belongs under substeps.consent, not consent copy.
+    presentation: {
+      chrome: "hidden_on_mobile",
+    },
+  },
+});
 
 void phoneDisplay("+17864746654");
 void phoneDisplay(text("+17864746654"));
@@ -412,6 +464,18 @@ void defineFormFlow({
           title: text("Consentimiento"),
           // @ts-expect-error Dynamic disclosure copy must be created with consentMd(...).
           disclosure: "Plain dynamic disclosure",
+          // @ts-expect-error Dynamic resolvers cannot change static presentation fields.
+          presentation: {
+            chrome: "hidden",
+          },
+        },
+        // @ts-expect-error Dynamic resolvers cannot change static substep presentation fields.
+        substeps: {
+          consent: {
+            presentation: {
+              chrome: "hidden_on_mobile",
+            },
+          },
         },
       }),
     ),

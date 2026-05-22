@@ -12,6 +12,7 @@ import type {
   InstantForm,
   InterstitialStep,
   PhoneStep,
+  StepChromePresentation,
   TrustedFormReviewField,
   TextStep,
   TrustedFormConsentStep,
@@ -59,6 +60,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
   const displayAreaCode = getDisplayAreaCode(form, routeKey);
   const initialStepCountAriaHidden = activeStep && !isCountedStep(activeStep) ? ' aria-hidden="true"' : "";
   const usesNativeTrustedFormSubmit = activeStep?.kind === "trusted_form_consent";
+  const initialFormChrome = getInitialFormChrome(activeStep);
   const initialNextButtonLabel =
     activeStep?.kind === "trusted_form_consent"
       ? activeStep.review.nextLabel
@@ -66,8 +68,8 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         ? "Enviar"
         : "Siguiente";
   const formAttributes = usesNativeTrustedFormSubmit
-    ? ` method="post" action="/api/forms/${escapeHtml(routeKey)}/native-submissions" enctype="application/x-www-form-urlencoded" data-tf-element-role="offer"`
-    : " novalidate";
+    ? ` data-form-chrome="${escapeHtml(initialFormChrome)}" method="post" action="/api/forms/${escapeHtml(routeKey)}/native-submissions" enctype="application/x-www-form-urlencoded" data-tf-element-role="offer"`
+    : ` data-form-chrome="${escapeHtml(initialFormChrome)}" novalidate`;
   const clientConfig = createClientFormConfig(
     form,
     activeStepIndex,
@@ -150,6 +152,15 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         align-items: center;
         justify-content: space-between;
         gap: 16px;
+      }
+
+      .form-panel[data-form-chrome="hidden"] {
+        grid-template-rows: minmax(0, 1fr) auto;
+      }
+
+      .form-panel[data-form-chrome="hidden"] .brand,
+      .form-panel[data-form-chrome="hidden"] .progress-area {
+        display: none;
       }
 
       .brand-identity {
@@ -1012,6 +1023,16 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
           overflow: hidden;
         }
 
+        .form-panel[data-form-chrome="hidden"],
+        .form-panel[data-form-chrome="hidden_on_mobile"] {
+          grid-template-rows: minmax(0, 1fr) auto;
+        }
+
+        .form-panel[data-form-chrome="hidden_on_mobile"] .brand,
+        .form-panel[data-form-chrome="hidden_on_mobile"] .progress-area {
+          display: none;
+        }
+
         .brand {
           align-items: flex-start;
         }
@@ -1245,6 +1266,18 @@ function getStepProgressPercent(form: InstantForm, stepIndex: number, answers: R
 
 function getDisplayAreaCode(form: InstantForm, routeKey: string): string {
   return form.customVariables.areaCode || routeKey;
+}
+
+function getInitialFormChrome(stepDefinition: FormStep | undefined): StepChromePresentation {
+  if (!stepDefinition) {
+    return "visible";
+  }
+
+  if (stepDefinition.kind === "trusted_form_consent") {
+    return stepDefinition.substeps?.review?.presentation?.chrome ?? stepDefinition.presentation?.chrome ?? "visible";
+  }
+
+  return stepDefinition.presentation?.chrome ?? "visible";
 }
 
 type StepTemplateContext = {

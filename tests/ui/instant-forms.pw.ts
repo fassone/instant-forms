@@ -378,7 +378,11 @@ test.describe("instant routed form UI", () => {
       phone_number: "+17864746654",
     });
     await page.goto("/tn/custom/consentimiento");
+    await expect(page.locator('img[alt="Seguros Aseguranza"]')).toBeVisible();
+    await expect(page.locator("[data-step-count]")).toBeVisible();
     await continueTrustedFormReview(page);
+    await expect(page.locator('img[alt="Seguros Aseguranza"]')).toBeHidden();
+    await expect(page.locator("[data-step-count]")).toBeHidden();
 
     const step = activeStep(page);
     const consentShell = step.locator("[data-trusted-form-consent-scroll-shell]");
@@ -581,6 +585,14 @@ async function continueTrustedFormReview(page: Page): Promise<void> {
   await expect(activeStep(page).getByRole("heading", { name: "Consentimiento" })).toBeVisible({ timeout: 7000 });
   await expect(activeStep(page).locator("[data-trusted-form-consent]")).toBeVisible({ timeout: 7000 });
   await expect(page.getByRole("button", { name: "Enviar" })).toBeEnabled({ timeout: 7000 });
+  const isMobileChromeHidden = (page.viewportSize()?.width ?? Number.POSITIVE_INFINITY) <= 560;
+  if (isMobileChromeHidden) {
+    await expect(page.locator('img[alt="Seguros Aseguranza"]')).toBeHidden();
+    await expect(page.locator("[data-step-count]")).toBeHidden();
+  } else {
+    await expect(page.locator('img[alt="Seguros Aseguranza"]')).toBeVisible();
+    await expect(page.locator("[data-step-count]")).toBeVisible();
+  }
 }
 
 async function assertSpinnerOnlyLoadingButton(page: Page) {

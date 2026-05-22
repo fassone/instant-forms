@@ -25,6 +25,21 @@ export type StepTemplateKey = "choice" | "text" | "phone" | "autocomplete" | "in
 
 export type CheckpointMode = "answer" | "checkpoint_only";
 
+export type StepChromePresentation = "visible" | "hidden" | "hidden_on_mobile";
+
+export type StepPresentation = {
+  chrome?: StepChromePresentation;
+};
+
+export type TrustedFormSubstepPresentation = {
+  presentation?: StepPresentation;
+};
+
+export type TrustedFormConsentSubstepsPresentation = {
+  review?: TrustedFormSubstepPresentation;
+  consent?: TrustedFormSubstepPresentation;
+};
+
 export type StepBehavior = {
   autoAdvance?: boolean;
   mobileBlurSubmit?: boolean;
@@ -45,6 +60,7 @@ export type BaseStep<
   checkpointMode: CheckpointMode;
   behavior: StepBehavior;
   countsAsStep?: boolean;
+  presentation?: StepPresentation;
   showWhen?: TShowWhen;
 };
 
@@ -270,6 +286,7 @@ export type TrustedFormReviewInput<
   description?: TDescription;
   nextLabel?: PlainTextValue;
   fields: TFields;
+  presentation?: never;
 };
 
 export type TrustedFormConsentCopy<
@@ -296,15 +313,13 @@ export type TrustedFormConsentCopyInput<
   checkboxLabel?: PlainTextValue;
   submitLabel?: PlainTextValue;
   validationMessage?: PlainTextValue;
+  presentation?: never;
 };
 
 export type TrustedFormConsentStepDynamicBody = {
-  review: TrustedFormReviewInput<
-    TextValue,
-    MarkdownValue | undefined,
-    readonly ResolverTrustedFormReviewField[]
-  >;
+  review: TrustedFormReviewInput<TextValue, MarkdownValue | undefined, readonly ResolverTrustedFormReviewField[]>;
   consent: TrustedFormConsentCopyInput<TextValue, MarkdownValue | undefined, ConsentMarkdownValue>;
+  substeps?: never;
 };
 
 export type TrustedFormConsentStep<
@@ -324,6 +339,7 @@ export type TrustedFormConsentStep<
   type: "TRUSTED_FORM_CONSENT";
   review: TrustedFormReview<TReviewTitle, TReviewDescription, TReviewFields>;
   consent: TrustedFormConsentCopy<TConsentTitle, TConsentDescription, TDisclosure>;
+  substeps?: TrustedFormConsentSubstepsPresentation;
   acceptedAnswer: "accepted";
   trustedForm: TrustedFormConsentConfig;
   dynamic?: TDynamic;
@@ -396,6 +412,7 @@ export type BaseStepInput<
   slug: string;
   label: string;
   countsAsStep?: boolean;
+  presentation?: StepPresentation;
   showWhen?: TShowWhen;
 };
 
@@ -467,9 +484,11 @@ export type TrustedFormConsentStepInput<
   key: TKey;
   slug: string;
   countsAsStep?: boolean;
+  presentation?: StepPresentation;
   showWhen?: TShowWhen;
   review: TrustedFormReviewInput<TReviewTitle, TReviewDescription, TReviewFields>;
   consent: TrustedFormConsentCopyInput<TConsentTitle, TConsentDescription, TDisclosure>;
+  substeps?: TrustedFormConsentSubstepsPresentation;
   acceptedAnswer?: "accepted";
   trustedForm?: Partial<TrustedFormConsentConfig>;
 };
@@ -481,7 +500,9 @@ export type TrustedFormConsentStepDynamicInput<
   key: TKey;
   slug: string;
   countsAsStep?: boolean;
+  presentation?: StepPresentation;
   showWhen?: TShowWhen;
+  substeps?: TrustedFormConsentSubstepsPresentation;
   acceptedAnswer?: "accepted";
   trustedForm?: Partial<TrustedFormConsentConfig>;
 };
