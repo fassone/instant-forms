@@ -40,6 +40,15 @@ export type TrustedFormConsentSubstepsPresentation = {
   consent?: TrustedFormSubstepPresentation;
 };
 
+export type FormPagePresentation = {
+  desktopHeightPx?: number;
+};
+
+export type FormPage = {
+  name: string;
+  presentation?: FormPagePresentation;
+};
+
 export type StepBehavior = {
   autoAdvance?: boolean;
   mobileBlurSubmit?: boolean;
@@ -427,9 +436,7 @@ export type InstantForm = {
   context: Readonly<Record<string, string>>;
   customVariables: Readonly<Record<string, string>>;
   payload: FormPayloadDelivery;
-  page: {
-    name: string;
-  };
+  page: FormPage;
   steps: readonly FormStep[];
 };
 
@@ -686,9 +693,7 @@ export type FormFlowDefinitionBase<TContract extends FormContract = FormContract
   contract: TContract;
   context: Readonly<Partial<ContractContextInput<TContract>>>;
   payload: FormPayloadDelivery<TContract>;
-  page: {
-    name: string;
-  };
+  page: FormPage;
 };
 
 export type FormFlowInput<

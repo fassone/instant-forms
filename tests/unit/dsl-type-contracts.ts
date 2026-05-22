@@ -119,6 +119,55 @@ void typedTemplate.create({ flowName: "Typed Template", areaCode: "TX", extraVar
 void typedTemplate.create({ flowName: "Typed Template", areaCode: 123 });
 
 void defineFormFlow({
+  name: "Desktop Height Type Fixture",
+  status: "ACTIVE",
+  ...testFlowCopy,
+  contract: {
+    context: z.object({}),
+    answers: z.object({}),
+    payload: z.object({ ok: z.string() }),
+  },
+  context: {},
+  payload: {
+    method: "POST",
+    encoding: "json",
+    mapping: () => ({ ok: "yes" }),
+  },
+  page: {
+    name: "Page",
+    presentation: {
+      desktopHeightPx: 780,
+    },
+  },
+  steps: [],
+});
+
+void defineFormFlow({
+  name: "Invalid Desktop Height Type Fixture",
+  status: "ACTIVE",
+  ...testFlowCopy,
+  contract: {
+    context: z.object({}),
+    answers: z.object({}),
+    payload: z.object({ ok: z.string() }),
+  },
+  context: {},
+  payload: {
+    method: "POST",
+    encoding: "json",
+    mapping: () => ({ ok: "yes" }),
+  },
+  page: {
+    name: "Page",
+    presentation: {
+      // @ts-expect-error desktopHeightPx is numeric pixels, not a CSS string.
+      desktopHeightPx: "780px",
+    },
+  },
+  steps: [],
+});
+
+void defineFormFlow({
   name: "Valid Type Fixture",
   status: "ACTIVE",
   ...testFlowCopy,

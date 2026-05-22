@@ -705,6 +705,51 @@ describe("form registry", () => {
     ).toThrow('Template variable "{{missingVariable}}" is not declared in contract.context');
   });
 
+  it("rejects invalid page presentation desktop heights", () => {
+    const createFlowWithDesktopHeight = (desktopHeightPx: unknown) =>
+      defineFormFlow({
+        name: "Invalid Page Presentation",
+        status: "ACTIVE",
+        ...testFlowCopy,
+        contract: {
+          context: z.object({}),
+          answers: z.object({ choice_key: z.enum(["yes"]) }),
+          payload: z.object({ choice: z.string() }),
+        },
+        context: {},
+        payload: {
+          method: "POST",
+          encoding: "json",
+          mapping: ({ answers }) => ({ choice: answers.choice_key }),
+        },
+        page: {
+          name: "Page",
+          presentation: { desktopHeightPx } as any,
+        },
+        steps: [
+          step.choice({
+            key: "choice_key",
+            slug: "elige",
+            label: "Elige",
+            options: [{ key: "yes", label: "Si" }],
+          }),
+        ],
+      });
+
+    expect(() => createFlowWithDesktopHeight(0)).toThrow(
+      "page.presentation.desktopHeightPx must be a finite positive number.",
+    );
+    expect(() => createFlowWithDesktopHeight(-1)).toThrow(
+      "page.presentation.desktopHeightPx must be a finite positive number.",
+    );
+    expect(() => createFlowWithDesktopHeight(Infinity)).toThrow(
+      "page.presentation.desktopHeightPx must be a finite positive number.",
+    );
+    expect(() => createFlowWithDesktopHeight("780")).toThrow(
+      "page.presentation.desktopHeightPx must be a finite positive number.",
+    );
+  });
+
   it("rejects answer-producing steps that do not match the answer contract", () => {
     expect(() =>
       defineFormFlow({
@@ -3344,6 +3389,46 @@ describe("form rendering", () => {
     expect(html).toContain("function getStepFormChrome(question)");
   });
 
+  it("renders optional desktop form height as a page-level presentation setting", async () => {
+    const flow = defineFormFlow({
+      name: "Desktop Height Test",
+      status: "ACTIVE",
+      ...testFlowCopy,
+      contract: {
+        context: z.object({}),
+        answers: z.object({ choice_key: z.enum(["yes"]) }),
+        payload: z.object({ choice: z.string() }),
+      },
+      context: {},
+      payload: {
+        method: "POST",
+        encoding: "json",
+        mapping: ({ answers }) => ({ choice: answers.choice_key }),
+      },
+      page: {
+        name: "Desktop Height Test",
+        presentation: {
+          desktopHeightPx: 780,
+        },
+      },
+      steps: [
+        step.choice({
+          key: "choice_key",
+          slug: "elige",
+          label: "Elige",
+          options: [{ key: "yes", label: "Si" }],
+        }),
+      ],
+    });
+    const html = await renderFormPage(flow);
+
+    expect(html).toContain('style="--form-desktop-height: 780px;"');
+    expect(html).toContain("height: var(--form-desktop-height, 724px);");
+    expect(html).toContain("min-height: min(var(--form-desktop-height, 680px), calc(100vh - 48px));");
+    expect(html).toContain("@media (max-width: 560px)");
+    expect(html).toContain("height: 100dvh;");
+  });
+
   it("uses larger desktop controls while preserving mobile sizing rules", async () => {
     const html = await renderTennesseeForm();
 
@@ -3371,7 +3456,8 @@ describe("form rendering", () => {
     expect(html).toContain("width: min(100%, 620px);");
     expect(html).toContain("justify-self: center;");
     expect(html).toContain("@media (min-width: 561px)");
-    expect(html).toContain("height: 724px;");
+    expect(html).toContain("height: var(--form-desktop-height, 724px);");
+    expect(html).not.toContain("--form-desktop-height:");
     expect(html).toContain('.step[data-step-kind="interstitial"] .matching-content');
     expect(html).not.toContain(".matching-content {\n          height: 156px;");
     expect(html).toContain("min-height: 78px;");

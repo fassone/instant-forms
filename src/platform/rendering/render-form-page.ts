@@ -68,6 +68,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
       : activeStepIndex === lastStepIndex
         ? form.ui.actions.submit
         : form.ui.actions.next;
+  const formStyleAttribute = getFormPanelStyleAttribute(form);
   const formAttributes = usesNativeTrustedFormSubmit
     ? ` data-form-chrome="${escapeHtml(initialFormChrome)}" method="post" action="/api/forms/${escapeHtml(routeKey)}/native-submissions" enctype="application/x-www-form-urlencoded" data-tf-element-role="offer"`
     : ` data-form-chrome="${escapeHtml(initialFormChrome)}" novalidate`;
@@ -940,7 +941,8 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
 
       @media (min-width: 561px) {
         .form-panel {
-          height: 724px;
+          min-height: min(var(--form-desktop-height, 680px), calc(100vh - 48px));
+          height: var(--form-desktop-height, 724px);
         }
 
         .options {
@@ -1290,7 +1292,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
   </head>
   <body>
     <main class="shell">
-      <form class="form-panel" id="lead-form"${formAttributes}>
+      <form class="form-panel" id="lead-form"${formStyleAttribute}${formAttributes}>
         <header class="brand">
           <div class="brand-identity">
             <img class="brand-logo" src="/assets/logo.webp" alt="${escapeHtml(form.page.name)}" width="220" height="63">
@@ -1487,6 +1489,16 @@ function getInitialFormChrome(stepDefinition: FormStep | undefined): StepChromeP
   }
 
   return stepDefinition.presentation?.chrome ?? "visible";
+}
+
+function getFormPanelStyleAttribute(form: InstantForm): string {
+  const desktopHeightPx = form.page.presentation?.desktopHeightPx;
+
+  if (typeof desktopHeightPx !== "number" || !Number.isFinite(desktopHeightPx) || desktopHeightPx <= 0) {
+    return "";
+  }
+
+  return ` style="--form-desktop-height: ${desktopHeightPx}px;"`;
 }
 
 type StepTemplateContext = {

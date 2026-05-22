@@ -4,6 +4,7 @@ import type {
   FormContract,
   FormFlowDefinitionBase,
   FormFlowInput,
+  FormPage,
   FormStep,
   InstantForm,
 } from "./types";
@@ -40,6 +41,7 @@ export function defineFormFlow<const TContract extends FormContract, const TStep
       ? input.steps(createFlowAuthoringHelpers(input.contract))
       : input.steps;
   assertAnswerStepContract(input.contract, steps);
+  assertPagePresentation(input.page);
   assertKnownTemplateVariables(input.contract, { name: input.name, page: input.page, steps });
 
   return {
@@ -198,7 +200,7 @@ function assertShowWhenContract(
 
 function assertKnownTemplateVariables(
   contract: FormContract,
-  input: { name: string; page: { name: string }; steps: readonly FormStep[] },
+  input: { name: string; page: FormPage; steps: readonly FormStep[] },
 ): void {
   const contextKeys = new Set(getSchemaKeys(contract.context));
   const templates = [
@@ -213,6 +215,18 @@ function assertKnownTemplateVariables(
         throw new Error(`Template variable "{{${variableName}}}" is not declared in contract.context.`);
       }
     }
+  }
+}
+
+function assertPagePresentation(page: FormPage): void {
+  const desktopHeightPx = page.presentation?.desktopHeightPx;
+
+  if (desktopHeightPx === undefined) {
+    return;
+  }
+
+  if (typeof desktopHeightPx !== "number" || !Number.isFinite(desktopHeightPx) || desktopHeightPx <= 0) {
+    throw new Error("page.presentation.desktopHeightPx must be a finite positive number.");
   }
 }
 

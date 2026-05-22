@@ -31,6 +31,6 @@ Templates declare a Zod `variables` object and expose `.create(input)`. The help
 
 Dynamic authoring happens at the step boundary: a step is either static, or the builder receives one dependency list and one resolver that returns that step's dynamic display/body props. Nested `resolve(...)` calls inside fields are intentionally rejected so dependency ownership stays obvious.
 
-Step `presentation.chrome` is static presentation config, not dynamic copy. It accepts `"visible"`, `"hidden"`, or `"hidden_on_mobile"`. TrustedForm review/consent substep overrides use the explicit `substeps.review.presentation` and `substeps.consent.presentation` shape; `review` and `consent` themselves stay focused on content.
+Page `presentation.desktopHeightPx` is static form-shell config for desktop-only form height. Step `presentation.chrome` is static presentation config, not dynamic copy. It accepts `"visible"`, `"hidden"`, or `"hidden_on_mobile"`. TrustedForm review/consent substep overrides use the explicit `substeps.review.presentation` and `substeps.consent.presentation` shape; `review` and `consent` themselves stay focused on content.
 
 TrustedForm display copy can be static strings or `md(...)` values, and dynamic display copy must be returned from the step-level resolver with `md(...)`. Native controls, route slugs, keys, review field labels, and submitted values stay plain text; resolver-produced submitted values use `text(...)`, with `phoneDisplay(...)` or `stateDisplay(...)` only when an authored field or consent tag should show formatted display text.
