@@ -6,6 +6,7 @@ import type {
   FormFlowInput,
   FormPage,
   FormStep,
+  FormTracking,
   InstantForm,
 } from "./types";
 import { getStepDynamicResolverDependencies } from "./dynamic-resolvers";
@@ -42,6 +43,7 @@ export function defineFormFlow<const TContract extends FormContract, const TStep
       : input.steps;
   assertAnswerStepContract(input.contract, steps);
   assertPagePresentation(input.page);
+  assertTrackingContract(input.contract, input.tracking);
   assertKnownTemplateVariables(input.contract, { name: input.name, page: input.page, steps });
 
   return {
@@ -54,6 +56,7 @@ export function defineFormFlow<const TContract extends FormContract, const TStep
     customVariables: context,
     payload: input.payload,
     page: input.page,
+    ...(input.tracking ? { tracking: input.tracking } : {}),
     steps,
   };
 }
@@ -227,6 +230,33 @@ function assertPagePresentation(page: FormPage): void {
 
   if (typeof desktopHeightPx !== "number" || !Number.isFinite(desktopHeightPx) || desktopHeightPx <= 0) {
     throw new Error("page.presentation.desktopHeightPx must be a finite positive number.");
+  }
+}
+
+function assertTrackingContract(contract: FormContract, tracking: FormTracking | undefined): void {
+  const googleTagManager = tracking?.googleTagManager;
+  if (!googleTagManager) {
+    return;
+  }
+
+  if (!/^GTM-[A-Z0-9]+$/iu.test(googleTagManager.containerId)) {
+    throw new Error("tracking.googleTagManager.containerId must be a valid GTM container ID.");
+  }
+
+  if (googleTagManager.delivery !== "partytown") {
+    throw new Error('tracking.googleTagManager.delivery must be "partytown".');
+  }
+
+  if (googleTagManager.proxy !== "first_party") {
+    throw new Error('tracking.googleTagManager.proxy must be "first_party".');
+  }
+
+  const contextKeys = new Set(getSchemaKeys(contract.context));
+  const unknownContextKeys = (googleTagManager.includeContext ?? []).filter((key) => !contextKeys.has(key));
+  if (unknownContextKeys.length > 0) {
+    throw new Error(
+      `tracking.googleTagManager.includeContext references unknown contract.context keys: ${unknownContextKeys.join(", ")}.`,
+    );
   }
 }
 

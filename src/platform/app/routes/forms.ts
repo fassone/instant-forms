@@ -21,7 +21,8 @@ import {
   type FormRoutes,
 } from "../../routing";
 import { validateSubmission, type SubmissionPayload } from "../../submissions/validation";
-import { createResolvedStepPayload } from "../../rendering";
+import { createBaseTrackingPayload, createResolvedStepPayload, renderGoogleTagManagerHead } from "../../rendering";
+import { createClientFormConfig } from "../../rendering/client/config";
 import { clearCheckpointAnswers, readCheckpointAnswers, setCheckpointAnswers } from "../http/cookies";
 import { htmlResponse, jsonResponse } from "../http/responses";
 
@@ -226,7 +227,11 @@ export function registerFormRoutes(app: Hono, routes: FormRoutes, logger: Submis
 
     const formDataResult = await parseFormData(c.req.raw);
     if (!formDataResult.ok) {
-      return htmlResponse(renderNativeSubmissionErrorPage(routeEntry.form, [routeEntry.form.ui.errors.submissionFailed]), 400, "no-store");
+      return htmlResponse(
+        renderNativeSubmissionErrorPage(routeEntry.form, routeEntry.routeKey, [routeEntry.form.ui.errors.submissionFailed]),
+        400,
+        "no-store",
+      );
     }
 
     const checkpointAnswers = readCheckpointAnswers(c, routeEntry.form, routeEntry.routeKey);
@@ -242,7 +247,7 @@ export function registerFormRoutes(app: Hono, routes: FormRoutes, logger: Submis
 
     if (validation.ok === false) {
       return htmlResponse(
-        renderNativeSubmissionErrorPage(routeEntry.form, validation.errors.map((error) => error.message)),
+        renderNativeSubmissionErrorPage(routeEntry.form, routeEntry.routeKey, validation.errors.map((error) => error.message)),
         400,
         "no-store",
       );
@@ -251,7 +256,7 @@ export function registerFormRoutes(app: Hono, routes: FormRoutes, logger: Submis
     logger(validation.payload);
     clearCheckpointAnswers(c, routeEntry.routeKey);
 
-    const response = htmlResponse(renderNativeSubmissionThanksPage(routeEntry.form), 200, "no-store");
+    const response = htmlResponse(renderNativeSubmissionThanksPage(routeEntry.form, routeEntry.routeKey), 200, "no-store");
     const setCookie = c.res.headers.get("Set-Cookie");
     if (setCookie) {
       response.headers.set("Set-Cookie", setCookie);
@@ -325,13 +330,27 @@ function getNativeTrustedFormCertUrl(form: InstantForm, formData: NativeFormData
   return undefined;
 }
 
-function renderNativeSubmissionThanksPage(form: InstantForm): string {
+function renderNativeSubmissionThanksPage(form: InstantForm, routeKey: string): string {
+  const googleTagManager = getNativePageGoogleTagManager(form, routeKey);
+  const trackingHead = renderGoogleTagManagerHead(
+    googleTagManager,
+    googleTagManager
+      ? [
+          {
+            event: "instant_form_submit_success",
+            ...createBaseTrackingPayload(googleTagManager),
+          },
+        ]
+      : [],
+  );
+
   return `<!doctype html>
 <html lang="${escapeHtml(form.locale)}">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>${escapeHtml(form.ui.pages.thankYou.title)}</title>
+${trackingHead}
     <style>
       body {
         min-height: 100vh;
@@ -372,23 +391,48 @@ function renderNativeSubmissionThanksPage(form: InstantForm): string {
 </html>`;
 }
 
-function renderNativeSubmissionErrorPage(form: InstantForm, messages: readonly string[]): string;
+function renderNativeSubmissionErrorPage(form: InstantForm, routeKey: string, messages: readonly string[]): string;
 function renderNativeSubmissionErrorPage(messages: readonly string[]): string;
-function renderNativeSubmissionErrorPage(formOrMessages: InstantForm | readonly string[], maybeMessages?: readonly string[]): string {
+function renderNativeSubmissionErrorPage(
+  formOrMessages: InstantForm | readonly string[],
+  routeKeyOrMessages?: string | readonly string[],
+  maybeMessages?: readonly string[],
+): string {
   if (isNativeSubmissionErrorForm(formOrMessages)) {
-    return renderNativeSubmissionErrorPageContent(formOrMessages, maybeMessages ?? []);
+    return renderNativeSubmissionErrorPageContent(
+      formOrMessages,
+      typeof routeKeyOrMessages === "string" ? routeKeyOrMessages : "native_submission",
+      maybeMessages ?? (Array.isArray(routeKeyOrMessages) ? routeKeyOrMessages : []),
+    );
   }
 
-  return renderNativeSubmissionErrorPageContent(undefined, formOrMessages);
+  return renderNativeSubmissionErrorPageContent(undefined, undefined, formOrMessages);
 }
 
-function renderNativeSubmissionErrorPageContent(form: InstantForm | undefined, messages: readonly string[]): string {
+function renderNativeSubmissionErrorPageContent(
+  form: InstantForm | undefined,
+  routeKey: string | undefined,
+  messages: readonly string[],
+): string {
   const locale = form?.locale ?? "en";
   const pageCopy = form?.ui.pages.nativeSubmissionError;
   const fallbackMessage = pageCopy?.fallbackMessage ?? "Unable to submit the form.";
   const message = messages[0] ?? fallbackMessage;
   const title = pageCopy?.title ?? "Unable to submit the form";
   const heading = pageCopy?.heading ?? title;
+  const googleTagManager = form ? getNativePageGoogleTagManager(form, routeKey ?? "native_submission") : undefined;
+  const trackingHead = renderGoogleTagManagerHead(
+    googleTagManager,
+    googleTagManager
+      ? [
+          {
+            event: "instant_form_submit_error",
+            ...createBaseTrackingPayload(googleTagManager),
+            error_message: message,
+          },
+        ]
+      : [],
+  );
 
   return `<!doctype html>
 <html lang="${escapeHtml(locale)}">
@@ -396,6 +440,7 @@ function renderNativeSubmissionErrorPageContent(form: InstantForm | undefined, m
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>${escapeHtml(title)}</title>
+${trackingHead}
     <style>
       body {
         min-height: 100vh;
@@ -439,6 +484,10 @@ function renderNativeSubmissionErrorPageContent(form: InstantForm | undefined, m
 
 function isNativeSubmissionErrorForm(value: InstantForm | readonly string[]): value is InstantForm {
   return !Array.isArray(value);
+}
+
+function getNativePageGoogleTagManager(form: InstantForm, routeKey: string) {
+  return createClientFormConfig(form, 0, {}, false, () => "", { routeKey }).tracking?.googleTagManager;
 }
 
 function escapeHtml(value: string): string {

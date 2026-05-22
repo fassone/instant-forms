@@ -7,7 +7,7 @@
 ## Belongs Here
 
 - Reusable integration config helpers that keep repetitive operational wiring out of flow templates.
-- Author-facing presets for integrations such as TrustedForm Certify.
+- Author-facing presets for integrations such as TrustedForm Certify and Google Tag Manager.
 
 ## Does Not Belong Here
 

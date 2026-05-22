@@ -49,6 +49,26 @@ export type FormPage = {
   presentation?: FormPagePresentation;
 };
 
+export type GoogleTagManagerContainerId = `GTM-${string}`;
+export type GoogleTagManagerDelivery = "partytown";
+export type GoogleTagManagerProxy = "first_party";
+
+export type GoogleTagManagerConfig<TContextKey extends string = string> = {
+  containerId: GoogleTagManagerContainerId;
+  delivery: GoogleTagManagerDelivery;
+  proxy: GoogleTagManagerProxy;
+  includeContext?: readonly TContextKey[];
+  dataLayerName: "dataLayer";
+  scriptProxyKey: "gtm";
+  scriptBaseUrl: "/_instant/scripts/gtm.js";
+  partytownLib: "/~partytown/";
+  partytownScriptUrl: "/~partytown/partytown.js";
+};
+
+export type FormTracking<TContract extends FormContract = FormContract> = {
+  googleTagManager?: GoogleTagManagerConfig<ContractSchemaKeys<TContract["context"]>>;
+};
+
 export type StepBehavior = {
   autoAdvance?: boolean;
   mobileBlurSubmit?: boolean;
@@ -437,6 +457,7 @@ export type InstantForm = {
   customVariables: Readonly<Record<string, string>>;
   payload: FormPayloadDelivery;
   page: FormPage;
+  tracking?: FormTracking;
   steps: readonly FormStep[];
 };
 
@@ -694,6 +715,7 @@ export type FormFlowDefinitionBase<TContract extends FormContract = FormContract
   context: Readonly<Partial<ContractContextInput<TContract>>>;
   payload: FormPayloadDelivery<TContract>;
   page: FormPage;
+  tracking?: FormTracking<TContract>;
 };
 
 export type FormFlowInput<

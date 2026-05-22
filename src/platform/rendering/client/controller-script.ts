@@ -82,6 +82,7 @@ function getCoreRuntimeScript(): string {
   const resolvedStepCache = new Map();
   const resolvedStepRequests = new Map();
   const trustedFormPreloadedResources = new Set();
+  let lastTrackedStepViewKey = "";
 
   function registerBehaviorModule(kind, module) {
     behaviorModules[kind] = module;
@@ -171,6 +172,7 @@ function getCoreRuntimeScript(): string {
       showErrorModal,
       showStep,
       submitForm,
+      trackFormEvent,
       updateNextButton,
     };
   }
@@ -373,6 +375,7 @@ function getCoreRuntimeScript(): string {
     mountCurrentBehavior();
     requestCurrentResolvedStepPayloadIfNeeded();
     preloadTrustedFormAssets();
+    trackStepView(question, currentStep);
   }
 
   function mountCurrentBehavior() {
@@ -1008,6 +1011,10 @@ function getCoreRuntimeScript(): string {
       return;
     }
 
+    trackFormEvent("instant_form_validation_error", {
+      error_message: String(message || ""),
+      ...getStepTrackingPayload(getQuestion(), currentStep),
+    });
     const returnFocusTarget = options.returnFocusTarget;
     errorModalReturnFocusTarget = returnFocusTarget instanceof HTMLElement ? returnFocusTarget : nextButton;
     errorModalMessage.textContent = message;
@@ -1326,6 +1333,7 @@ function getCoreRuntimeScript(): string {
       await waitForPendingCheckpoints();
       const behavior = getActiveBehavior();
       const submitMetadata = behavior?.beforeSubmit ? await behavior.beforeSubmit(getContext(), getQuestion(), getStepElement()) : {};
+      trackFormEvent("instant_form_submit_attempt", getStepTrackingPayload(getQuestion(), currentStep));
       const response = await fetch("/api/forms/" + encodeURIComponent(config.routeKey) + "/submissions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1341,6 +1349,7 @@ function getCoreRuntimeScript(): string {
       form.hidden = true;
       thanks.hidden = false;
       thanks.focus();
+      trackFormEvent("instant_form_submit_success", getStepTrackingPayload(getQuestion(), currentStep));
     } catch (submitError) {
       submitErrorMessage = submitError instanceof Error ? submitError.message : config.ui.errors.submissionFailed;
     } finally {
@@ -1349,6 +1358,10 @@ function getCoreRuntimeScript(): string {
     }
 
     if (submitErrorMessage) {
+      trackFormEvent("instant_form_submit_error", {
+        error_message: submitErrorMessage,
+        ...getStepTrackingPayload(getQuestion(), currentStep),
+      });
       showErrorModal(submitErrorMessage);
     }
   }
@@ -1371,6 +1384,10 @@ function getCoreRuntimeScript(): string {
 
   async function advanceOptimistically(question, answer, options = {}) {
     answers[question.key] = answer;
+    trackFormEvent("instant_form_step_answer", {
+      ...getStepTrackingPayload(question, currentStep),
+      answer_key: question.key,
+    });
     preloadResolvedDynamicSteps();
     const stepUrl = question.url;
     const mode = options.mode ?? "push";
@@ -1421,6 +1438,46 @@ function getCoreRuntimeScript(): string {
   function setSubmitting(nextSubmitting) {
     isSubmitting = nextSubmitting;
     updateNextButton();
+  }
+
+  function trackStepView(question, stepIndex) {
+    const trackingKey = question ? question.url + "|" + question.key : "";
+    if (!question || trackingKey === lastTrackedStepViewKey) {
+      return;
+    }
+
+    lastTrackedStepViewKey = trackingKey;
+    trackFormEvent("instant_form_step_view", getStepTrackingPayload(question, stepIndex));
+  }
+
+  function trackFormEvent(eventName, payload = {}) {
+    const googleTagManager = config.tracking?.googleTagManager;
+    if (!googleTagManager || !window.dataLayer || typeof window.dataLayer.push !== "function") {
+      return;
+    }
+
+    window.dataLayer.push({
+      event: eventName,
+      route_key: googleTagManager.routeKey,
+      form_name: googleTagManager.formName,
+      page_name: googleTagManager.pageName,
+      context: googleTagManager.context || {},
+      ...payload,
+    });
+  }
+
+  function getStepTrackingPayload(question, stepIndex) {
+    if (!question) {
+      return {};
+    }
+
+    return {
+      step_key: question.key,
+      step_slug: question.slug,
+      step_index: stepIndex,
+      step_kind: question.kind,
+      step_url: question.url,
+    };
   }
 
   function isTextInputElement(value) {
@@ -2304,6 +2361,14 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
       });
       updateTrustedFormDisplayCopy(step, question);
       ctx.updateNextButton();
+      ctx.trackFormEvent("instant_form_trusted_form_substep_view", {
+        step_key: question.key,
+        step_slug: question.slug,
+        step_index: ctx.currentStep,
+        step_kind: question.kind,
+        step_url: question.url,
+        trusted_form_substep: activeSubstep,
+      });
       if (activeSubstep === "review") {
         scheduleTrustedFormReviewScrollHints(step);
       } else {
@@ -2399,6 +2464,14 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
         return;
       }
 
+      ctx.trackFormEvent("instant_form_submit_attempt", {
+        step_key: question.key,
+        step_slug: question.slug,
+        step_index: ctx.currentStep,
+        step_kind: question.kind,
+        step_url: question.url,
+        trusted_form_substep: activeSubstep,
+      });
       ctx.setNextButtonLoading(trustedFormSubmitLoadingReason, true);
       try {
         await ctx.queueCheckpoint(question.key, question.acceptedAnswer, { stepUrl: question.url, reconcile: false });
@@ -2412,6 +2485,15 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
       } catch (trustedFormError) {
         if (!question.trustedForm.allowSubmitWithoutCert) {
           ctx.setNextButtonLoading(trustedFormSubmitLoadingReason, false);
+          ctx.trackFormEvent("instant_form_submit_error", {
+            step_key: question.key,
+            step_slug: question.slug,
+            step_index: ctx.currentStep,
+            step_kind: question.kind,
+            step_url: question.url,
+            trusted_form_substep: activeSubstep,
+            error_message: getTrustedFormReadyErrorMessage(trustedFormError),
+          });
           ctx.showErrorModal(getTrustedFormReadyErrorMessage(trustedFormError));
           return;
         }

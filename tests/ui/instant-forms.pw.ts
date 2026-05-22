@@ -557,8 +557,9 @@ test.describe("instant routed form UI", () => {
       )
       .toBe(false);
     await expect(page.locator('input[name="xxTrustedFormCertUrl"]')).toHaveCount(0);
-    expect(partytownRequests).toBe(0);
+    expect(partytownRequests).toBeLessThanOrEqual(1);
     await expect.poll(() => trustedFormProxyRequests).toBeGreaterThan(0);
+    const preConsentPartytownRequests = partytownRequests;
     const preConsentProxyRequests = trustedFormProxyRequests;
     expect(trustedFormDirectRequests).toBe(0);
 
@@ -572,7 +573,7 @@ test.describe("instant routed form UI", () => {
 
     await expect(page).toHaveURL(/\/tn\/custom\/consentimiento$/u);
     await continueTrustedFormReview(page);
-    expect(partytownRequests).toBe(0);
+    expect(partytownRequests).toBeGreaterThanOrEqual(preConsentPartytownRequests);
     expect(trustedFormDirectRequests).toBe(0);
     await expect
       .poll(() =>

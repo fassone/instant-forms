@@ -21,6 +21,7 @@ import { createClientFormConfig } from "./client/config";
 import { getFormControllerScript } from "./client/controller-script";
 import { prepareInlineAssetHtml } from "./inline-assets";
 import { renderConsentMarkdownToHtml, renderMarkdownToHtml } from "./markdown";
+import { createBaseTrackingPayload, renderGoogleTagManagerHead } from "./tracking";
 
 export const FORM_CONFIG_JSON_PLACEHOLDER = "__FORM_CONFIG_JSON__";
 export const FORM_CONFIG_PLACEHOLDER_EXPRESSION = JSON.stringify(FORM_CONFIG_JSON_PLACEHOLDER);
@@ -84,6 +85,18 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
     },
   );
   const formConfigExpression = options.formConfigExpression ?? serializeForScript(clientConfig);
+  const googleTagManager = clientConfig.tracking?.googleTagManager;
+  const trackingHead = renderGoogleTagManagerHead(
+    googleTagManager,
+    googleTagManager
+      ? [
+          {
+            event: "instant_form_view",
+            ...createBaseTrackingPayload(googleTagManager),
+          },
+        ]
+      : [],
+  );
 
   const html = `<!doctype html>
 <html lang="${escapeHtml(form.locale)}">
@@ -91,6 +104,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>${escapeHtml(form.page.name)} | ${escapeHtml(displayAreaCode.toUpperCase())}</title>
+${trackingHead}
     <style>
       :root {
         color-scheme: light;

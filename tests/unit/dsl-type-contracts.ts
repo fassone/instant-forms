@@ -12,6 +12,7 @@ import {
   z,
   type TrustedFormConsentStepInput,
 } from "../../src/platform/flow";
+import { googleTagManager } from "../../src/authoring/integrations/google-tag-manager";
 import { trustedFormCertify } from "../../src/authoring/integrations/trusted-form";
 
 const contract = {
@@ -129,6 +130,28 @@ void trustedFormCertify({
 void trustedFormCertify({
   // @ts-expect-error TrustedForm preset overrides do not expose stable low-level config.
   fieldName: "otherField",
+});
+
+void googleTagManager({
+  containerId: "GTM-ABC123",
+  includeContext: ["areaCode", "product"] as const,
+});
+
+void googleTagManager({
+  // @ts-expect-error GTM container IDs must start with GTM-.
+  containerId: "ABC123",
+});
+
+void googleTagManager({
+  containerId: "GTM-ABC123",
+  // @ts-expect-error GTM delivery only supports Partytown in v1.
+  delivery: "main_thread",
+});
+
+void googleTagManager({
+  containerId: "GTM-ABC123",
+  // @ts-expect-error GTM proxying only supports the first-party proxy in v1.
+  proxy: "direct",
 });
 
 void defineFormFlow({

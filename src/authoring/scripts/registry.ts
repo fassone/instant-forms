@@ -1,6 +1,10 @@
 import { defineScriptProxyRegistry } from "../../platform/scripts";
 
 export const selectedScripts = defineScriptProxyRegistry({
+  gtm: {
+    upstreamUrl: "https://www.googletagmanager.com/gtm.js",
+    allowedQueryParams: ["id", "l", "gtm_auth", "gtm_preview", "gtm_cookies_win"],
+  },
   tfc: {
     upstreamUrl: "https://api.trustedform.com/trustedform.js",
     fetchRuntime: "node",

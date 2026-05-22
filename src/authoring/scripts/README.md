@@ -6,7 +6,7 @@
 
 ## Belongs Here
 
-- Selected script keys such as `tfc`.
+- Selected script keys such as `tfc` and `gtm`.
 - Upstream script URLs.
 - Safe query aliases that authors want to expose.
 

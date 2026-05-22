@@ -21,3 +21,10 @@ export {
 } from "./prebuilt-pages";
 export { buildTransitionAsset, type TransitionAsset } from "./transition-bundle";
 export { createResolvedStepPayload, type ResolvedStepPayload } from "./resolved-step-payload";
+export {
+  createBaseTrackingPayload,
+  renderGoogleTagManagerHead,
+  type ClientGoogleTagManagerConfig,
+  type ClientTrackingConfig,
+  type TrackingEventPayload,
+} from "./tracking";

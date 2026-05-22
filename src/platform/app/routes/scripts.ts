@@ -5,6 +5,7 @@ import { getPartytownAssetPath, proxySelectedScript } from "../../scripts";
 
 export function registerScriptRoutes(app: Hono, registry: ScriptProxyRegistry): void {
   app.all("/_instant/trustedform/proxy", (c) => proxyTrustedFormRequest(c.req.raw));
+  app.all("/_instant/google-tags/proxy", (c) => proxyGoogleTagRequest(c.req.raw));
 
   app.get("/_instant/scripts/*", (c) => {
     const scriptFile = getScriptFileFromPath(new URL(c.req.url).pathname);
@@ -38,6 +39,41 @@ export function registerScriptRoutes(app: Hono, registry: ScriptProxyRegistry): 
 
 const trustedFormProxyTimeoutMs = 4_500;
 const trustedFormProxyAllowedMethods = new Set(["GET", "HEAD", "POST"]);
+const googleTagProxyTimeoutMs = 4_500;
+const googleTagProxyAllowedMethods = new Set(["GET", "HEAD", "POST"]);
+const allowedGoogleTagHosts = new Set([
+  "www.googletagmanager.com",
+  "www.google-analytics.com",
+  "region1.google-analytics.com",
+  "stats.g.doubleclick.net",
+  "www.googleadservices.com",
+]);
+
+async function proxyGoogleTagRequest(request: Request): Promise<Response> {
+  const requestUrl = new URL(request.url);
+  const target = requestUrl.searchParams.get("u");
+
+  if (!target) {
+    return new Response("Missing target URL.", { status: 400 });
+  }
+
+  let upstreamUrl: URL;
+  try {
+    upstreamUrl = new URL(target);
+  } catch {
+    return new Response("Invalid target URL.", { status: 400 });
+  }
+
+  if (!isAllowedGoogleTagUrl(upstreamUrl)) {
+    return new Response("Target URL is not allowlisted.", { status: 400 });
+  }
+
+  if (!googleTagProxyAllowedMethods.has(request.method)) {
+    return new Response("Method not allowed.", { status: 405 });
+  }
+
+  return proxyAllowlistedRequest(request, upstreamUrl, googleTagProxyTimeoutMs, "Unable to proxy Google tag request.");
+}
 
 async function proxyTrustedFormRequest(request: Request): Promise<Response> {
   const requestUrl = new URL(request.url);
@@ -62,16 +98,25 @@ async function proxyTrustedFormRequest(request: Request): Promise<Response> {
     return new Response("Method not allowed.", { status: 405 });
   }
 
+  return proxyAllowlistedRequest(request, upstreamUrl, trustedFormProxyTimeoutMs, "Unable to proxy TrustedForm request.");
+}
+
+async function proxyAllowlistedRequest(
+  request: Request,
+  upstreamUrl: URL,
+  timeoutMs: number,
+  failureMessage: string,
+): Promise<Response> {
   const abortController = new AbortController();
   const timeout = setTimeout(() => {
     abortController.abort();
-  }, trustedFormProxyTimeoutMs);
+  }, timeoutMs);
 
   try {
     const upstreamResponse = await fetch(upstreamUrl, {
       body: request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer(),
       credentials: "omit",
-      headers: getTrustedFormProxyForwardHeaders(request.headers),
+      headers: getProxyForwardHeaders(request.headers),
       method: request.method,
       redirect: "follow",
       signal: abortController.signal,
@@ -89,7 +134,7 @@ async function proxyTrustedFormRequest(request: Request): Promise<Response> {
       headers,
     });
   } catch {
-    return new Response("Unable to proxy TrustedForm request.", {
+    return new Response(failureMessage, {
       status: 502,
       headers: {
         "Cache-Control": "no-store",
@@ -102,7 +147,7 @@ async function proxyTrustedFormRequest(request: Request): Promise<Response> {
   }
 }
 
-function getTrustedFormProxyForwardHeaders(requestHeaders: Headers): Headers {
+function getProxyForwardHeaders(requestHeaders: Headers): Headers {
   const headers = new Headers();
   const accept = requestHeaders.get("Accept");
   const contentType = requestHeaders.get("Content-Type");
@@ -120,6 +165,10 @@ function getTrustedFormProxyForwardHeaders(requestHeaders: Headers): Headers {
 
 function isAllowedTrustedFormUrl(url: URL): boolean {
   return url.protocol === "https:" && (url.hostname === "trustedform.com" || url.hostname.endsWith(".trustedform.com"));
+}
+
+function isAllowedGoogleTagUrl(url: URL): boolean {
+  return url.protocol === "https:" && allowedGoogleTagHosts.has(url.hostname);
 }
 
 function getScriptFileFromPath(pathname: string): string | undefined {

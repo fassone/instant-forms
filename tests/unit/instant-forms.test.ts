@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { Hono } from "hono";
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { googleTagManager, gtmContainerIdSchema } from "../../src/authoring/integrations/google-tag-manager";
 import { trustedFormCertify } from "../../src/authoring/integrations/trusted-form";
 import { selectedScripts } from "../../src/authoring/scripts/registry";
 import { formRoutes } from "../../src/authoring/routes/registry";
@@ -568,6 +569,65 @@ describe("form registry", () => {
       requireReadyBefore: "consent_substep",
       allowSubmitWithoutCert: false,
     });
+  });
+
+  it("centralizes GTM settings in an authoring preset", () => {
+    expect(gtmContainerIdSchema.safeParse("GTM-ABC123").success).toBe(true);
+    expect(gtmContainerIdSchema.safeParse("bad-ABC123").success).toBe(false);
+
+    expect(
+      googleTagManager({
+        containerId: "GTM-ABC123",
+        delivery: "partytown",
+        proxy: "first_party",
+        includeContext: ["areaCode", "product"],
+      }),
+    ).toEqual({
+      containerId: "GTM-ABC123",
+      delivery: "partytown",
+      proxy: "first_party",
+      includeContext: ["areaCode", "product"],
+      dataLayerName: "dataLayer",
+      scriptProxyKey: "gtm",
+      scriptBaseUrl: "/_instant/scripts/gtm.js",
+      partytownLib: "/~partytown/",
+      partytownScriptUrl: "/~partytown/partytown.js",
+    });
+
+    expect(() =>
+      googleTagManager({
+        containerId: "not-gtm" as never,
+      }),
+    ).toThrow("Expected a Google Tag Manager container ID");
+  });
+
+  it("validates GTM tracking config against the context contract", () => {
+    expect(() =>
+      defineFormFlow({
+        name: "Tracking Test",
+        status: "ACTIVE",
+        ...testFlowCopy,
+        contract: {
+          context: z.object({ areaCode: z.string() }),
+          answers: z.object({}),
+          payload: z.object({}),
+        },
+        context: { areaCode: "TN" },
+        payload: {
+          method: "POST",
+          encoding: "json",
+          mapping: () => ({}),
+        },
+        page: { name: "Tracking Test" },
+        tracking: {
+          googleTagManager: googleTagManager({
+            containerId: "GTM-ABC123",
+            includeContext: ["missing_context"],
+          }) as never,
+        },
+        steps: [],
+      }),
+    ).toThrow("tracking.googleTagManager.includeContext references unknown contract.context keys");
   });
 
   it("validates Zod flow contracts and resolves answer variables into delivery payloads", () => {
@@ -1887,6 +1947,33 @@ describe("US phone normalization", () => {
 });
 
 describe("selected script proxy", () => {
+  it("registers Google Tag Manager as an allowlisted selected script", () => {
+    const gtmScript = selectedScripts.gtm;
+    if (!gtmScript) {
+      throw new Error("Expected selectedScripts.gtm to be registered.");
+    }
+
+    expect(gtmScript.key).toBe("gtm");
+    expect(gtmScript.upstreamUrl).toBe("https://www.googletagmanager.com/gtm.js");
+    expect(gtmScript.allowedQueryParams).toEqual([
+      "id",
+      "l",
+      "gtm_auth",
+      "gtm_preview",
+      "gtm_cookies_win",
+    ]);
+
+    const result = buildScriptProxyUpstreamUrl(
+      gtmScript,
+      new URL("http://localhost/_instant/scripts/gtm.js?id=GTM-ABC123&l=dataLayer"),
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.url.toString()).toBe("https://www.googletagmanager.com/gtm.js?id=GTM-ABC123&l=dataLayer");
+    }
+  });
+
   it("registers TrustedForm Certify as an allowlisted selected script", () => {
     const trustedFormScript = selectedScripts.tfc;
     if (!trustedFormScript) {
@@ -2352,6 +2439,49 @@ describe("server routing", () => {
             "https://static.cloudflareinsights.com/beacon.min.js",
           )}`,
         ),
+      );
+      expect(rejectedResponse.status).toBe(400);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("proxies Google tag requests through an allowlisted first-party route", async () => {
+    const originalFetch = globalThis.fetch;
+    const handler = createFetchHandler();
+    let fetchedUrl = "";
+    let fetchedHeaders: Headers | undefined;
+
+    globalThis.fetch = ((input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+      fetchedUrl = input instanceof Request ? input.url : String(input);
+      fetchedHeaders = new Headers(init?.headers);
+
+      return Promise.resolve(
+        new Response("ok", {
+          headers: { "Content-Type": "text/plain" },
+        }),
+      );
+    }) as typeof fetch;
+
+    try {
+      const target = encodeURIComponent("https://www.google-analytics.com/g/collect?v=2&en=page_view");
+      const response = await handler(
+        new Request(`http://localhost/_instant/google-tags/proxy?u=${target}`, {
+          headers: {
+            Accept: "text/plain",
+            Cookie: "private=value",
+          },
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe("ok");
+      expect(fetchedUrl).toBe("https://www.google-analytics.com/g/collect?v=2&en=page_view");
+      expect(fetchedHeaders?.get("Accept")).toBe("text/plain");
+      expect(fetchedHeaders?.get("Cookie")).toBeNull();
+
+      const rejectedResponse = await handler(
+        new Request(`http://localhost/_instant/google-tags/proxy?u=${encodeURIComponent("https://evil.test/pixel")}`),
       );
       expect(rejectedResponse.status).toBe(400);
     } finally {
@@ -3196,6 +3326,77 @@ describe("form rendering", () => {
         message: "This answer is required.",
       });
     }
+  });
+
+  it("renders GTM with first-party Partytown delivery and safe dataLayer events", async () => {
+    const flow = defineFormFlow({
+      name: "Tracking Fixture",
+      status: "ACTIVE",
+      ...testFlowCopy,
+      contract: {
+        context: z.object({
+          areaCode: z.string(),
+          product: z.string(),
+          advertiserName: z.string(),
+        }),
+        answers: z.object({
+          wants_quote: z.enum(["yes", "no"]),
+        }),
+        payload: z.object({
+          wantsQuote: z.string(),
+        }),
+      },
+      context: {
+        areaCode: "TN",
+        product: "auto_insurance",
+        advertiserName: "Should Not Be In Tracking Context",
+      },
+      payload: {
+        method: "POST",
+        encoding: "json",
+        mapping: ({ answers }) => ({
+          wantsQuote: answers.wants_quote,
+        }),
+      },
+      page: {
+        name: "Tracking Form",
+      },
+      tracking: {
+        googleTagManager: googleTagManager({
+          containerId: "GTM-ABC123",
+          includeContext: ["areaCode", "product"],
+        }),
+      },
+      steps: [
+        step.choice({
+          key: "wants_quote",
+          slug: "quote",
+          label: "Do you want a quote?",
+          options: [
+            { key: "yes", label: "Yes" },
+            { key: "no", label: "No" },
+          ],
+        }),
+      ],
+    });
+
+    const html = await renderFormPage(flow, { routeKey: "tracking_custom" });
+
+    expect(html).toContain("window.dataLayer = window.dataLayer || []");
+    expect(html).toContain('"dataLayer.push"');
+    expect(html).toContain('type="text/partytown" src="/_instant/scripts/gtm.js?id=GTM-ABC123&amp;l=dataLayer"');
+    expect(html).toContain("/_instant/google-tags/proxy?u=");
+    expect(html).toContain("instant_form_view");
+    expect(html).toContain("instant_form_step_view");
+    expect(html).toContain("instant_form_step_answer");
+    expect(html).toContain("instant_form_validation_error");
+    expect(html).toContain("instant_form_submit_attempt");
+    expect(html).toContain("instant_form_submit_success");
+    expect(html).toContain("instant_form_submit_error");
+    expect(html).toContain('"routeKey":"tracking_custom"');
+    expect(html).toContain('"tracking":{"googleTagManager"');
+    expect(html).toContain('"context":{"area_code":"TN","product":"auto_insurance"}');
+    expect(html).not.toContain('"advertiser_name"');
   });
 
   it("keeps source inline assets in dev and serves built inline assets in production", async () => {

@@ -19,6 +19,7 @@ import {
 } from "../../flow";
 import { createStateAutocompleteItems } from "../../steps/autocomplete/ranking";
 import { renderConsentMarkdown, renderMarkdown, type RenderedMarkdown } from "../markdown";
+import type { ClientTrackingConfig } from "../tracking";
 
 type ClientStepCondition = {
   questionKey: string;
@@ -120,6 +121,7 @@ export type ClientFormConfig = {
     usStates: ReturnType<typeof createStateAutocompleteItems>;
   };
   trustedFormPreloadAssets?: readonly ClientTrustedFormPreloadAsset[];
+  tracking?: ClientTrackingConfig;
   transitionAssetUrl?: string;
 };
 
@@ -185,6 +187,7 @@ export function createClientFormConfig(
         }
       : {}),
     ...(trustedFormPreloadAssets.length > 0 ? { trustedFormPreloadAssets } : {}),
+    ...createClientTrackingConfig(form, options.routeKey ?? "preview", previewMode),
     ...(options.transitionAssetUrl ? { transitionAssetUrl: options.transitionAssetUrl } : {}),
   };
 }
@@ -332,6 +335,60 @@ function getDynamicResolverDependencyConfig(
         ...(optionalDependencies.length > 0 ? { optionalDynamicResolverDependencies: optionalDependencies } : {}),
       }
     : {};
+}
+
+function createClientTrackingConfig(
+  form: InstantForm,
+  routeKey: string,
+  previewMode: boolean,
+): { tracking: ClientTrackingConfig } | {} {
+  const googleTagManager = form.tracking?.googleTagManager;
+  if (previewMode || !googleTagManager) {
+    return {};
+  }
+
+  const context = Object.fromEntries(
+    (googleTagManager.includeContext ?? []).flatMap((key) => {
+      const value = form.context[key];
+      return value === undefined ? [] : [[toSnakeCase(key), value]];
+    }),
+  );
+
+  return {
+    tracking: {
+      googleTagManager: {
+        containerId: googleTagManager.containerId,
+        dataLayerName: googleTagManager.dataLayerName,
+        delivery: googleTagManager.delivery,
+        proxy: googleTagManager.proxy,
+        scriptUrl: buildGoogleTagManagerScriptUrl(googleTagManager),
+        partytownLib: googleTagManager.partytownLib,
+        partytownScriptUrl: googleTagManager.partytownScriptUrl,
+        routeKey,
+        formName: form.name,
+        pageName: form.page.name,
+        context,
+      },
+    },
+  };
+}
+
+function buildGoogleTagManagerScriptUrl(
+  googleTagManager: NonNullable<NonNullable<InstantForm["tracking"]>["googleTagManager"]>,
+): string {
+  const url = new URL(googleTagManager.scriptBaseUrl, "https://instant-form.local");
+  url.searchParams.set("id", googleTagManager.containerId);
+  url.searchParams.set("l", googleTagManager.dataLayerName);
+
+  return `${url.pathname}${url.search}`;
+}
+
+function toSnakeCase(value: string): string {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toLowerCase();
 }
 
 function createClientTrustedFormPreloadAssets(

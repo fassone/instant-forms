@@ -1,4 +1,5 @@
 import { autocompleteSource, defineFormFlow, defineFormTemplate, z } from "../../platform/flow";
+import { googleTagManager, gtmContainerIdSchema } from "../integrations/google-tag-manager";
 import { trustedFormCertify } from "../integrations/trusted-form";
 
 const esUiCopy = {
@@ -68,6 +69,7 @@ export const esAutoInsuranceVariables = z.object({
   areaName: z.string().optional(),
   product: z.string(),
   advertiserName: z.string(),
+  gtmContainerId: gtmContainerIdSchema.optional(),
 });
 
 export const esAutoInsuranceTemplate = defineFormTemplate({
@@ -109,6 +111,18 @@ export const esAutoInsuranceTemplate = defineFormTemplate({
       page: {
         name: variables.pageName,
       },
+      ...(variables.gtmContainerId
+        ? {
+            tracking: {
+              googleTagManager: googleTagManager({
+                containerId: variables.gtmContainerId,
+                delivery: "partytown",
+                proxy: "first_party",
+                includeContext: ["areaCode", "product"],
+              }),
+            },
+          }
+        : {}),
       steps: ({ step, text, md, phoneDisplay, stateDisplay, consentMd, tfTag }) => [
         step.choice({
           key: "belongs_to_state",
