@@ -109,6 +109,8 @@ Unavailable public routes use author-controlled title, message, CTA, and status 
 
 The Tennessee flow lives in `src/authoring/flows/tn/flow.ts` and is built with the typed DSL in `src/platform/flow/dsl/`. Public route placement lives in `src/authoring/routes/registry.ts`, where `/tn/custom` is mapped to the Tennessee flow and `/tn` is a small route group. Runtime identity comes from that route mount, so `/tn/custom` uses the encoded route key `tn_custom`.
 
+Reusable flow shapes live in `src/authoring/templates/` and use `defineFormTemplate(...)`. A template declares a Zod `variables` contract and exposes `.create(input)`, which validates required, optional, and unknown variables before returning a normal `InstantForm` through `defineFormFlow(...)`. Tennessee is currently an instantiation of the reusable Spanish auto-insurance template.
+
 Each flow declares a `locale` plus an explicit `ui` copy block for platform-owned labels, progress text, modal copy, validation/failure messages, and native thank-you/error pages. There is no hidden Spanish fallback: a new language is authored by creating a flow whose step copy and `ui` copy are in that language.
 
 Each flow also declares a Zod-backed `contract` with `context`, `answers`, and `payload` schemas. Authored business context such as `areaCode: "TN"`, `areaName: "Tennessee"`, and `product: "auto_insurance"` lives in `context`; answer-producing steps must use keys declared in `contract.answers`; and `payload.mapping` builds a typed delivery payload from `{ context, answers }`. V1 logs that delivery block but does not send it to an external endpoint. Supported step kinds are `choice`, `text`, `phone`, `autocomplete`, `interstitial`, and `trusted_form_consent`.

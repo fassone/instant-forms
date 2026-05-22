@@ -10,6 +10,7 @@ import {
   autocompleteSource,
   consentMd,
   defineFormFlow,
+  defineFormTemplate,
   getStepDynamicResolverDependencies,
   getStepSlug,
   isCountedStep,
@@ -1455,6 +1456,7 @@ describe("repository structure", () => {
     "src/authoring/flows/tn/README.md",
     "src/authoring/routes/README.md",
     "src/authoring/scripts/README.md",
+    "src/authoring/templates/README.md",
     "src/platform/README.md",
     "src/platform/app/README.md",
     "src/platform/app/http/README.md",
@@ -1499,6 +1501,83 @@ describe("repository structure", () => {
     const missingReadmes = requiredReadmes.filter((readmePath) => !existsSync(join(repoRoot, readmePath)));
 
     expect(missingReadmes).toEqual([]);
+  });
+});
+
+describe("form templates", () => {
+  const createReusableTemplate = () =>
+    defineFormTemplate({
+      variables: z.object({
+        flowName: z.string(),
+        areaCode: z.string().min(2),
+        areaName: z.string().optional(),
+      }),
+      create: ({ variables }) =>
+        defineFormFlow({
+          name: variables.flowName,
+          status: "ACTIVE",
+          ...testFlowCopy,
+          contract: {
+            context: z.object({
+              areaCode: z.string(),
+              areaName: z.string().optional(),
+            }),
+            answers: z.object({}),
+            payload: z.object({ marketState: z.string(), marketName: z.string() }),
+          },
+          context: {
+            areaCode: variables.areaCode,
+            areaName: variables.areaName,
+          },
+          payload: {
+            method: "POST",
+            encoding: "json",
+            mapping: ({ context }) => ({
+              marketState: context.areaCode,
+              marketName: context.areaName ?? context.areaCode,
+            }),
+          },
+          page: {
+            name: variables.flowName,
+          },
+          steps: [],
+        }),
+    });
+
+  it("creates normal flows from validated template variables", () => {
+    const template = createReusableTemplate();
+    const flow = template.create({ flowName: "Reusable TX", areaCode: "TX" });
+    const flowWithOptionalVariable = template.create({
+      flowName: "Reusable CA",
+      areaCode: "CA",
+      areaName: "California",
+    });
+
+    expect(flow.name).toBe("Reusable TX");
+    expect(flow.customVariables).toEqual({ areaCode: "TX" });
+    expect(flow.steps).toEqual([]);
+    expect(flowWithOptionalVariable.customVariables).toEqual({
+      areaCode: "CA",
+      areaName: "California",
+    });
+  });
+
+  it("rejects missing, unknown, and invalid template variables", () => {
+    const template = createReusableTemplate();
+
+    expect(() => template.create({ areaCode: "TX" } as any)).toThrow(
+      "template variables do not match the template contract",
+    );
+    expect(() =>
+      template.create({
+        flowName: "Reusable TX",
+        areaCode: "TX",
+        extraVariable: "nope",
+      } as any),
+    ).toThrow("template variables include undeclared keys: extraVariable");
+    expect(() => template.create({ flowName: "Reusable T", areaCode: "T" })).toThrow(
+      "template variables do not match the template contract",
+    );
   });
 });
 
@@ -3763,7 +3842,9 @@ describe("form rendering", () => {
     expect(html).toContain('"activeStepIndex":0');
     expect(html).toContain('"initialAnswers":{}');
     expect(html).toContain('"routeKey":"tn_custom"');
-    expect(html).toContain('"customVariables":{"areaCode":"TN","areaName":"Tennessee","product":"auto_insurance"}');
+    expect(html).toContain(
+      '"customVariables":{"areaCode":"TN","areaName":"Tennessee","product":"auto_insurance","advertiserName":"Liderna Inc y a sus socios, agentes y proveedores de seguros"}',
+    );
     expect(html).not.toContain('"stateCode"');
     expect(html).toContain('"slug":"vive-en-tennessee"');
     expect(html).not.toContain('"slug":"estado-donde-vive"');

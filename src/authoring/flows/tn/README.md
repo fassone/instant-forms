@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`src/authoring/flows/tn/` contains the Tennessee Seguros Aseguranza authored form.
+`src/authoring/flows/tn/` contains the Tennessee Seguros Aseguranza authored form instantiation.
 
 ```mermaid
 flowchart TD
@@ -20,9 +20,8 @@ flowchart TD
 
 ## Belongs Here
 
-- Tennessee metadata, labels, slugs, question order, and authored conditional visibility.
-- Tennessee matching-step benefit and success copy.
-- Tennessee consent disclosure copy and TrustedForm settings, including whether final submit may continue without a certificate URL.
+- Tennessee template variables such as area, product, page name, and advertiser name.
+- Tennessee-specific route-facing flow export.
 
 ## Does Not Belong Here
 
@@ -33,3 +32,4 @@ flowchart TD
 ## Change Safely
 
 Changing order or visibility can affect browser history and checkpoints. Update route and rendering tests with any authored flow change.
+The reusable Spanish auto-insurance structure lives in `src/authoring/templates/`; update that template when changing shared questions, copy, or TrustedForm behavior.

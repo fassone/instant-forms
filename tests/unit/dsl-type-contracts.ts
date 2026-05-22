@@ -1,6 +1,7 @@
 import {
   consentMd,
   defineFormFlow,
+  defineFormTemplate,
   md,
   phoneDisplay,
   resolve,
@@ -71,6 +72,51 @@ const testFlowCopy = {
     },
   },
 } as const;
+
+const typedTemplate = defineFormTemplate({
+  variables: z.object({
+    flowName: z.string(),
+    areaCode: z.string(),
+    areaName: z.string().optional(),
+  }),
+  create: ({ variables }) =>
+    defineFormFlow({
+      name: variables.flowName,
+      status: "ACTIVE",
+      ...testFlowCopy,
+      contract: {
+        context: z.object({
+          areaCode: z.string(),
+          areaName: z.string().optional(),
+        }),
+        answers: z.object({}),
+        payload: z.object({ marketState: z.string() }),
+      },
+      context: {
+        areaCode: variables.areaCode,
+        areaName: variables.areaName,
+      },
+      payload: {
+        method: "POST",
+        encoding: "json",
+        mapping: ({ context }) => ({ marketState: context.areaCode }),
+      },
+      page: { name: variables.flowName },
+      steps: [],
+    }),
+});
+
+void typedTemplate.create({ flowName: "Typed Template", areaCode: "TX" });
+void typedTemplate.create({ flowName: "Typed Template", areaCode: "TX", areaName: "Texas" });
+
+// @ts-expect-error template variables require flowName.
+void typedTemplate.create({ areaCode: "TX" });
+
+// @ts-expect-error template variables reject unknown object literal keys.
+void typedTemplate.create({ flowName: "Typed Template", areaCode: "TX", extraVariable: "nope" });
+
+// @ts-expect-error template variables use the Zod input type.
+void typedTemplate.create({ flowName: "Typed Template", areaCode: 123 });
 
 void defineFormFlow({
   name: "Valid Type Fixture",

@@ -7,6 +7,7 @@
 ## Belongs Here
 
 - Area-specific form definitions.
+- Reusable form templates for shared flow structures.
 - Area-to-flow registration.
 - Public route-folder placement for authored flows.
 - Selected third-party script registrations that are safe to proxy.
@@ -20,4 +21,4 @@
 
 ## Change Safely
 
-Adding a market should normally touch this folder, tests, and documentation. Import DSL builders from `src/platform/flow/dsl` and public route helpers from `src/platform/routing`; do not reach into platform app internals.
+Adding a market should normally touch this folder, tests, and documentation. Use `src/authoring/templates/` when a flow structure is shared across markets, then keep concrete market files as small template instantiations. Import DSL builders from `src/platform/flow/dsl` and public route helpers from `src/platform/routing`; do not reach into platform app internals.
