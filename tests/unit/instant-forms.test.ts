@@ -2480,6 +2480,30 @@ describe("server routing", () => {
       expect(fetchedHeaders?.get("Accept")).toBe("text/plain");
       expect(fetchedHeaders?.get("Cookie")).toBeNull();
 
+      const debugBootstrapTarget = encodeURIComponent(
+        "https://www.googletagmanager.com/debug/bootstrap?id=GTM-ABC123&src=GTM&cond=3&gtm=45He65k1v9253286226za204",
+      );
+      const debugBootstrapResponse = await handler(
+        new Request(`http://localhost/_instant/google-tags/proxy?u=${debugBootstrapTarget}`),
+      );
+
+      expect(debugBootstrapResponse.status).toBe(200);
+      expect(await debugBootstrapResponse.text()).toBe("ok");
+      expect(fetchedUrl).toBe(
+        "https://www.googletagmanager.com/debug/bootstrap?id=GTM-ABC123&src=GTM&cond=3&gtm=45He65k1v9253286226za204",
+      );
+
+      const analyticsDebugBootstrapTarget = encodeURIComponent(
+        "https://www.google-analytics.com/debug/bootstrap?id=G-ABC123&src=GTM",
+      );
+      const analyticsDebugBootstrapResponse = await handler(
+        new Request(`http://localhost/_instant/google-tags/proxy?u=${analyticsDebugBootstrapTarget}`),
+      );
+
+      expect(analyticsDebugBootstrapResponse.status).toBe(200);
+      expect(await analyticsDebugBootstrapResponse.text()).toBe("ok");
+      expect(fetchedUrl).toBe("https://www.google-analytics.com/debug/bootstrap?id=G-ABC123&src=GTM");
+
       const rejectedResponse = await handler(
         new Request(`http://localhost/_instant/google-tags/proxy?u=${encodeURIComponent("https://evil.test/pixel")}`),
       );
@@ -3384,8 +3408,22 @@ describe("form rendering", () => {
 
     expect(html).toContain("window.dataLayer = window.dataLayer || []");
     expect(html).toContain('"dataLayer.push"');
+    expect(html).toContain("installGoogleTagRequestProxyShim();");
+    expect(html).toContain("function installGoogleTagRequestProxyShim()");
+    expect(html).toContain("window.__INSTANT_GOOGLE_TAG_PROXY_SHIM__");
+    expect(html).toContain("loadScriptsOnMainThread");
+    expect(html).toContain('"https://www.googletagmanager.com/debug/bootstrap"');
+    expect(html).toContain('"https://www.google-analytics.com/debug/bootstrap"');
+    expect(html).toContain("\\/_instant\\/google-tags\\/proxy\\?u=https%3A%2F%2Fwww\\.googletagmanager\\.com%2Fdebug%2Fbootstrap");
+    expect(html).toContain("\\/_instant\\/google-tags\\/proxy\\?u=https%3A%2F%2Fwww\\.google-analytics\\.com%2Fdebug%2Fbootstrap");
     expect(html).toContain('type="text/partytown" src="/_instant/scripts/gtm.js?id=GTM-ABC123&amp;l=dataLayer"');
     expect(html).toContain("/_instant/google-tags/proxy?u=");
+    expect(html).toContain("function readOriginalGoogleTagUrl");
+    expect(html).toContain("function patchGoogleTagGetAttribute");
+    expect(html).toContain('patchGoogleTagUrlProperty(HTMLLinkElement.prototype, "href")');
+    expect(html.indexOf("installGoogleTagRequestProxyShim();")).toBeLessThan(
+      html.indexOf('type="text/partytown" src="/_instant/scripts/gtm.js?id=GTM-ABC123&amp;l=dataLayer"'),
+    );
     expect(html).toContain("instant_form_view");
     expect(html).toContain("instant_form_step_view");
     expect(html).toContain("instant_form_step_answer");

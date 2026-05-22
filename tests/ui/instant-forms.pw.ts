@@ -116,6 +116,76 @@ test.describe("instant routed form UI", () => {
     expect(consentResolutionRequests).toBe(0);
   });
 
+  test("GTM follow-up requests are rewritten through the first-party proxy", async ({ page }) => {
+    let directDebugBootstrapRequests = 0;
+    let proxiedDebugBootstrapRequests = 0;
+    await page.route("https://www.googletagmanager.com/debug/bootstrap**", async (route) => {
+      directDebugBootstrapRequests += 1;
+      await route.fulfill({
+        contentType: "application/javascript",
+        body: "window.__DIRECT_GTM_DEBUG_BOOTSTRAP_REQUEST__ = true;",
+      });
+    });
+    await page.route("**/_instant/google-tags/proxy?**", async (route) => {
+      const requestUrl = new URL(route.request().url());
+      const targetUrl = requestUrl.searchParams.get("u") ?? "";
+      if (targetUrl.includes("https://www.googletagmanager.com/debug/bootstrap")) {
+        proxiedDebugBootstrapRequests += 1;
+      }
+      await route.fulfill({
+        contentType: "application/javascript",
+        body: `
+          window.__PROXIED_GTM_DEBUG_BOOTSTRAP_REQUEST__ = true;
+          window.__PROXIED_GTM_DEBUG_CURRENT_SCRIPT_SRC__ = document.currentScript && document.currentScript.src;
+          window.__PROXIED_GTM_DEBUG_CURRENT_SCRIPT_ATTRIBUTE__ = document.currentScript && document.currentScript.getAttribute("src");
+          window.__PROXIED_GTM_DEBUG_CURRENT_SCRIPT_TYPE__ = document.currentScript && document.currentScript.type;
+        `,
+      });
+    });
+
+    await page.goto("/tn/custom/vive-en-tennessee");
+    await page.evaluate(`
+      window.dataLayer = window.dataLayer || [];
+      window.__GTM_DATALAYER_PUSH_WORKED__ = typeof window.dataLayer.push === "function";
+      window.dataLayer.push({ event: "mock_gtm_loaded" });
+      var debugScript = document.createElement("script");
+      debugScript.src =
+        "https://www.googletagmanager.com/debug/bootstrap?id=GTM-MVJNX5DZ&src=GTM&cond=3&gtm=45He65k1v9253286226za204";
+      window.__GTM_DEBUG_SCRIPT_SRC_AFTER_SET__ = debugScript.src;
+      window.__GTM_DEBUG_SCRIPT_ATTRIBUTE_AFTER_SET__ = debugScript.getAttribute("src");
+      document.head.appendChild(debugScript);
+    `);
+
+    await expect
+      .poll(() => proxiedDebugBootstrapRequests, { timeout: 10_000 })
+      .toBeGreaterThan(0);
+    expect(directDebugBootstrapRequests).toBe(0);
+    await expect
+      .poll(() => page.evaluate("Boolean(window.__GTM_DATALAYER_PUSH_WORKED__)"), { timeout: 10_000 })
+      .toBe(true);
+    await expect
+      .poll(() => page.evaluate("Boolean(window.__PROXIED_GTM_DEBUG_BOOTSTRAP_REQUEST__)"))
+      .toBe(true);
+    await expect
+      .poll(() => page.evaluate("String(window.__GTM_DEBUG_SCRIPT_SRC_AFTER_SET__ || '')"))
+      .toContain("https://www.googletagmanager.com/debug/bootstrap");
+    await expect
+      .poll(() => page.evaluate("String(window.__GTM_DEBUG_SCRIPT_ATTRIBUTE_AFTER_SET__ || '')"))
+      .toContain("https://www.googletagmanager.com/debug/bootstrap");
+    await expect
+      .poll(() => page.evaluate("String(window.__PROXIED_GTM_DEBUG_CURRENT_SCRIPT_SRC__ || '')"))
+      .toContain("https://www.googletagmanager.com/debug/bootstrap");
+    await expect
+      .poll(() => page.evaluate("String(window.__PROXIED_GTM_DEBUG_CURRENT_SCRIPT_ATTRIBUTE__ || '')"))
+      .toContain("https://www.googletagmanager.com/debug/bootstrap");
+    await expect
+      .poll(() => page.evaluate("String(window.__PROXIED_GTM_DEBUG_CURRENT_SCRIPT_TYPE__ || '')"))
+      .toBe("");
+    await expect
+      .poll(() => page.evaluate("Boolean(window.__DIRECT_GTM_DEBUG_BOOTSTRAP_REQUEST__)"))
+      .toBe(false);
+  });
+
   test("production optimistic transitions do not wait for slow checkpoint responses", async ({ page }) => {
     await page.goto("/tn/custom/vive-en-tennessee");
     const transitionAssetUrl = await getTransitionAssetUrl(page);
