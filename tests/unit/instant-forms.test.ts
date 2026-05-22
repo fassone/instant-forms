@@ -2761,6 +2761,29 @@ describe("server routing", () => {
     expect(resolvedStep.html).toContain("(615) 555-1234");
   });
 
+  it("treats too-early dynamic resolution preloads as not-ready responses", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(
+      new Request("http://localhost/api/forms/tn_custom/resolutions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          stepKey: "trustedform_consent",
+          answers: {
+            ...preContactAnswers,
+            first_name: "Ana",
+            last_name: "Lopez",
+            phone_number: "(615) 555-1234",
+          },
+        }),
+      }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(202);
+    expect(body).toEqual({ ok: false, reason: "step_not_ready" });
+  });
+
   it("marks checkpoint cookies secure when served over HTTPS", async () => {
     const handler = createFetchHandler();
     const response = await handler(

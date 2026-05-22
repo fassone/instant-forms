@@ -1125,7 +1125,35 @@ function getCoreRuntimeScript(): string {
     }
 
     const optionalDependencies = new Set(question.optionalDynamicResolverDependencies || []);
-    return question.dynamicResolverDependencies.every((dependency) => optionalDependencies.has(dependency) || Boolean(answers[dependency]));
+    return (
+      canAccessQuestion(question) &&
+      question.dynamicResolverDependencies.every((dependency) => optionalDependencies.has(dependency) || Boolean(answers[dependency]))
+    );
+  }
+
+  function canAccessQuestion(question) {
+    const stepIndex = config.steps.indexOf(question);
+    if (stepIndex === -1 || !isQuestionVisible(question)) {
+      return false;
+    }
+
+    const visibleStepIndexes = getVisibleStepIndexes();
+    const requestedVisibleIndex = visibleStepIndexes.indexOf(stepIndex);
+    if (requestedVisibleIndex === -1) {
+      return false;
+    }
+
+    const firstUnansweredStepIndex = visibleStepIndexes.find((visibleStepIndex) => {
+      const candidate = config.steps[visibleStepIndex];
+      return candidate && !isStepAnswered(candidate);
+    });
+
+    if (typeof firstUnansweredStepIndex !== "number") {
+      return true;
+    }
+
+    const firstUnansweredVisibleIndex = visibleStepIndexes.indexOf(firstUnansweredStepIndex);
+    return firstUnansweredVisibleIndex !== -1 && requestedVisibleIndex <= firstUnansweredVisibleIndex;
   }
 
   function getResolvedStepCacheKey(question) {

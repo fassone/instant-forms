@@ -151,11 +151,11 @@ export function registerFormRoutes(app: Hono, routes: FormRoutes, logger: Submis
     const stepIndex = routeEntry.form.steps.findIndex((candidate) => candidate.key === stepDefinition.key);
 
     if (stepIndex === -1 || !canAccessStep(routeEntry.form, stepIndex, sanitizedAnswers)) {
-      return jsonResponse(c, { ok: false, errors: [{ field: stepDefinition.key, message: routeEntry.form.ui.errors.unavailableQuestion }] }, 400);
+      return jsonResponse(c, { ok: false, reason: "step_not_ready" }, 202);
     }
 
     if (hasStepDynamicResolvers(stepDefinition) && !canResolveStepDynamicValues(routeEntry.form, stepDefinition, sanitizedAnswers)) {
-      return jsonResponse(c, { ok: false, errors: [{ field: stepDefinition.key, message: routeEntry.form.ui.errors.stepResolutionFailed }] }, 400);
+      return jsonResponse(c, { ok: false, reason: "dependencies_not_ready" }, 202);
     }
 
     try {

@@ -89,6 +89,33 @@ test.describe("instant routed form UI", () => {
     await expect(activeStep(page).locator("[data-trusted-form-review-scroll]")).toHaveCount(0);
   });
 
+  test("dynamic consent preload waits until route guards allow the consent step", async ({ page }) => {
+    let consentResolutionRequests = 0;
+    await page.route("**/api/forms/tn_custom/resolutions", async (route) => {
+      const postData = route.request().postDataJSON() as { stepKey?: string } | undefined;
+      if (postData?.stepKey === "trustedform_consent") {
+        consentResolutionRequests += 1;
+      }
+      await route.continue();
+    });
+    await seedCheckpoint(page, {
+      ...preContactAnswers,
+      first_name: "Ana",
+      last_name: "Lopez",
+      phone_number: "+16155551234",
+    });
+    await page.goto("/tn/custom/vive-en-tennessee");
+    const transitionAssetUrl = await getTransitionAssetUrl(page);
+
+    if (!transitionAssetUrl) {
+      return;
+    }
+
+    await waitForTransitionAsset(page, transitionAssetUrl);
+    await page.waitForTimeout(250);
+    expect(consentResolutionRequests).toBe(0);
+  });
+
   test("production optimistic transitions do not wait for slow checkpoint responses", async ({ page }) => {
     await page.goto("/tn/custom/vive-en-tennessee");
     const transitionAssetUrl = await getTransitionAssetUrl(page);
