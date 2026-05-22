@@ -148,7 +148,7 @@ export const tnFlow = defineFormFlow({
       {
         key: "trustedform_consent",
         slug: "consentimiento",
-        substeps: {
+        /*substeps: {
           consent: {
             presentation: {
               chrome: "hidden_on_mobile",
@@ -159,7 +159,7 @@ export const tnFlow = defineFormFlow({
               chrome: "hidden_on_mobile",
             },
           },
-        },
+        },*/
         trustedForm: {
           fieldName: "xxTrustedFormCertUrl",
           delivery: "main_thread",
@@ -184,8 +184,8 @@ export const tnFlow = defineFormFlow({
       ],
       ({ context, answers }) => ({
         review: {
-          title: text("Antes de enviar"),
-          description: md("Por favor, confirme su informacion"),
+          title: text("Antes de cotizar"),
+          description: md("**Ya tenemos posibles opciones para usted**. Confirme que sus datos estén correctos antes de continuar."),
           nextLabel: "Continuar",
           fields: [
             {
@@ -237,8 +237,8 @@ export const tnFlow = defineFormFlow({
           ],
         },
         consent: {
-          title: text("Consentimiento"),
-
+          title: text("Antes de cotizar"),
+          description: md("Para proteger su privacidad, la ley requiere su autorización para comunicarnos con usted sobre su solicitud de seguro."),
           // Replace with approved consent language before production traffic.
           disclosure: consentMd(
             "Al marcar esta casilla y hacer clic en “Enviar”, yo, **",
@@ -255,7 +255,7 @@ export const tnFlow = defineFormFlow({
             " y que puedo revocarlo en cualquier momento respondiendo STOP.",
           ),
           checkboxLabel: "Acepto continuar y enviar mi solicitud.",
-          submitLabel: "Enviar",
+          submitLabel: "Cotizar",
         },
       }),
     ),

@@ -3145,7 +3145,12 @@ describe("form rendering", () => {
     expect(html).toContain("overscroll-behavior: none;");
     expect(html).toContain("background: var(--surface);");
     expect(html).toContain("height: 100dvh;");
-    expect(html).toContain("calc(40px + env(safe-area-inset-top)) 24px calc(32px + env(safe-area-inset-bottom))");
+    expect(html).toContain("--mobile-fluid-scale: min(1, calc(100vw / 500px));");
+    expect(html).toContain("--mfs: var(--mobile-fluid-scale);");
+    expect(html).toContain("font-size: min(16px, 3.2vw);");
+    expect(html).toContain("calc(var(--mfs-40) + env(safe-area-inset-top))");
+    expect(html).toContain("var(--mfs-24)");
+    expect(html).toContain("calc(var(--mfs-32) + env(safe-area-inset-bottom))");
     expect(html).toContain('.form-panel:has(.step[aria-hidden="false"][data-step-kind="text"] .text-input:focus)');
     expect(html).not.toContain('.form-panel:has(.step[aria-hidden="false"][data-step-kind="text"] .text-input) {');
     expect(html).not.toContain('.form-panel:has(.step[aria-hidden="false"] .text-input)');
@@ -3160,8 +3165,16 @@ describe("form rendering", () => {
     expect(html).not.toContain("transform: translateY(clamp(-160px, -18dvh, -96px));");
     expect(html).not.toContain(".shell:has(.text-input:focus)");
     expect(html).toContain("flex-direction: column;");
-    expect(html).toContain("min-height: 58px;");
+    expect(html).toContain("width: min(190px, 38vw);");
+    expect(html).toContain("min-height: var(--mfs-58);");
+    expect(html).toContain("min-height: var(--mfs-64);");
+    expect(html).toContain("min-height: var(--mfs-68);");
     expect(html).toContain("font-size: 1.12rem;");
+    expect(html).toContain(".trusted-form-review-row");
+    expect(html).toContain("padding-bottom: var(--mfs-8);");
+    expect(html).toContain(".consent-check");
+    expect(html).toContain("padding: var(--mfs-14);");
+    expect(html).toContain(".consent-scroll");
     expect(html).toContain("order: 1;");
     expect(html).toContain("order: 2;");
     expect(html).not.toContain("field.focus()");
@@ -3425,10 +3438,10 @@ describe("form rendering", () => {
     expect(html).toContain('"description":{"text":"Por favor, confirme su informacion","html":"\\u003cp\\u003ePor favor, confirme su informacion\\u003c/p\\u003e"}');
     expect(html).toContain('"fields":[{"name":"review_belongs_to_state"');
     expect(html).toContain('"consent":{"title":"Consentimiento"');
-    expect(html).toContain('"substeps":{"consent":{"presentation":{"chrome":"hidden_on_mobile"}}}');
+    expect(html).toContain('"substeps":{"consent":{"presentation":{"chrome":"hidden_on_mobile"}},"review":{"presentation":{"chrome":"hidden_on_mobile"}}}');
     expect(html).toContain('"disclosure":{"text":"Al marcar esta casilla y hacer clic en “Enviar”, yo, Ana Lopez');
     expect(html).toContain(
-      '\\u003cspan data-tf-element-role=\\"consent-advertiser-name\\"\\u003eLiderna Inc\\u003c/span\\u003e',
+      '\\u003cspan data-tf-element-role=\\"consent-advertiser-name\\"\\u003eLiderna Inc y a sus socios, agentes y proveedores de seguros\\u003c/span\\u003e',
     );
     expect(html).toContain(
       '\\u003cspan data-tf-element-role=\\"consent-grantor-phone\\"\\u003e(615) 555-1234\\u003c/span\\u003e',
@@ -3441,7 +3454,7 @@ describe("form rendering", () => {
     expect(html).not.toContain('"nameKeys"');
     expect(html).not.toContain('"phoneKey"');
     expect(html).toContain('data-step="10" data-step-kind="trusted_form_consent"');
-    expect(html).toContain('data-form-chrome="visible"');
+    expect(html).toContain('data-form-chrome="hidden_on_mobile"');
     expect(html).toContain('<h1 class="question-title" data-question-title>Antes de enviar</h1>');
     expect(html).not.toContain('<h1 class="question-title" data-question-title><p>Antes de enviar</p></h1>');
     expect(html).toContain('method="post" action="/api/forms/tn_custom/native-submissions"');
@@ -3477,6 +3490,7 @@ describe("form rendering", () => {
     expect(html).toContain(
       '.consent-acceptance {\n        display: block;\n        margin-top: 8px;\n        color: var(--brand-navy);\n        font-weight: 800;\n      }',
     );
+    expect(html).toContain("margin-top: var(--mfs-8);");
     expect(html).not.toContain("data-consent-summary");
     expect(html).not.toContain("consent-summary");
     expect(html).toContain(

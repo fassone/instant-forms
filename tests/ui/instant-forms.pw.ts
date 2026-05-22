@@ -369,7 +369,7 @@ test.describe("instant routed form UI", () => {
   });
 
   test("TrustedForm consent copy scrolls on small mobile without covering actions", async ({ page }) => {
-    await page.setViewportSize({ width: 390, height: 600 });
+    await page.setViewportSize({ width: 320, height: 420 });
     await mockTrustedFormCertify(page);
     await seedCheckpoint(page, {
       ...seenMatchingAnswers,
@@ -378,8 +378,8 @@ test.describe("instant routed form UI", () => {
       phone_number: "+17864746654",
     });
     await page.goto("/tn/custom/consentimiento");
-    await expect(page.locator('img[alt="Seguros Aseguranza"]')).toBeVisible();
-    await expect(page.locator("[data-step-count]")).toBeVisible();
+    await expect(page.locator('img[alt="Seguros Aseguranza"]')).toBeHidden();
+    await expect(page.locator("[data-step-count]")).toBeHidden();
     await continueTrustedFormReview(page);
     await expect(page.locator('img[alt="Seguros Aseguranza"]')).toBeHidden();
     await expect(page.locator("[data-step-count]")).toBeHidden();
@@ -392,6 +392,11 @@ test.describe("instant routed form UI", () => {
 
     await expect(consentShell).toBeVisible();
     await expect(consentScroll).toBeVisible();
+    await consentScroll.evaluate((element) => {
+      element.style.height = "40px";
+      element.style.maxHeight = "40px";
+      element.dispatchEvent(new Event("scroll", { bubbles: true }));
+    });
     await expect(consentShell).toHaveAttribute("data-can-scroll-up", "false");
     await expect(consentShell).toHaveAttribute("data-can-scroll-down", "true");
     await expect(bottomFade).toHaveCSS("opacity", "1");
@@ -416,6 +421,49 @@ test.describe("instant routed form UI", () => {
     });
     await expect(consentShell).toHaveAttribute("data-can-scroll-down", "false");
     await expect(bottomFade).toHaveCSS("opacity", "0");
+  });
+
+  test("mobile fluid scale shrinks layout dimensions below 500px", async ({ page }) => {
+    const widths = [500, 390, 360, 320] as const;
+    const measurements: Array<{ width: number; titleFont: number; buttonHeight: number; panelPadding: number }> = [];
+
+    for (const width of widths) {
+      await page.setViewportSize({ width, height: 700 });
+      await page.goto("/tn/custom/vive-en-tennessee");
+      measurements.push(
+        await page.evaluate(() => {
+          type BrowserElement = {
+            getBoundingClientRect: () => { height: number };
+          };
+          const browserScope = globalThis as unknown as {
+            document: { querySelector: (selector: string) => unknown };
+            getComputedStyle: (element: unknown) => { fontSize: string; paddingLeft: string };
+            innerWidth: number;
+          };
+          const title = browserScope.document.querySelector("[data-question-title]");
+          const button = browserScope.document.querySelector('button[name="next"]') as BrowserElement | null;
+          const panel = browserScope.document.querySelector("form");
+          if (!title || !button || !panel) {
+            throw new Error("Expected form elements to be present.");
+          }
+          const titleStyles = browserScope.getComputedStyle(title);
+          const buttonBox = button.getBoundingClientRect();
+          const panelStyles = browserScope.getComputedStyle(panel);
+          return {
+            width: browserScope.innerWidth,
+            titleFont: Number.parseFloat(titleStyles.fontSize),
+            buttonHeight: buttonBox.height,
+            panelPadding: Number.parseFloat(panelStyles.paddingLeft),
+          };
+        }),
+      );
+    }
+
+    for (let index = 1; index < measurements.length; index += 1) {
+      expect(measurements[index]!.titleFont).toBeLessThan(measurements[index - 1]!.titleFont);
+      expect(measurements[index]!.buttonHeight).toBeLessThan(measurements[index - 1]!.buttonHeight);
+      expect(measurements[index]!.panelPadding).toBeLessThan(measurements[index - 1]!.panelPadding);
+    }
   });
 
   test("unchecked TrustedForm consent stays clickable and shows the modal", async ({ page }) => {

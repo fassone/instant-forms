@@ -980,6 +980,35 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
       }
 
       @media (max-width: 560px) {
+        :root {
+          --mobile-fluid-scale: min(1, calc(100vw / 500px));
+          --mfs: var(--mobile-fluid-scale);
+          --mfs-2: min(2px, 0.4vw);
+          --mfs-3: min(3px, 0.6vw);
+          --mfs-4: min(4px, 0.8vw);
+          --mfs-6: min(6px, 1.2vw);
+          --mfs-8: min(8px, 1.6vw);
+          --mfs-10: min(10px, 2vw);
+          --mfs-12: min(12px, 2.4vw);
+          --mfs-14: min(14px, 2.8vw);
+          --mfs-16: min(16px, 3.2vw);
+          --mfs-18: min(18px, 3.6vw);
+          --mfs-20: min(20px, 4vw);
+          --mfs-22: min(22px, 4.4vw);
+          --mfs-24: min(24px, 4.8vw);
+          --mfs-28: min(28px, 5.6vw);
+          --mfs-32: min(32px, 6.4vw);
+          --mfs-34: min(34px, 6.8vw);
+          --mfs-40: min(40px, 8vw);
+          --mfs-42: min(42px, 8.4vw);
+          --mfs-48: min(48px, 9.6vw);
+          --mfs-56: min(56px, 11.2vw);
+          --mfs-58: min(58px, 11.6vw);
+          --mfs-64: min(64px, 12.8vw);
+          --mfs-68: min(68px, 13.6vw);
+          font-size: min(16px, 3.2vw);
+        }
+
         html {
           height: 100%;
           background: var(--surface);
@@ -1013,7 +1042,14 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
           border: 0;
           border-radius: 0;
           box-shadow: none;
-          padding: calc(40px + env(safe-area-inset-top)) 24px calc(32px + env(safe-area-inset-bottom));
+          padding:
+            calc(var(--mfs-40) + env(safe-area-inset-top))
+            var(--mfs-24)
+            calc(var(--mfs-32) + env(safe-area-inset-bottom));
+        }
+
+        .form-panel {
+          gap: var(--mfs-28);
         }
 
         .form-panel:has(.step[aria-hidden="false"][data-step-kind="text"] .text-input:focus),
@@ -1035,14 +1071,98 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
 
         .brand {
           align-items: flex-start;
+          gap: var(--mfs-16);
         }
 
         .brand-logo {
-          width: min(58vw, 190px);
+          width: min(190px, 38vw);
+        }
+
+        .area-pill {
+          font-size: 0.85rem;
+          padding: var(--mfs-6) var(--mfs-12);
+        }
+
+        .progress-meta {
+          bottom: calc(100% + var(--mfs-6));
+        }
+
+        .progress-shell {
+          height: var(--mfs-8);
+        }
+
+        .step-count {
+          font-size: 0.95rem;
         }
 
         .question-title {
           max-width: 100%;
+          margin-bottom: var(--mfs-28);
+        }
+
+        .question-description {
+          font-size: 1.05rem;
+        }
+
+        .matching-content {
+          min-height: min(300px, 60vw);
+          gap: var(--mfs-16);
+        }
+
+        .options {
+          gap: var(--mfs-12);
+        }
+
+        .option {
+          min-height: var(--mfs-64);
+          gap: var(--mfs-14);
+          padding: var(--mfs-16) var(--mfs-18);
+        }
+
+        .option input {
+          width: var(--mfs-20);
+          height: var(--mfs-20);
+        }
+
+        .option-index {
+          width: var(--mfs-28);
+          height: var(--mfs-28);
+          border-radius: var(--mfs-6);
+          font-size: 0.85rem;
+        }
+
+        .option-text {
+          font-size: 1.15rem;
+        }
+
+        .text-input {
+          min-height: var(--mfs-68);
+          border-bottom-width: var(--mfs-3);
+          padding: var(--mfs-6) 0;
+        }
+
+        .autocomplete-suggestions-shell {
+          margin-top: var(--mfs-12);
+        }
+
+        .autocomplete-suggestions {
+          gap: var(--mfs-8);
+          padding: var(--mfs-2) var(--mfs-4) var(--mfs-2) 0;
+        }
+
+        .autocomplete-scroll-fade,
+        .trusted-form-review-scroll-fade,
+        .consent-scroll-fade {
+          height: var(--mfs-32);
+        }
+
+        .autocomplete-suggestion {
+          min-height: var(--mfs-48);
+          padding: 0 var(--mfs-14);
+        }
+
+        .autocomplete-suggestion-value {
+          margin-left: var(--mfs-6);
         }
 
         #steps {
@@ -1052,13 +1172,19 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         .actions {
           align-items: stretch;
           flex-direction: column;
+          gap: var(--mfs-12);
         }
 
         .button {
           flex: 1;
-          min-height: 58px;
-          padding: 0 24px;
+          min-height: var(--mfs-58);
+          gap: var(--mfs-10);
+          padding: 0 var(--mfs-24);
           font-size: 1.12rem;
+        }
+
+        .button-spinner {
+          border-width: var(--mfs-2);
         }
 
         .button-primary {
@@ -1070,15 +1196,93 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         }
 
         .step[data-step-kind="trusted_form_consent"][aria-hidden="false"] {
-          gap: 14px;
+          gap: var(--mfs-14);
+        }
+
+        .trusted-form-panels {
+          gap: var(--mfs-20);
+        }
+
+        .trusted-form-review-scroll {
+          padding: 0 var(--mfs-4) var(--mfs-8) 0;
+        }
+
+        .trusted-form-review-list {
+          gap: var(--mfs-8);
+        }
+
+        .trusted-form-review-row {
+          gap: var(--mfs-12);
+          padding-bottom: var(--mfs-8);
+        }
+
+        .trusted-form-review-label {
+          font-size: 0.9rem;
+        }
+
+        .trusted-form-review-value {
+          font-size: 0.95rem;
         }
 
         .consent-card {
-          gap: 10px;
+          gap: var(--mfs-10);
         }
 
         .consent-check {
-          padding: 14px;
+          gap: var(--mfs-14);
+          padding: var(--mfs-14);
+        }
+
+        .consent-checkbox {
+          width: var(--mfs-22);
+          height: var(--mfs-22);
+          margin-top: var(--mfs-2);
+        }
+
+        .consent-scroll {
+          padding: 0 var(--mfs-4) var(--mfs-6) 0;
+        }
+
+        .consent-copy {
+          font-size: 1rem;
+        }
+
+        .consent-acceptance {
+          margin-top: var(--mfs-8);
+        }
+
+        .error-modal {
+          padding: var(--mfs-24);
+        }
+
+        .error-modal-panel {
+          padding: var(--mfs-24);
+        }
+
+        .error-modal-title {
+          margin-bottom: var(--mfs-10);
+          font-size: 1.25rem;
+        }
+
+        .error-modal-message {
+          margin-bottom: var(--mfs-20);
+          font-size: 1rem;
+        }
+
+        .error-modal-close {
+          min-height: var(--mfs-48);
+          padding: 0 var(--mfs-20);
+          font-size: 1rem;
+        }
+
+        .thanks h1,
+        .unavailable h1 {
+          margin-bottom: var(--mfs-16);
+        }
+
+        .thanks p,
+        .unavailable p {
+          font-size: 1.1rem;
         }
       }
     </style>
