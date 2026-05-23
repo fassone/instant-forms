@@ -2386,13 +2386,28 @@ describe("server routing", () => {
 
       expect(response.status).toBe(200);
       expect(response.headers.get("Content-Type")).toBe("application/javascript; charset=utf-8");
-      expect(response.headers.get("Cache-Control")).toContain("max-age=300");
+      expect(response.headers.get("Cache-Control")).toBe("private, max-age=300, no-transform");
       expect(response.headers.get("Content-Length")).toBe(String(new TextEncoder().encode(body).byteLength));
       expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
       expect(body).toContain("__trustedFormProxyLoaded");
       expect(fetchedUrl).toBe(
         "https://api.trustedform.com/trustedform.js?field=xxTrustedFormCertUrl&use_tagged_consent=true",
       );
+      expect(fetchedHeaders?.get("Cookie")).toBeNull();
+
+      const gtmResponse = await proxySelectedScript(
+        new Request("http://localhost/_instant/scripts/gtm.js?id=GTM-ABC123&l=dataLayer", {
+          headers: {
+            Cookie: "private=value",
+          },
+        }),
+        registry,
+        "gtm",
+      );
+
+      expect(gtmResponse.status).toBe(200);
+      expect(gtmResponse.headers.get("Cache-Control")).toBe("private, max-age=300, no-transform");
+      expect(fetchedUrl).toBe("https://www.googletagmanager.com/gtm.js?id=GTM-ABC123&l=dataLayer");
       expect(fetchedHeaders?.get("Cookie")).toBeNull();
     } finally {
       globalThis.fetch = originalFetch;
@@ -2429,6 +2444,7 @@ describe("server routing", () => {
 
       expect(response.status).toBe(200);
       expect(await response.text()).toBe("ok");
+      expect(response.headers.get("Cache-Control")).toBe("no-store");
       expect(fetchedUrl).toBe("https://events.trustedform.com/v1/beacon?event=submitted");
       expect(fetchedHeaders?.get("Accept")).toBe("text/plain");
       expect(fetchedHeaders?.get("Cookie")).toBeNull();
@@ -2476,6 +2492,7 @@ describe("server routing", () => {
 
       expect(response.status).toBe(200);
       expect(await response.text()).toBe("ok");
+      expect(response.headers.get("Cache-Control")).toBe("no-store");
       expect(fetchedUrl).toBe("https://www.google-analytics.com/g/collect?v=2&en=page_view");
       expect(fetchedHeaders?.get("Accept")).toBe("text/plain");
       expect(fetchedHeaders?.get("Cookie")).toBeNull();
@@ -2529,6 +2546,7 @@ describe("server routing", () => {
 
       expect(response.status).toBe(200);
       expect(response.headers.get("Content-Type")).toBe("application/javascript; charset=utf-8");
+      expect(response.headers.get("Cache-Control")).toBe("private, max-age=300, no-transform");
       expect(body).toContain("__trustedFormRouteProxyLoaded");
     } finally {
       globalThis.fetch = originalFetch;
@@ -2554,6 +2572,7 @@ describe("server routing", () => {
       const body = await response.text();
 
       expect(response.status).toBe(200);
+      expect(response.headers.get("Cache-Control")).toBe("private, max-age=300, no-transform");
       expect(body).toContain("__trustedFormNestedProxyLoaded");
       expect(fetchedUrl).toBe(
         "https://api.trustedform.com/trustedform.js?field=xxTrustedFormCertUrl&use_tagged_consent=true",
@@ -4313,11 +4332,13 @@ function createCheckpointCookie(answers: Record<string, string>): string {
 
 function getBunFetchSelectedScriptRegistry() {
   const trustedFormScript = selectedScripts.tfc;
-  if (!trustedFormScript) {
-    throw new Error("Expected selectedScripts.tfc to be registered.");
+  const gtmScript = selectedScripts.gtm;
+  if (!trustedFormScript || !gtmScript) {
+    throw new Error("Expected selectedScripts.tfc and selectedScripts.gtm to be registered.");
   }
 
   return {
+    gtm: gtmScript,
     tfc: {
       ...trustedFormScript,
       fetchRuntime: "bun" as const,

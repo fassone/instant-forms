@@ -1,7 +1,7 @@
 import type { ScriptProxyRegistry } from "./proxy-registry";
 import { buildScriptProxyUpstreamUrl, getScriptProxyDefinition, type ScriptProxyDefinition } from "./proxy-registry";
 
-const defaultScriptProxyCacheControl = "public, max-age=300, stale-while-revalidate=3600";
+const defaultScriptProxyCacheControl = "private, max-age=300, no-transform";
 const defaultScriptProxyTimeoutMs = 4_500;
 const scriptProxyFailureBody = "/* Unable to fetch selected script. */";
 const nodeFetchScript = `

@@ -19,3 +19,4 @@
 ## Change Safely
 
 Add proxy capabilities here only when they can be expressed as allowlisted script keys and explicit query parameters. Authored script selections belong in `src/authoring/scripts`.
+Selected script responses should remain private browser-cacheable only; follow-up request proxies should remain `no-store` so shared caches such as Cloudflare do not serve stale third-party content.
