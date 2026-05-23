@@ -9,6 +9,7 @@
 - Allowlisted script proxy validation.
 - Upstream URL construction from safe query aliases.
 - Partytown static asset serving helpers.
+- Partytown bootstrap source loading for pages that inline the small runtime while still serving worker assets from `/~partytown/`.
 
 ## Does Not Belong Here
 

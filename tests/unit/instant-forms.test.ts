@@ -3435,6 +3435,8 @@ describe("form rendering", () => {
     expect(html).toContain('"https://www.google-analytics.com/debug/bootstrap"');
     expect(html).toContain("\\/_instant\\/google-tags\\/proxy\\?u=https%3A%2F%2Fwww\\.googletagmanager\\.com%2Fdebug%2Fbootstrap");
     expect(html).toContain("\\/_instant\\/google-tags\\/proxy\\?u=https%3A%2F%2Fwww\\.google-analytics\\.com%2Fdebug%2Fbootstrap");
+    expect(html).toContain('<script data-partytown-runtime="true">/* Partytown');
+    expect(html).not.toContain('<script src="/~partytown/partytown.js" data-partytown-runtime="true"></script>');
     expect(html).toContain('type="text/partytown" src="/_instant/scripts/gtm.js?id=GTM-ABC123&amp;l=dataLayer"');
     expect(html).toContain("/_instant/google-tags/proxy?u=");
     expect(html).toContain("function readOriginalGoogleTagUrl");
@@ -4024,6 +4026,7 @@ describe("form rendering", () => {
 
     expect(phoneHtml).toContain('"trustedFormPreloadAssets":[{"stepKey":"trustedform_consent"');
     expect(phoneHtml).toContain('"url":"/_instant/scripts/trustedform.com/tfc.js?f=xxTrustedFormCertUrl\\u0026t=true"');
+    expect(phoneHtml).not.toContain('"url":"/~partytown/partytown.js"');
     expect(phoneHtml).not.toContain('"fieldName":"xxTrustedFormCertUrl"');
     expect(html).toContain('"kind":"trusted_form_consent"');
     expect(html).toContain('"slug":"consentimiento"');
@@ -4116,6 +4119,9 @@ describe("form rendering", () => {
     expect(html).toContain("function ensurePartytownReady(trustedForm)");
     expect(html).toContain("function getTrustedFormGlobalState()");
     expect(html).toContain("function shouldUseTrustedFormProxyAliases(trustedForm, url)");
+    expect(html).toContain("const partytownBootstrapSource =");
+    expect(html).toContain("runtime.text = partytownBootstrapSource");
+    expect(html).not.toContain('runtime.src = trustedForm.partytownScriptUrl || "/~partytown/partytown.js"');
     expect(html).toContain('script.type = "text/partytown"');
     expect(html).toContain('window.dispatchEvent(new CustomEvent("ptupdate"))');
     expect(html).toContain("function preloadTrustedFormAssets()");

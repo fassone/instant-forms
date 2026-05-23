@@ -452,15 +452,7 @@ function getTrustedFormPreloadResources(
     return [];
   }
 
-  const resources: ClientTrustedFormPreloadResource[] = [{ url: sdkUrl, as: "script" }];
-  if (trustedForm.delivery === "partytown") {
-    const partytownScriptUrl = getSameOriginPreloadPath(trustedForm.partytownScriptUrl);
-    if (partytownScriptUrl) {
-      resources.push({ url: partytownScriptUrl, as: "script" });
-    }
-  }
-
-  return resources;
+  return [{ url: sdkUrl, as: "script" }];
 }
 
 function buildTrustedFormSdkPreloadUrl(trustedForm: TrustedFormConsentStep["trustedForm"]): string | undefined {

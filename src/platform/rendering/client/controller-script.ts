@@ -1,4 +1,5 @@
 import type { FormStep } from "../../flow";
+import { getPartytownBootstrapSource } from "../../scripts/partytown-bootstrap";
 
 export type ClientBehaviorKind = FormStep["kind"];
 
@@ -722,15 +723,7 @@ function getCoreRuntimeScript(): string {
       return [];
     }
 
-    const resources = [{ url: sdkUrl, as: "script" }];
-    if (trustedForm.delivery === "partytown") {
-      const partytownScriptUrl = getSameOriginPath(trustedForm.partytownScriptUrl);
-      if (partytownScriptUrl) {
-        resources.push({ url: partytownScriptUrl, as: "script" });
-      }
-    }
-
-    return resources;
+    return [{ url: sdkUrl, as: "script" }];
   }
 
   function buildTrustedFormSdkPreloadUrl(trustedForm) {
@@ -2270,8 +2263,10 @@ function getInterstitialBehaviorScript(registerExpression: string): string {
 }
 
 function getTrustedFormBehaviorScript(registerExpression: string): string {
+  const partytownBootstrapSource = JSON.stringify(getPartytownBootstrapSource()).replace(/<\/script/giu, "<\\/script");
   return `
   ${registerExpression}("trusted_form_consent", (() => {
+    const partytownBootstrapSource = ${partytownBootstrapSource};
     const trustedFormReadyPollMs = 100;
     const trustedFormReadyTimeoutMs = 5000;
     const trustedFormReadyErrorMessage = window.__FORM_CONFIG__.ui.errors.trustedFormCertFailed;
@@ -2643,21 +2638,19 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
         return Promise.resolve();
       }
       const runtime = document.createElement("script");
-      runtime.src = trustedForm.partytownScriptUrl || "/~partytown/partytown.js";
-      runtime.async = false;
       runtime.dataset.partytownRuntime = "true";
       partytownLoadPromise = new Promise((resolve, reject) => {
-        runtime.addEventListener("load", () => {
+        try {
+          runtime.text = partytownBootstrapSource;
+          document.head.appendChild(runtime);
           partytownLoaded = true;
           resolve();
-        }, { once: true });
-        runtime.addEventListener("error", () => {
+        } catch {
           partytownLoadPromise = undefined;
           runtime.remove();
           reject(new Error(trustedFormReadyErrorMessage));
-        }, { once: true });
+        }
       });
-      document.head.appendChild(runtime);
       return partytownLoadPromise;
     }
 

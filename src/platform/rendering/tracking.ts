@@ -1,3 +1,5 @@
+import { getPartytownBootstrapSource } from "../scripts/partytown-bootstrap";
+
 export type ClientGoogleTagManagerConfig = {
   containerId: string;
   dataLayerName: "dataLayer";
@@ -195,7 +197,7 @@ export function renderGoogleTagManagerHead(
       }
 ${eventLines}
     </script>
-    <script src="${escapeHtml(googleTagManager.partytownScriptUrl)}" data-partytown-runtime="true"></script>
+    <script data-partytown-runtime="true">${escapeInlineScript(getPartytownBootstrapSource())}</script>
     <script type="text/partytown" src="${escapeHtml(googleTagManager.scriptUrl)}"></script>
 `;
 }
@@ -230,4 +232,8 @@ function escapeHtml(value: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+function escapeInlineScript(value: string): string {
+  return value.replace(/<\/script/giu, "<\\/script");
 }

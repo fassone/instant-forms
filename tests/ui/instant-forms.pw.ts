@@ -119,6 +119,12 @@ test.describe("instant routed form UI", () => {
   test("GTM follow-up requests are rewritten through the first-party proxy", async ({ page }) => {
     let directDebugBootstrapRequests = 0;
     let proxiedDebugBootstrapRequests = 0;
+    let partytownBootstrapRequests = 0;
+    page.on("request", (request) => {
+      if (new URL(request.url()).pathname === "/~partytown/partytown.js") {
+        partytownBootstrapRequests += 1;
+      }
+    });
     await page.route("https://www.googletagmanager.com/debug/bootstrap**", async (route) => {
       directDebugBootstrapRequests += 1;
       await route.fulfill({
@@ -184,6 +190,7 @@ test.describe("instant routed form UI", () => {
     await expect
       .poll(() => page.evaluate("Boolean(window.__DIRECT_GTM_DEBUG_BOOTSTRAP_REQUEST__)"))
       .toBe(false);
+    expect(partytownBootstrapRequests).toBe(0);
   });
 
   test("production optimistic transitions do not wait for slow checkpoint responses", async ({ page }) => {
@@ -627,9 +634,8 @@ test.describe("instant routed form UI", () => {
       )
       .toBe(false);
     await expect(page.locator('input[name="xxTrustedFormCertUrl"]')).toHaveCount(0);
-    expect(partytownRequests).toBeLessThanOrEqual(1);
+    expect(partytownRequests).toBe(0);
     await expect.poll(() => trustedFormProxyRequests).toBeGreaterThan(0);
-    const preConsentPartytownRequests = partytownRequests;
     const preConsentProxyRequests = trustedFormProxyRequests;
     expect(trustedFormDirectRequests).toBe(0);
 
@@ -643,7 +649,7 @@ test.describe("instant routed form UI", () => {
 
     await expect(page).toHaveURL(/\/tn\/custom\/consentimiento$/u);
     await continueTrustedFormReview(page);
-    expect(partytownRequests).toBeGreaterThanOrEqual(preConsentPartytownRequests);
+    expect(partytownRequests).toBe(0);
     expect(trustedFormDirectRequests).toBe(0);
     await expect
       .poll(() =>
@@ -783,32 +789,33 @@ async function mockTrustedFormCertify(page: Page, options: { delayMs?: number } 
 }
 
 async function mockPartytownRuntime(page: Page, onRequest: () => void = () => undefined): Promise<void> {
+  await page.addInitScript(`
+    (function () {
+      function executePartytownScripts() {
+        document.querySelectorAll('script[type="text/partytown"]').forEach(function (script) {
+          if (script.dataset.partytownExecuted === "true") {
+            return;
+          }
+          script.dataset.partytownExecuted = "true";
+          var executable = document.createElement("script");
+          executable.async = true;
+          if (script.src) {
+            executable.src = script.src;
+          } else {
+            executable.textContent = script.textContent;
+          }
+          document.body.appendChild(executable);
+        });
+      }
+      window.addEventListener("ptupdate", executePartytownScripts);
+      window.setTimeout(executePartytownScripts, 0);
+    })();
+  `);
   await page.route("**/~partytown/partytown.js", async (route) => {
     onRequest();
     await route.fulfill({
       contentType: "application/javascript",
-      body: `
-        (function () {
-          function executePartytownScripts() {
-            document.querySelectorAll('script[type="text/partytown"]').forEach(function (script) {
-              if (script.dataset.partytownExecuted === "true") {
-                return;
-              }
-              script.dataset.partytownExecuted = "true";
-              var executable = document.createElement("script");
-              executable.async = true;
-              if (script.src) {
-                executable.src = script.src;
-              } else {
-                executable.textContent = script.textContent;
-              }
-              document.body.appendChild(executable);
-            });
-          }
-          window.addEventListener("ptupdate", executePartytownScripts);
-          window.setTimeout(executePartytownScripts, 0);
-        })();
-      `,
+      body: "",
     });
   });
 }
