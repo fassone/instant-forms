@@ -134,7 +134,6 @@ void trustedFormCertify({
 
 void googleTagManager({
   containerId: "GTM-ABC123",
-  includeContext: ["areaCode", "product"] as const,
 });
 
 void googleTagManager({

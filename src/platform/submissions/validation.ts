@@ -11,6 +11,7 @@ export type DeliveryPayload = {
 
 export type SubmissionPayload = {
   routeKey: string;
+  submissionId: string;
   formName: string;
   pageName: string;
   submittedAt: string;
@@ -41,6 +42,7 @@ export function validateSubmission(
   routeKey: string,
   input: unknown,
   submittedAt = new Date().toISOString(),
+  submissionId = crypto.randomUUID(),
 ): SubmissionValidationResult {
   if (!isRecord(input) || !isRecord(input.answers)) {
     return {
@@ -116,6 +118,7 @@ export function validateSubmission(
     ok: true,
     payload: {
       routeKey,
+      submissionId,
       formName: form.name,
       pageName: form.page.name,
       submittedAt,

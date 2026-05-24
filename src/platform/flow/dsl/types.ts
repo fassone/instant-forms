@@ -57,7 +57,6 @@ export type GoogleTagManagerConfig<TContextKey extends string = string> = {
   containerId: GoogleTagManagerContainerId;
   delivery: GoogleTagManagerDelivery;
   proxy: GoogleTagManagerProxy;
-  includeContext?: readonly TContextKey[];
   dataLayerName: "dataLayer";
   scriptProxyKey: "gtm";
   scriptBaseUrl: "/_instant/scripts/gtm.js";
@@ -65,8 +64,80 @@ export type GoogleTagManagerConfig<TContextKey extends string = string> = {
   partytownScriptUrl: "/~partytown/partytown.js";
 };
 
+export type TrackingEventKind =
+  | "formView"
+  | "stepView"
+  | "stepAnswer"
+  | "validationError"
+  | "trustedFormSubstepView"
+  | "submitAttempt"
+  | "submitSuccess"
+  | "submitError";
+
+export type MetaPixelId = string;
+export type MetaUserDataKey = "ph" | "em" | "fn" | "ln" | "ct" | "st" | "zp" | "country" | "external_id";
+
+export type TrackingSubmissionContext = {
+  id: string;
+};
+
+export type TrackingMetaMapping<TContract extends FormContract = FormContract> = {
+  pixelId: MetaPixelId;
+  eventName: string;
+  eventId?: (input: {
+    context: ContractContext<TContract>;
+    answers: ContractAnswers<TContract>;
+    submission: TrackingSubmissionContext;
+  }) => string;
+  userData?: (input: {
+    context: ContractContext<TContract>;
+    answers: ContractAnswers<TContract>;
+    submission: TrackingSubmissionContext;
+  }) => Partial<Record<MetaUserDataKey, string | TextValue | undefined>>;
+  customData?: (input: {
+    context: ContractContext<TContract>;
+    answers: ContractAnswers<TContract>;
+    submission: TrackingSubmissionContext;
+  }) => Record<string, string | number | boolean | undefined>;
+};
+
+export type TrackingEventConfig<
+  TKind extends TrackingEventKind = TrackingEventKind,
+  TContextKey extends string = string,
+  TContract extends FormContract = FormContract,
+> = {
+  kind: TKind;
+  name: string;
+  includeContext?: readonly TContextKey[];
+  includeStep?: boolean;
+  meta?: TrackingMetaMapping<TContract>;
+};
+
+export type TrackingEventInput<
+  TKind extends TrackingEventKind,
+  TContextKey extends string,
+  TContract extends FormContract,
+> = Omit<TrackingEventConfig<TKind, TContextKey, TContract>, "kind">;
+
+export type StepTrackingEventOverride<TContextKey extends string = string> =
+  | false
+  | {
+      name: string;
+      includeContext?: readonly TContextKey[];
+      includeStep?: boolean;
+    };
+
+export type StepTracking<TContextKey extends string = string> = Partial<
+  Record<Exclude<TrackingEventKind, "formView" | "submitSuccess">, StepTrackingEventOverride<TContextKey>>
+>;
+
 export type FormTracking<TContract extends FormContract = FormContract> = {
   googleTagManager?: GoogleTagManagerConfig<ContractSchemaKeys<TContract["context"]>>;
+  events?: readonly TrackingEventConfig<
+    TrackingEventKind,
+    ContractSchemaKeys<TContract["context"]>,
+    TContract
+  >[];
 };
 
 export type StepBehavior = {
@@ -90,6 +161,7 @@ export type BaseStep<
   behavior: StepBehavior;
   countsAsStep?: boolean;
   presentation?: StepPresentation;
+  tracking?: StepTracking;
   showWhen?: TShowWhen;
 };
 
@@ -493,6 +565,7 @@ export type BaseStepInput<
   label: string;
   countsAsStep?: boolean;
   presentation?: StepPresentation;
+  tracking?: StepTracking;
   showWhen?: TShowWhen;
 };
 
@@ -565,6 +638,7 @@ export type TrustedFormConsentStepInput<
   slug: string;
   countsAsStep?: boolean;
   presentation?: StepPresentation;
+  tracking?: StepTracking;
   showWhen?: TShowWhen;
   review: TrustedFormReviewInput<TReviewTitle, TReviewDescription, TReviewFields>;
   consent: TrustedFormConsentCopyInput<TConsentTitle, TConsentDescription, TDisclosure>;
@@ -581,6 +655,7 @@ export type TrustedFormConsentStepDynamicInput<
   slug: string;
   countsAsStep?: boolean;
   presentation?: StepPresentation;
+  tracking?: StepTracking;
   showWhen?: TShowWhen;
   substeps?: TrustedFormConsentSubstepsPresentation;
   acceptedAnswer?: "accepted";
@@ -715,7 +790,38 @@ export type FormFlowDefinitionBase<TContract extends FormContract = FormContract
   context: Readonly<Partial<ContractContextInput<TContract>>>;
   payload: FormPayloadDelivery<TContract>;
   page: FormPage;
-  tracking?: FormTracking<TContract>;
+  tracking?: FormTracking<TContract> | ((helpers: TrackingAuthoringHelpers<TContract>) => FormTracking<TContract>);
+};
+
+export type TrackingEventAuthoringHelpers<TContract extends FormContract> = {
+  readonly formView: (
+    input: TrackingEventInput<"formView", ContractSchemaKeys<TContract["context"]>, TContract>,
+  ) => TrackingEventConfig<"formView", ContractSchemaKeys<TContract["context"]>, TContract>;
+  readonly stepView: (
+    input: TrackingEventInput<"stepView", ContractSchemaKeys<TContract["context"]>, TContract>,
+  ) => TrackingEventConfig<"stepView", ContractSchemaKeys<TContract["context"]>, TContract>;
+  readonly stepAnswer: (
+    input: TrackingEventInput<"stepAnswer", ContractSchemaKeys<TContract["context"]>, TContract>,
+  ) => TrackingEventConfig<"stepAnswer", ContractSchemaKeys<TContract["context"]>, TContract>;
+  readonly validationError: (
+    input: TrackingEventInput<"validationError", ContractSchemaKeys<TContract["context"]>, TContract>,
+  ) => TrackingEventConfig<"validationError", ContractSchemaKeys<TContract["context"]>, TContract>;
+  readonly trustedFormSubstepView: (
+    input: TrackingEventInput<"trustedFormSubstepView", ContractSchemaKeys<TContract["context"]>, TContract>,
+  ) => TrackingEventConfig<"trustedFormSubstepView", ContractSchemaKeys<TContract["context"]>, TContract>;
+  readonly submitAttempt: (
+    input: TrackingEventInput<"submitAttempt", ContractSchemaKeys<TContract["context"]>, TContract>,
+  ) => TrackingEventConfig<"submitAttempt", ContractSchemaKeys<TContract["context"]>, TContract>;
+  readonly submitSuccess: (
+    input: TrackingEventInput<"submitSuccess", ContractSchemaKeys<TContract["context"]>, TContract>,
+  ) => TrackingEventConfig<"submitSuccess", ContractSchemaKeys<TContract["context"]>, TContract>;
+  readonly submitError: (
+    input: TrackingEventInput<"submitError", ContractSchemaKeys<TContract["context"]>, TContract>,
+  ) => TrackingEventConfig<"submitError", ContractSchemaKeys<TContract["context"]>, TContract>;
+};
+
+export type TrackingAuthoringHelpers<TContract extends FormContract> = {
+  readonly event: TrackingEventAuthoringHelpers<TContract>;
 };
 
 export type FormFlowInput<

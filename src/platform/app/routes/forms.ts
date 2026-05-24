@@ -1,4 +1,5 @@
-import type { Hono } from "hono";
+import type { Context, Hono } from "hono";
+import { getCookie } from "hono/cookie";
 
 import {
   canAccessStep,
@@ -21,7 +22,12 @@ import {
   type FormRoutes,
 } from "../../routing";
 import { validateSubmission, type SubmissionPayload } from "../../submissions/validation";
-import { createBaseTrackingPayload, createResolvedStepPayload, renderGoogleTagManagerHead } from "../../rendering";
+import {
+  createLifecycleTrackingPayload,
+  createResolvedStepPayload,
+  renderGoogleTagManagerHead,
+  type MetaBrowserIds,
+} from "../../rendering";
 import { createClientFormConfig } from "../../rendering/client/config";
 import { clearCheckpointAnswers, readCheckpointAnswers, setCheckpointAnswers } from "../http/cookies";
 import { htmlResponse, jsonResponse } from "../http/responses";
@@ -214,7 +220,23 @@ export function registerFormRoutes(app: Hono, routes: FormRoutes, logger: Submis
     logger(validation.payload);
     clearCheckpointAnswers(c, routeEntry.routeKey);
 
-    return jsonResponse(c, { ok: true, submittedAt: validation.payload.submittedAt }, 201);
+    const trackingEvents = createNativeSubmissionTrackingEvents(
+      routeEntry.form,
+      routeEntry.routeKey,
+      c.req.raw,
+      validation.payload,
+      getJsonMetaBrowserIds(body.value),
+    );
+
+    return jsonResponse(
+      c,
+      {
+        ok: true,
+        submittedAt: validation.payload.submittedAt,
+        trackingEvents,
+      },
+      201,
+    );
   });
 
   app.post("/api/forms/:routeKey/native-submissions", async (c) => {
@@ -256,7 +278,17 @@ export function registerFormRoutes(app: Hono, routes: FormRoutes, logger: Submis
     logger(validation.payload);
     clearCheckpointAnswers(c, routeEntry.routeKey);
 
-    const response = htmlResponse(renderNativeSubmissionThanksPage(routeEntry.form, routeEntry.routeKey), 200, "no-store");
+    const response = htmlResponse(
+      renderNativeSubmissionThanksPage(
+        routeEntry.form,
+        routeEntry.routeKey,
+        validation.payload,
+        createNativeSubmissionMetaBrowserIds(c, formDataResult.value),
+        c.req.raw.url,
+      ),
+      200,
+      "no-store",
+    );
     const setCookie = c.res.headers.get("Set-Cookie");
     if (setCookie) {
       response.headers.set("Set-Cookie", setCookie);
@@ -330,18 +362,98 @@ function getNativeTrustedFormCertUrl(form: InstantForm, formData: NativeFormData
   return undefined;
 }
 
-function renderNativeSubmissionThanksPage(form: InstantForm, routeKey: string): string {
+function createNativeSubmissionTrackingEvents(
+  form: InstantForm,
+  routeKey: string,
+  request: Pick<Request, "url">,
+  payload: SubmissionPayload,
+  browserIds: MetaBrowserIds = {},
+) {
+  const eventSourceUrl = getRequestPageUrl(request.url);
+  const eventPayload = createLifecycleTrackingPayload({
+    form,
+    routeKey,
+    kind: "submitSuccess",
+    submission: payload,
+    browserIds,
+    eventSourceUrl: browserIds.eventSourceUrl ?? eventSourceUrl,
+  });
+
+  return eventPayload ? [eventPayload] : [];
+}
+
+function getJsonMetaBrowserIds(input: unknown): MetaBrowserIds {
+  if (!isRecord(input) || !isRecord(input.tracking)) {
+    return {};
+  }
+
+  return readMetaBrowserIds(input.tracking, {});
+}
+
+function createNativeSubmissionMetaBrowserIds(c: Context, formData: NativeFormData): MetaBrowserIds {
+  return readMetaBrowserIds(getNativeTrackingFields(formData), {
+    fbp: getCookie(c, "_fbp"),
+    fbc: getCookie(c, "_fbc"),
+  });
+}
+
+function getNativeTrackingFields(formData: NativeFormData): Record<string, string> {
+  const values: Record<string, string> = {};
+  const trackingFieldPattern = /^tracking\[([^\]]+)\]$/u;
+
+  for (const [fieldName, fieldValue] of formData.entries()) {
+    if (typeof fieldValue !== "string") {
+      continue;
+    }
+
+    const match = trackingFieldPattern.exec(fieldName);
+    const key = match?.[1];
+    if (key) {
+      values[key] = fieldValue.trim();
+    }
+  }
+
+  return values;
+}
+
+function readMetaBrowserIds(input: Record<string, unknown>, fallback: MetaBrowserIds): MetaBrowserIds {
+  return {
+    ...fallback,
+    ...getStringProperty(input, "fbp", "_fbp"),
+    ...getStringProperty(input, "fbc", "_fbc"),
+    ...getStringProperty(input, "fbclid"),
+    ...getStringProperty(input, "eventSourceUrl"),
+  };
+}
+
+function getStringProperty(input: Record<string, unknown>, ...keys: readonly string[]): MetaBrowserIds {
+  for (const key of keys) {
+    const value = input[key];
+    if (typeof value === "string" && value.trim()) {
+      return { [key.startsWith("_") ? key.slice(1) : key]: value.trim() };
+    }
+  }
+
+  return {};
+}
+
+function getRequestPageUrl(url: string): string {
+  const requestUrl = new URL(url);
+  requestUrl.pathname = requestUrl.pathname.replace(/\/api\/forms\/[^/]+\/native-submissions$/u, "");
+  return requestUrl.toString();
+}
+
+function renderNativeSubmissionThanksPage(
+  form: InstantForm,
+  routeKey: string,
+  payload: SubmissionPayload,
+  browserIds: MetaBrowserIds,
+  eventSourceUrl: string,
+): string {
   const googleTagManager = getNativePageGoogleTagManager(form, routeKey);
   const trackingHead = renderGoogleTagManagerHead(
     googleTagManager,
-    googleTagManager
-      ? [
-          {
-            event: "instant_form_submit_success",
-            ...createBaseTrackingPayload(googleTagManager),
-          },
-        ]
-      : [],
+    createNativeSubmissionTrackingEvents(form, routeKey, { url: eventSourceUrl }, payload, browserIds),
   );
 
   return `<!doctype html>
@@ -423,14 +535,15 @@ function renderNativeSubmissionErrorPageContent(
   const googleTagManager = form ? getNativePageGoogleTagManager(form, routeKey ?? "native_submission") : undefined;
   const trackingHead = renderGoogleTagManagerHead(
     googleTagManager,
-    googleTagManager
+    form
       ? [
-          {
-            event: "instant_form_submit_error",
-            ...createBaseTrackingPayload(googleTagManager),
-            error_message: message,
-          },
-        ]
+          createLifecycleTrackingPayload({
+            form,
+            routeKey: routeKey ?? "native_submission",
+            kind: "submitError",
+            extra: { error_message: message },
+          }),
+        ].filter((eventPayload): eventPayload is NonNullable<typeof eventPayload> => Boolean(eventPayload))
       : [],
   );
 

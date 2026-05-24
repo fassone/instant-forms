@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { Hono } from "hono";
 import { existsSync, readdirSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { googleTagManager, gtmContainerIdSchema } from "../../src/authoring/integrations/google-tag-manager";
 import { trustedFormCertify } from "../../src/authoring/integrations/trusted-form";
@@ -26,7 +27,12 @@ import {
   z,
 } from "../../src/platform/flow";
 import { encodeCheckpointAnswers, getCheckpointCookieName } from "../../src/platform/persistence/checkpoints";
-import { FORM_CONFIG_PLACEHOLDER_EXPRESSION, buildTransitionAsset, renderFormPage } from "../../src/platform/rendering";
+import {
+  FORM_CONFIG_PLACEHOLDER_EXPRESSION,
+  buildTransitionAsset,
+  createLifecycleTrackingPayload,
+  renderFormPage,
+} from "../../src/platform/rendering";
 import {
   applyProductionTokens,
   applyProductionTokensToScript,
@@ -580,13 +586,11 @@ describe("form registry", () => {
         containerId: "GTM-ABC123",
         delivery: "partytown",
         proxy: "first_party",
-        includeContext: ["areaCode", "product"],
       }),
     ).toEqual({
       containerId: "GTM-ABC123",
       delivery: "partytown",
       proxy: "first_party",
-      includeContext: ["areaCode", "product"],
       dataLayerName: "dataLayer",
       scriptProxyKey: "gtm",
       scriptBaseUrl: "/_instant/scripts/gtm.js",
@@ -619,15 +623,211 @@ describe("form registry", () => {
           mapping: () => ({}),
         },
         page: { name: "Tracking Test" },
-        tracking: {
+        tracking: ({ event }) => ({
           googleTagManager: googleTagManager({
             containerId: "GTM-ABC123",
-            includeContext: ["missing_context"],
-          }) as never,
-        },
+          }),
+          events: [
+            event.formView({
+              name: "tracking_test_view",
+              includeContext: ["missing_context"] as never,
+            }),
+          ],
+        }),
         steps: [],
       }),
-    ).toThrow("tracking.googleTagManager.includeContext references unknown contract.context keys");
+    ).toThrow("tracking.events.formView.includeContext references unknown contract.context keys");
+  });
+
+  it("emits tracking events only when authored and honors step overrides", async () => {
+    const baseInput = {
+      name: "Tracking Event Test",
+      status: "ACTIVE",
+      ...testFlowCopy,
+      contract: {
+        context: z.object({ areaCode: z.string(), product: z.string() }),
+        answers: z.object({ wants_quote: z.enum(["yes", "no"]) }),
+        payload: z.object({ wantsQuote: z.string() }),
+      },
+      context: { areaCode: "TN", product: "auto_insurance" },
+      payload: {
+        method: "POST",
+        encoding: "json",
+        mapping: ({ answers }: { answers: { wants_quote: string } }) => ({ wantsQuote: answers.wants_quote }),
+      },
+      page: { name: "Tracking Event Test" },
+    } as const;
+
+    const transportOnlyFlow = defineFormFlow({
+      ...baseInput,
+      tracking: {
+        googleTagManager: googleTagManager({ containerId: "GTM-ABC123" }),
+      },
+      steps: [
+        step.choice({
+          key: "wants_quote",
+          slug: "quote",
+          label: "Do you want a quote?",
+          options: [
+            { key: "yes", label: "Yes" },
+            { key: "no", label: "No" },
+          ],
+        }),
+      ],
+    });
+
+    const transportOnlyHtml = await renderFormPage(transportOnlyFlow, { routeKey: "tracking_none" });
+    expect(transportOnlyHtml).not.toContain("instant_form_view");
+    expect(transportOnlyHtml).not.toContain("instant_form_step_view");
+
+    const authoredFlow = defineFormFlow({
+      ...baseInput,
+      tracking: ({ event }) => ({
+        googleTagManager: googleTagManager({ containerId: "GTM-ABC123" }),
+        events: [
+          event.formView({ name: "form_view", includeContext: ["areaCode"] }),
+          event.stepView({ name: "step_view", includeStep: true }),
+          event.stepAnswer({ name: "step_answer", includeStep: true }),
+        ],
+      }),
+      steps: [
+        step.choice({
+          key: "wants_quote",
+          slug: "quote",
+          label: "Do you want a quote?",
+          tracking: {
+            stepView: { name: "quote_step_view" },
+            stepAnswer: false,
+            validationError: { name: "quote_validation_error", includeStep: true },
+          },
+          options: [
+            { key: "yes", label: "Yes" },
+            { key: "no", label: "No" },
+          ],
+        }),
+      ],
+    });
+
+    const authoredHtml = await renderFormPage(authoredFlow, { routeKey: "tracking_authored" });
+    expect(authoredHtml).toContain("form_view");
+    expect(authoredHtml).toContain("step_view");
+    expect(authoredHtml).toContain("quote_step_view");
+    expect(authoredHtml).toContain("quote_validation_error");
+    expect(authoredHtml).toContain('"stepAnswer":false');
+    expect(authoredHtml).toContain('"context":{"areaCode":"TN"}');
+    expect(authoredHtml).not.toContain('"context":{"areaCode":"TN","product":"auto_insurance"}');
+  });
+
+  it("builds Meta payloads with hashed user data only", () => {
+    const flow = defineFormFlow({
+      name: "Meta Tracking Test",
+      status: "ACTIVE",
+      ...testFlowCopy,
+      contract: {
+        context: z.object({ areaCode: z.string(), product: z.string() }),
+        answers: z.object({
+          first_name: z.string(),
+          last_name: z.string(),
+          phone_number: z.string(),
+        }),
+        payload: z.object({ phone: z.string() }),
+      },
+      context: { areaCode: "TN", product: "auto_insurance" },
+      payload: {
+        method: "POST",
+        encoding: "json",
+        mapping: ({ answers }) => ({ phone: answers.phone_number }),
+      },
+      page: { name: "Meta Tracking Test" },
+      tracking: ({ event }) => ({
+        googleTagManager: googleTagManager({ containerId: "GTM-ABC123" }),
+        events: [
+          event.submitSuccess({
+            name: "instant_form_submit_success",
+            includeContext: ["areaCode"],
+            meta: {
+              pixelId: "1234567890",
+              eventName: "Lead",
+              eventId: ({ submission }) => submission.id,
+              userData: ({ answers }) => ({
+                ph: answers.phone_number,
+                fn: answers.first_name,
+                ln: answers.last_name,
+              }),
+              customData: ({ context }) => ({
+                market_state: context.areaCode,
+                content_name: context.product,
+              }),
+            },
+          }),
+        ],
+      }),
+      steps: [
+        step.text({ key: "first_name", slug: "first-name", label: "First name", autocomplete: "given-name" }),
+        step.text({ key: "last_name", slug: "last-name", label: "Last name", autocomplete: "family-name" }),
+        step.phone({ key: "phone_number", slug: "phone", label: "Phone" }),
+      ],
+    });
+
+    const validation = validateSubmission(
+      flow,
+      "meta_test",
+      {
+        answers: {
+          first_name: "Ana",
+          last_name: "Lopez",
+          phone_number: "(615) 555-1234",
+        },
+      },
+      "2026-05-23T00:00:00.000Z",
+      "11111111-1111-4111-8111-111111111111",
+    );
+
+    expect(validation.ok).toBe(true);
+    if (!validation.ok) {
+      return;
+    }
+
+    const payload = createLifecycleTrackingPayload({
+      form: flow,
+      routeKey: "meta_test",
+      kind: "submitSuccess",
+      submission: validation.payload,
+      browserIds: {
+        fbp: "fb.1.1.abc",
+        fbc: "fb.1.1.click",
+        fbclid: "click",
+      },
+      eventSourceUrl: "https://example.test/form",
+    });
+
+    expect(payload).toMatchObject({
+      event: "instant_form_submit_success",
+      route_key: "meta_test",
+      context: { areaCode: "TN" },
+      meta: {
+        pixel_id: "1234567890",
+        event_name: "Lead",
+        event_id: "11111111-1111-4111-8111-111111111111",
+        action_source: "website",
+        event_source_url: "https://example.test/form",
+        fbp: "fb.1.1.abc",
+        fbc: "fb.1.1.click",
+        fbclid: "click",
+        custom_data: {
+          market_state: "TN",
+          content_name: "auto_insurance",
+        },
+        user_data: {
+          ph: sha256Hex("16155551234"),
+          fn: sha256Hex("ana"),
+          ln: sha256Hex("lopez"),
+        },
+      },
+    });
+    expect(JSON.stringify(payload)).not.toContain("6155551234");
+    expect(JSON.stringify(payload)).not.toContain("Ana");
+    expect(JSON.stringify(payload)).not.toContain("Lopez");
   });
 
   it("validates Zod flow contracts and resolves answer variables into delivery payloads", () => {
@@ -2530,6 +2730,57 @@ describe("server routing", () => {
     }
   });
 
+  it("proxies Meta Pixel requests through an allowlisted first-party route", async () => {
+    const originalFetch = globalThis.fetch;
+    const handler = createFetchHandler();
+    let fetchedUrl = "";
+    let fetchedHeaders: Headers | undefined;
+
+    globalThis.fetch = ((input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+      fetchedUrl = input instanceof Request ? input.url : String(input);
+      fetchedHeaders = new Headers(init?.headers);
+
+      return Promise.resolve(
+        new Response("ok", {
+          headers: { "Content-Type": "text/plain" },
+        }),
+      );
+    }) as typeof fetch;
+
+    try {
+      const scriptTarget = encodeURIComponent("https://connect.facebook.net/en_US/fbevents.js");
+      const scriptResponse = await handler(
+        new Request(`http://localhost/_instant/meta/proxy?u=${scriptTarget}`, {
+          headers: {
+            Accept: "text/plain",
+            Cookie: "private=value",
+          },
+        }),
+      );
+
+      expect(scriptResponse.status).toBe(200);
+      expect(await scriptResponse.text()).toBe("ok");
+      expect(scriptResponse.headers.get("Cache-Control")).toBe("no-store");
+      expect(fetchedUrl).toBe("https://connect.facebook.net/en_US/fbevents.js");
+      expect(fetchedHeaders?.get("Accept")).toBe("text/plain");
+      expect(fetchedHeaders?.get("Cookie")).toBeNull();
+
+      const eventTarget = encodeURIComponent("https://www.facebook.com/tr?id=1234567890&ev=Lead&noscript=1");
+      const eventResponse = await handler(new Request(`http://localhost/_instant/meta/proxy?u=${eventTarget}`));
+
+      expect(eventResponse.status).toBe(200);
+      expect(await eventResponse.text()).toBe("ok");
+      expect(fetchedUrl).toBe("https://www.facebook.com/tr?id=1234567890&ev=Lead&noscript=1");
+
+      const rejectedResponse = await handler(
+        new Request(`http://localhost/_instant/meta/proxy?u=${encodeURIComponent("https://evil.test/pixel")}`),
+      );
+      expect(rejectedResponse.status).toBe(400);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it("routes nested selected-script proxy URLs through their script key", async () => {
     const app = new Hono();
     registerScriptRoutes(app, getBunFetchSelectedScriptRegistry());
@@ -3404,12 +3655,27 @@ describe("form rendering", () => {
       page: {
         name: "Tracking Form",
       },
-      tracking: {
+      tracking: ({ event }) => ({
         googleTagManager: googleTagManager({
           containerId: "GTM-ABC123",
-          includeContext: ["areaCode", "product"],
         }),
-      },
+        events: [
+          event.formView({
+            name: "instant_form_view",
+            includeContext: ["areaCode", "product"],
+          }),
+          event.stepView({
+            name: "instant_form_step_view",
+            includeContext: ["areaCode", "product"],
+            includeStep: true,
+          }),
+          event.stepAnswer({ name: "instant_form_step_answer", includeStep: true }),
+          event.validationError({ name: "instant_form_validation_error", includeStep: true }),
+          event.submitAttempt({ name: "instant_form_submit_attempt", includeStep: true }),
+          event.submitSuccess({ name: "instant_form_submit_success" }),
+          event.submitError({ name: "instant_form_submit_error", includeStep: true }),
+        ],
+      }),
       steps: [
         step.choice({
           key: "wants_quote",
@@ -3454,8 +3720,8 @@ describe("form rendering", () => {
     expect(html).toContain("instant_form_submit_error");
     expect(html).toContain('"routeKey":"tracking_custom"');
     expect(html).toContain('"tracking":{"googleTagManager"');
-    expect(html).toContain('"context":{"area_code":"TN","product":"auto_insurance"}');
-    expect(html).not.toContain('"advertiser_name"');
+    expect(html).toContain('"context":{"areaCode":"TN","product":"auto_insurance"}');
+    expect(html).not.toContain('"context":{"areaCode":"TN","product":"auto_insurance","advertiserName"');
   });
 
   it("keeps source inline assets in dev and serves built inline assets in production", async () => {
@@ -4301,6 +4567,10 @@ describe("form rendering", () => {
 
 function getRequiredTennesseeForm() {
   return getRequiredTennesseeRoute().form;
+}
+
+function sha256Hex(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
 }
 
 function getRequiredTennesseeRoute() {

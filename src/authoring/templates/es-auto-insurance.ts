@@ -1,5 +1,5 @@
-import { autocompleteSource, defineFormFlow, defineFormTemplate, z } from "../../platform/flow";
-import { googleTagManager, gtmContainerIdSchema } from "../integrations/google-tag-manager";
+import { autocompleteSource, defineFormFlow, defineFormTemplate, z, type TrackingAuthoringHelpers } from "../../platform/flow";
+import { googleTagManager, gtmContainerIdSchema, metaPixelIdSchema } from "../integrations/google-tag-manager";
 import { trustedFormCertify } from "../integrations/trusted-form";
 
 const esUiCopy = {
@@ -62,6 +62,19 @@ const autoInsurancePayloadContract = z.object({
   phone: z.string(),
 });
 
+const autoInsuranceContextContract = z.object({
+  areaCode: z.string(),
+  areaName: z.string().optional(),
+  product: z.string(),
+  advertiserName: z.string(),
+});
+
+const autoInsuranceContract = {
+  context: autoInsuranceContextContract,
+  answers: autoInsuranceAnswersContract,
+  payload: autoInsurancePayloadContract,
+} as const;
+
 export const esAutoInsuranceVariables = z.object({
   flowName: z.string(),
   pageName: z.string(),
@@ -70,28 +83,22 @@ export const esAutoInsuranceVariables = z.object({
   product: z.string(),
   advertiserName: z.string(),
   gtmContainerId: gtmContainerIdSchema.optional(),
+  metaPixelId: metaPixelIdSchema.optional(),
 });
 
 export const esAutoInsuranceTemplate = defineFormTemplate({
   variables: esAutoInsuranceVariables,
   create: ({ variables }) => {
     const areaDisplayName = variables.areaName ?? variables.areaCode;
+    const gtmContainerId = variables.gtmContainerId;
+    const metaPixelId = variables.metaPixelId;
 
     return defineFormFlow({
       name: variables.flowName,
       status: "ACTIVE",
       locale: "es",
       ui: esUiCopy,
-      contract: {
-        context: z.object({
-          areaCode: z.string(),
-          areaName: z.string().optional(),
-          product: z.string(),
-          advertiserName: z.string(),
-        }),
-        answers: autoInsuranceAnswersContract,
-        payload: autoInsurancePayloadContract,
-      },
+      contract: autoInsuranceContract,
       context: {
         areaCode: variables.areaCode,
         areaName: variables.areaName,
@@ -111,16 +118,70 @@ export const esAutoInsuranceTemplate = defineFormTemplate({
       page: {
         name: variables.pageName,
       },
-      ...(variables.gtmContainerId
+      ...(gtmContainerId
         ? {
-            tracking: {
+            tracking: ({ event }: TrackingAuthoringHelpers<typeof autoInsuranceContract>) => ({
               googleTagManager: googleTagManager({
-                containerId: variables.gtmContainerId,
+                containerId: gtmContainerId,
                 delivery: "partytown",
                 proxy: "first_party",
-                includeContext: ["areaCode", "product"],
               }),
-            },
+              events: [
+                event.formView({
+                  name: "instant_form_view",
+                  includeContext: ["areaCode", "product"],
+                }),
+                event.stepView({
+                  name: "instant_form_step_view",
+                  includeContext: ["areaCode", "product"],
+                  includeStep: true,
+                }),
+                event.stepAnswer({
+                  name: "instant_form_step_answer",
+                  includeStep: true,
+                }),
+                event.validationError({
+                  name: "instant_form_validation_error",
+                  includeStep: true,
+                }),
+                event.trustedFormSubstepView({
+                  name: "instant_form_trusted_form_substep_view",
+                  includeStep: true,
+                }),
+                event.submitAttempt({
+                  name: "instant_form_submit_attempt",
+                  includeStep: true,
+                }),
+                event.submitSuccess({
+                  name: "instant_form_submit_success",
+                  includeContext: ["areaCode", "product"],
+                  ...(metaPixelId
+                    ? {
+                        meta: {
+                          pixelId: metaPixelId,
+                          eventName: "Lead",
+                          eventId: ({ submission }) => submission.id,
+                          userData: ({ answers }) => ({
+                            ph: answers.phone_number,
+                            fn: answers.first_name,
+                            ln: answers.last_name,
+                          }),
+                          customData: ({ context }) => ({
+                            content_name: context.product,
+                            content_category: "insurance",
+                            market_state: context.areaCode,
+                            market_name: context.areaName ?? context.areaCode,
+                          }),
+                        },
+                      }
+                    : {}),
+                }),
+                event.submitError({
+                  name: "instant_form_submit_error",
+                  includeStep: true,
+                }),
+              ],
+            }),
           }
         : {}),
       steps: ({ step, text, md, phoneDisplay, stateDisplay, consentMd, tfTag }) => [
@@ -219,6 +280,9 @@ export const esAutoInsuranceTemplate = defineFormTemplate({
           key: "phone_number",
           slug: "telefono",
           label: "Número de teléfono",
+          tracking: {
+            stepAnswer: false,
+          },
         }),
         step.trustedFormConsent(
           {

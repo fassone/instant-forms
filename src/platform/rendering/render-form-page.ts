@@ -21,7 +21,7 @@ import { createClientFormConfig } from "./client/config";
 import { getFormControllerScript } from "./client/controller-script";
 import { prepareInlineAssetHtml } from "./inline-assets";
 import { renderConsentMarkdownToHtml, renderMarkdownToHtml } from "./markdown";
-import { createBaseTrackingPayload, renderGoogleTagManagerHead } from "./tracking";
+import { createLifecycleTrackingPayload, renderGoogleTagManagerHead } from "./tracking";
 
 export const FORM_CONFIG_JSON_PLACEHOLDER = "__FORM_CONFIG_JSON__";
 export const FORM_CONFIG_PLACEHOLDER_EXPRESSION = JSON.stringify(FORM_CONFIG_JSON_PLACEHOLDER);
@@ -90,11 +90,14 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
     googleTagManager,
     googleTagManager
       ? [
-          {
-            event: "instant_form_view",
-            ...createBaseTrackingPayload(googleTagManager),
-          },
-        ]
+          createLifecycleTrackingPayload({
+            form,
+            routeKey,
+            kind: "formView",
+            step: activeStepSource,
+            stepIndex: activeStepIndex,
+          }),
+        ].filter((eventPayload): eventPayload is NonNullable<typeof eventPayload> => Boolean(eventPayload))
       : [],
   );
 

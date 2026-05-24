@@ -1,3 +1,12 @@
+import { createHash } from "node:crypto";
+
+import type {
+  FormStep,
+  InstantForm,
+  TrackingEventConfig,
+  TrackingEventKind,
+} from "../flow";
+import type { SubmissionPayload } from "../submissions/validation";
 import { getPartytownBootstrapSource } from "../scripts/partytown-bootstrap";
 
 export type ClientGoogleTagManagerConfig = {
@@ -12,15 +21,34 @@ export type ClientGoogleTagManagerConfig = {
   formName: string;
   pageName: string;
   context: Readonly<Record<string, string>>;
+  events: Readonly<Record<string, ClientTrackingEventConfig>>;
+  metaPixelProxy: boolean;
 };
 
 export type ClientTrackingConfig = {
   googleTagManager?: ClientGoogleTagManagerConfig;
 };
 
+export type ClientTrackingEventConfig = {
+  name: string;
+  includeContext?: readonly string[];
+  includeStep: boolean;
+  meta?: {
+    pixelId: string;
+    eventName: string;
+  };
+};
+
 export type TrackingEventPayload = {
   event: string;
   [key: string]: unknown;
+};
+
+export type MetaBrowserIds = {
+  fbp?: string;
+  fbc?: string;
+  fbclid?: string;
+  eventSourceUrl?: string;
 };
 
 export function renderGoogleTagManagerHead(
@@ -37,6 +65,9 @@ export function renderGoogleTagManagerHead(
 
   return `    <script>
       installGoogleTagRequestProxyShim();
+      if (${serializeForScript(googleTagManager.metaPixelProxy)}) {
+        installMetaPixelRequestProxyShim();
+      }
       window.dataLayer = window.dataLayer || [];
       window.partytown = {
         ...(window.partytown || {}),
@@ -55,6 +86,9 @@ export function renderGoogleTagManagerHead(
             if (isInstantFormGoogleTagUrl(nextUrl)) {
               return new URL("/_instant/google-tags/proxy?u=" + encodeURIComponent(nextUrl.toString()), window.location.origin);
             }
+            if (${serializeForScript(googleTagManager.metaPixelProxy)} && isInstantFormMetaPixelUrl(nextUrl)) {
+              return new URL("/_instant/meta/proxy?u=" + encodeURIComponent(nextUrl.toString()), window.location.origin);
+            }
           } catch {}
           return url;
         },
@@ -67,6 +101,12 @@ export function renderGoogleTagManagerHead(
           "stats.g.doubleclick.net",
           "www.googleadservices.com",
         ].includes(url.hostname);
+      }
+      function isInstantFormMetaPixelUrl(url) {
+        return url.protocol === "https:" && (
+          url.hostname === "connect.facebook.net" ||
+          (url.hostname === "www.facebook.com" && url.pathname.startsWith("/tr"))
+        );
       }
       function installGoogleTagRequestProxyShim() {
         if (window.__INSTANT_GOOGLE_TAG_PROXY_SHIM__) {
@@ -195,6 +235,100 @@ export function renderGoogleTagManagerHead(
           (url) => String(rewriteGoogleTagUrl(url.replace(/&amp;/g, "&"))),
         );
       }
+      function installMetaPixelRequestProxyShim() {
+        if (window.__INSTANT_META_PIXEL_PROXY_SHIM__) {
+          return;
+        }
+        window.__INSTANT_META_PIXEL_PROXY_SHIM__ = true;
+        const nativeFetch = window.fetch;
+        if (typeof nativeFetch === "function") {
+          window.fetch = function(input, init) {
+            if (input instanceof Request) {
+              if (shouldProxyMetaPixelUrl(input.url)) {
+                return nativeFetch.call(this, new Request(rewriteMetaPixelUrl(input.url), input), init);
+              }
+              return nativeFetch.call(this, input, init);
+            }
+            return nativeFetch.call(this, rewriteMetaPixelUrl(input), init);
+          };
+        }
+        const nativeOpen = XMLHttpRequest.prototype.open;
+        XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+          return nativeOpen.call(this, method, rewriteMetaPixelUrl(url), ...rest);
+        };
+        if (typeof navigator.sendBeacon === "function") {
+          const nativeSendBeacon = navigator.sendBeacon.bind(navigator);
+          navigator.sendBeacon = function(url, data) {
+            return nativeSendBeacon(rewriteMetaPixelUrl(url), data);
+          };
+        }
+        patchMetaPixelSetAttribute();
+        patchMetaPixelUrlProperty(HTMLImageElement.prototype, "src");
+        patchMetaPixelUrlProperty(HTMLScriptElement.prototype, "src");
+        patchMetaPixelUrlProperty(HTMLIFrameElement.prototype, "src");
+        patchMetaPixelHtmlStringWriter(document, "write");
+        patchMetaPixelHtmlStringWriter(document, "writeln");
+        patchMetaPixelInsertAdjacentHTML();
+      }
+      function shouldProxyMetaPixelUrl(value) {
+        try {
+          const url = value instanceof URL ? value : new URL(String(value), window.location.href);
+          return isInstantFormMetaPixelUrl(url) && !isInstantFormMetaPixelProxyUrl(url);
+        } catch {
+          return false;
+        }
+      }
+      function rewriteMetaPixelUrl(value) {
+        if (!shouldProxyMetaPixelUrl(value)) {
+          return value;
+        }
+        const url = value instanceof URL ? value : new URL(String(value), window.location.href);
+        return "/_instant/meta/proxy?u=" + encodeURIComponent(url.toString());
+      }
+      function isInstantFormMetaPixelProxyUrl(url) {
+        return url.origin === window.location.origin && url.pathname === "/_instant/meta/proxy";
+      }
+      function patchMetaPixelSetAttribute() {
+        const nativeSetAttribute = Element.prototype.setAttribute;
+        Element.prototype.setAttribute = function(name, value) {
+          if (String(name).toLowerCase() === "src") {
+            return nativeSetAttribute.call(this, name, rewriteMetaPixelUrl(value));
+          }
+          return nativeSetAttribute.call(this, name, value);
+        };
+      }
+      function patchMetaPixelUrlProperty(prototype, propertyName) {
+        const descriptor = Object.getOwnPropertyDescriptor(prototype, propertyName);
+        if (!descriptor || typeof descriptor.set !== "function") {
+          return;
+        }
+        Object.defineProperty(prototype, propertyName, {
+          configurable: true,
+          enumerable: descriptor.enumerable,
+          get: descriptor.get,
+          set: function(value) {
+            return descriptor.set.call(this, rewriteMetaPixelUrl(value));
+          },
+        });
+      }
+      function patchMetaPixelHtmlStringWriter(target, methodName) {
+        const nativeMethod = target[methodName];
+        target[methodName] = function(...values) {
+          return nativeMethod.apply(this, values.map((value) => rewriteMetaPixelHtml(String(value))));
+        };
+      }
+      function patchMetaPixelInsertAdjacentHTML() {
+        const nativeInsertAdjacentHTML = Element.prototype.insertAdjacentHTML;
+        Element.prototype.insertAdjacentHTML = function(position, html) {
+          return nativeInsertAdjacentHTML.call(this, position, rewriteMetaPixelHtml(String(html)));
+        };
+      }
+      function rewriteMetaPixelHtml(html) {
+        return html.replace(
+          /https:\\/\\/(?:connect\\.facebook\\.net|www\\.facebook\\.com\\/tr)[^"'<>\\s)]*/g,
+          (url) => String(rewriteMetaPixelUrl(url.replace(/&amp;/g, "&"))),
+        );
+      }
 ${eventLines}
     </script>
     <script data-partytown-runtime="true">${escapeInlineScript(getPartytownBootstrapSource())}</script>
@@ -209,6 +343,197 @@ export function createBaseTrackingPayload(googleTagManager: ClientGoogleTagManag
     page_name: googleTagManager.pageName,
     context: googleTagManager.context,
   };
+}
+
+export function createLifecycleTrackingPayload(input: {
+  form: InstantForm;
+  routeKey: string;
+  kind: TrackingEventKind;
+  step?: FormStep;
+  stepIndex?: number;
+  extra?: Record<string, unknown>;
+  submission?: SubmissionPayload;
+  browserIds?: MetaBrowserIds;
+  eventSourceUrl?: string;
+}): TrackingEventPayload | undefined {
+  const eventConfig = getTrackingEventConfig(input.form, input.kind, input.step);
+  if (!eventConfig) {
+    return undefined;
+  }
+
+  return buildTrackingPayload(input.form, input.routeKey, eventConfig, {
+    step: input.step,
+    stepIndex: input.stepIndex,
+    extra: input.extra,
+    submission: input.submission,
+    browserIds: input.browserIds,
+    eventSourceUrl: input.eventSourceUrl,
+  });
+}
+
+export function createLifecycleTrackingPayloads(
+  items: readonly Parameters<typeof createLifecycleTrackingPayload>[0][],
+): TrackingEventPayload[] {
+  return items.flatMap((item) => {
+    const payload = createLifecycleTrackingPayload(item);
+    return payload ? [payload] : [];
+  });
+}
+
+function getTrackingEventConfig(
+  form: InstantForm,
+  kind: TrackingEventKind,
+  step: FormStep | undefined,
+): TrackingEventConfig | undefined {
+  const globalEvent = form.tracking?.events?.find((eventConfig) => eventConfig.kind === kind);
+  const stepOverride = step?.tracking?.[kind as keyof NonNullable<FormStep["tracking"]>];
+  if (stepOverride === false) {
+    return undefined;
+  }
+
+  if (stepOverride) {
+    return {
+      ...(globalEvent ?? { kind, name: "", includeStep: false }),
+      ...stepOverride,
+    };
+  }
+
+  return globalEvent;
+}
+
+function buildTrackingPayload(
+  form: InstantForm,
+  routeKey: string,
+  eventConfig: TrackingEventConfig,
+  options: {
+    step?: FormStep;
+    stepIndex?: number;
+    extra?: Record<string, unknown>;
+    submission?: SubmissionPayload;
+    browserIds?: MetaBrowserIds;
+    eventSourceUrl?: string;
+  },
+): TrackingEventPayload {
+  return {
+    event: eventConfig.name,
+    route_key: routeKey,
+    form_name: form.name,
+    page_name: form.page.name,
+    ...getIncludedContextPayload(form, eventConfig.includeContext),
+    ...(eventConfig.includeStep ? getStepTrackingPayload(options.step, options.stepIndex) : {}),
+    ...(options.extra ?? {}),
+    ...(eventConfig.meta && options.submission
+      ? { meta: createMetaPayload(form, eventConfig, options.submission, options.browserIds, options.eventSourceUrl) }
+      : {}),
+  };
+}
+
+function getIncludedContextPayload(
+  form: InstantForm,
+  includeContext: readonly string[] | undefined,
+): { context?: Record<string, string> } {
+  if (!includeContext || includeContext.length === 0) {
+    return {};
+  }
+
+  const context = Object.fromEntries(
+    includeContext.flatMap((key) => {
+      const value = form.context[key];
+      return value === undefined ? [] : [[key, value]];
+    }),
+  );
+
+  return Object.keys(context).length > 0 ? { context } : {};
+}
+
+function getStepTrackingPayload(
+  step: FormStep | undefined,
+  stepIndex: number | undefined,
+): Record<string, string | number> {
+  if (!step) {
+    return {};
+  }
+
+  return {
+    step_key: step.key,
+    step_slug: step.slug,
+    ...(typeof stepIndex === "number" ? { step_index: stepIndex } : {}),
+    step_kind: step.kind,
+  };
+}
+
+function createMetaPayload(
+  form: InstantForm,
+  eventConfig: TrackingEventConfig,
+  submission: SubmissionPayload,
+  browserIds: MetaBrowserIds | undefined,
+  eventSourceUrl: string | undefined,
+): Record<string, unknown> | undefined {
+  const meta = eventConfig.meta;
+  if (!meta) {
+    return undefined;
+  }
+
+  const input = {
+    context: form.context,
+    answers: submission.answers,
+    submission: { id: submission.submissionId },
+  };
+  const rawUserData = meta.userData?.(input) ?? {};
+  const customData = meta.customData?.(input) ?? {};
+  const eventId = meta.eventId?.(input) ?? submission.submissionId;
+
+  return {
+    pixel_id: meta.pixelId,
+    event_name: meta.eventName,
+    event_id: eventId,
+    action_source: "website",
+    event_source_url: eventSourceUrl,
+    user_data: hashMetaUserData(rawUserData),
+    custom_data: removeUndefinedValues(customData),
+    ...removeUndefinedValues({
+      fbp: browserIds?.fbp,
+      fbc: browserIds?.fbc,
+      fbclid: browserIds?.fbclid,
+    }),
+  };
+}
+
+function hashMetaUserData(input: Record<string, string | undefined>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(input).flatMap(([key, value]) => {
+      const normalized = normalizeMetaUserDataValue(key, value);
+      return normalized ? [[key, sha256Hex(normalized)]] : [];
+    }),
+  );
+}
+
+function normalizeMetaUserDataValue(key: string, value: string | undefined): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const trimmed = String(value).trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  if (key === "ph") {
+    const digits = trimmed.replace(/\D/g, "");
+    return digits || undefined;
+  }
+
+  return trimmed.toLowerCase();
+}
+
+function sha256Hex(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function removeUndefinedValues<TValue>(input: Record<string, TValue | undefined>): Record<string, TValue> {
+  return Object.fromEntries(
+    Object.entries(input).filter((entry): entry is [string, TValue] => entry[1] !== undefined),
+  );
 }
 
 function serializeForScript(value: unknown): string {

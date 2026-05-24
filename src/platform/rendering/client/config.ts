@@ -9,6 +9,7 @@ import {
   type AutocompleteStep,
   type ConsentDisclosureCopy,
   type FormStep,
+  type FormTracking,
   type FormUiCopy,
   type InstantForm,
   type InterstitialStep,
@@ -32,6 +33,7 @@ type ClientStepBase = {
   url: string;
   countsAsStep: boolean;
   presentation?: FormStep["presentation"];
+  tracking?: FormStep["tracking"];
   behavior: FormStep["behavior"];
   showWhen?: ClientStepCondition;
   dynamicResolverDependencies?: readonly string[];
@@ -220,6 +222,7 @@ function createClientStep(
     url,
     countsAsStep: isCountedStep(stepDefinition),
     ...(stepDefinition.presentation ? { presentation: stepDefinition.presentation } : {}),
+    ...(stepDefinition.tracking ? { tracking: stepDefinition.tracking } : {}),
     behavior: stepDefinition.behavior,
     showWhen: stepDefinition.showWhen,
     ...getDynamicResolverDependencyConfig(form, stepDefinition),
@@ -347,11 +350,30 @@ function createClientTrackingConfig(
     return {};
   }
 
+  const contextKeys = getClientTrackingContextKeys(form.tracking);
   const context = Object.fromEntries(
-    (googleTagManager.includeContext ?? []).flatMap((key) => {
+    contextKeys.flatMap((key) => {
       const value = form.context[key];
-      return value === undefined ? [] : [[toSnakeCase(key), value]];
+      return value === undefined ? [] : [[key, value]];
     }),
+  );
+  const events = Object.fromEntries(
+    (form.tracking?.events ?? []).map((eventConfig) => [
+      eventConfig.kind,
+      {
+        name: eventConfig.name,
+        includeContext: eventConfig.includeContext ?? [],
+        includeStep: eventConfig.includeStep === true,
+        ...(eventConfig.meta
+          ? {
+              meta: {
+                pixelId: eventConfig.meta.pixelId,
+                eventName: eventConfig.meta.eventName,
+              },
+            }
+          : {}),
+      },
+    ]),
   );
 
   return {
@@ -368,9 +390,23 @@ function createClientTrackingConfig(
         formName: form.name,
         pageName: form.page.name,
         context,
+        events,
+        metaPixelProxy: (form.tracking?.events ?? []).some((eventConfig) => Boolean(eventConfig.meta)),
       },
     },
   };
+}
+
+function getClientTrackingContextKeys(tracking: FormTracking | undefined): string[] {
+  const keys = new Set<string>();
+
+  for (const eventConfig of tracking?.events ?? []) {
+    for (const key of eventConfig.includeContext ?? []) {
+      keys.add(key);
+    }
+  }
+
+  return [...keys];
 }
 
 function buildGoogleTagManagerScriptUrl(
@@ -381,14 +417,6 @@ function buildGoogleTagManagerScriptUrl(
   url.searchParams.set("l", googleTagManager.dataLayerName);
 
   return `${url.pathname}${url.search}`;
-}
-
-function toSnakeCase(value: string): string {
-  return value
-    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
-    .replace(/[^a-zA-Z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .toLowerCase();
 }
 
 function createClientTrustedFormPreloadAssets(

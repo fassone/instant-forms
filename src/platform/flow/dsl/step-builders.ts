@@ -23,6 +23,7 @@ import type {
   StepBehavior,
   StepCondition,
   StepPresentation,
+  StepTracking,
   StepTemplateKey,
   TextStep,
   TextPart,
@@ -47,6 +48,7 @@ type RawBaseStepInput = {
   label: string;
   countsAsStep?: boolean;
   presentation?: StepPresentation;
+  tracking?: StepTracking;
   showWhen?: RawStepCondition;
 };
 type RawChoiceStepInput = RawBaseStepInput & {
@@ -567,6 +569,7 @@ function baseStep<const TInput extends RawBaseStepInput>(
     behavior,
     countsAsStep: input.countsAsStep,
     ...(input.presentation ? { presentation: input.presentation } : {}),
+    ...(input.tracking ? { tracking: input.tracking } : {}),
     showWhen: input.showWhen as InputShowWhen<TInput>,
   };
 }

@@ -6,6 +6,7 @@ import { getPartytownAssetPath, proxySelectedScript } from "../../scripts";
 export function registerScriptRoutes(app: Hono, registry: ScriptProxyRegistry): void {
   app.all("/_instant/trustedform/proxy", (c) => proxyTrustedFormRequest(c.req.raw));
   app.all("/_instant/google-tags/proxy", (c) => proxyGoogleTagRequest(c.req.raw));
+  app.all("/_instant/meta/proxy", (c) => proxyMetaPixelRequest(c.req.raw));
 
   app.get("/_instant/scripts/*", (c) => {
     const scriptFile = getScriptFileFromPath(new URL(c.req.url).pathname);
@@ -41,6 +42,8 @@ const trustedFormProxyTimeoutMs = 4_500;
 const trustedFormProxyAllowedMethods = new Set(["GET", "HEAD", "POST"]);
 const googleTagProxyTimeoutMs = 4_500;
 const googleTagProxyAllowedMethods = new Set(["GET", "HEAD", "POST"]);
+const metaPixelProxyTimeoutMs = 4_500;
+const metaPixelProxyAllowedMethods = new Set(["GET", "HEAD", "POST"]);
 const allowedGoogleTagHosts = new Set([
   "www.googletagmanager.com",
   "www.google-analytics.com",
@@ -48,6 +51,32 @@ const allowedGoogleTagHosts = new Set([
   "stats.g.doubleclick.net",
   "www.googleadservices.com",
 ]);
+
+async function proxyMetaPixelRequest(request: Request): Promise<Response> {
+  const requestUrl = new URL(request.url);
+  const target = requestUrl.searchParams.get("u");
+
+  if (!target) {
+    return new Response("Missing target URL.", { status: 400 });
+  }
+
+  let upstreamUrl: URL;
+  try {
+    upstreamUrl = new URL(target);
+  } catch {
+    return new Response("Invalid target URL.", { status: 400 });
+  }
+
+  if (!isAllowedMetaPixelUrl(upstreamUrl)) {
+    return new Response("Target URL is not allowlisted.", { status: 400 });
+  }
+
+  if (!metaPixelProxyAllowedMethods.has(request.method)) {
+    return new Response("Method not allowed.", { status: 405 });
+  }
+
+  return proxyAllowlistedRequest(request, upstreamUrl, metaPixelProxyTimeoutMs, "Unable to proxy Meta Pixel request.");
+}
 
 async function proxyGoogleTagRequest(request: Request): Promise<Response> {
   const requestUrl = new URL(request.url);
@@ -169,6 +198,13 @@ function isAllowedTrustedFormUrl(url: URL): boolean {
 
 function isAllowedGoogleTagUrl(url: URL): boolean {
   return url.protocol === "https:" && allowedGoogleTagHosts.has(url.hostname);
+}
+
+function isAllowedMetaPixelUrl(url: URL): boolean {
+  return (
+    url.protocol === "https:" &&
+    (url.hostname === "connect.facebook.net" || (url.hostname === "www.facebook.com" && url.pathname.startsWith("/tr")))
+  );
 }
 
 function getScriptFileFromPath(pathname: string): string | undefined {

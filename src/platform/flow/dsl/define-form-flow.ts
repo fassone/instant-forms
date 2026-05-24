@@ -11,6 +11,7 @@ import type {
 } from "./types";
 import { getStepDynamicResolverDependencies } from "./dynamic-resolvers";
 import { createFlowAuthoringHelpers, type FlowAuthoringHelpers } from "./step-builders";
+import { createTrackingAuthoringHelpers } from "./tracking-builders";
 
 type AnswerSchema = Record<string, unknown> & {
   safeParse: (input: unknown) => { success: boolean };
@@ -41,9 +42,11 @@ export function defineFormFlow<const TContract extends FormContract, const TStep
     typeof input.steps === "function"
       ? input.steps(createFlowAuthoringHelpers(input.contract))
       : input.steps;
+  const tracking =
+    typeof input.tracking === "function" ? input.tracking(createTrackingAuthoringHelpers()) : input.tracking;
   assertAnswerStepContract(input.contract, steps);
   assertPagePresentation(input.page);
-  assertTrackingContract(input.contract, input.tracking);
+  assertTrackingContract(input.contract, tracking);
   assertKnownTemplateVariables(input.contract, { name: input.name, page: input.page, steps });
 
   return {
@@ -56,7 +59,7 @@ export function defineFormFlow<const TContract extends FormContract, const TStep
     customVariables: context,
     payload: input.payload,
     page: input.page,
-    ...(input.tracking ? { tracking: input.tracking } : {}),
+    ...(tracking ? { tracking } : {}),
     steps,
   };
 }
@@ -87,6 +90,7 @@ function assertAnswerStepContract(
   for (const stepDefinition of steps) {
     assertShowWhenContract(contract, stepDefinition, seenAnswerKeys);
     assertDynamicResolverDependencies(contract, stepDefinition, seenAnswerKeys);
+    assertStepTrackingContract(contract, stepDefinition);
 
     if (!isAnswerStep(stepDefinition)) {
       continue;
@@ -252,11 +256,53 @@ function assertTrackingContract(contract: FormContract, tracking: FormTracking |
   }
 
   const contextKeys = new Set(getSchemaKeys(contract.context));
-  const unknownContextKeys = (googleTagManager.includeContext ?? []).filter((key) => !contextKeys.has(key));
-  if (unknownContextKeys.length > 0) {
-    throw new Error(
-      `tracking.googleTagManager.includeContext references unknown contract.context keys: ${unknownContextKeys.join(", ")}.`,
-    );
+  const seenEventKinds = new Set<string>();
+
+  for (const eventConfig of tracking.events ?? []) {
+    if (!eventConfig.name.trim()) {
+      throw new Error(`tracking.events.${eventConfig.kind}.name is required.`);
+    }
+
+    if (seenEventKinds.has(eventConfig.kind)) {
+      throw new Error(`tracking.events includes "${eventConfig.kind}" more than once.`);
+    }
+    seenEventKinds.add(eventConfig.kind);
+
+    const unknownContextKeys = (eventConfig.includeContext ?? []).filter((key) => !contextKeys.has(key));
+    if (unknownContextKeys.length > 0) {
+      throw new Error(
+        `tracking.events.${eventConfig.kind}.includeContext references unknown contract.context keys: ${unknownContextKeys.join(", ")}.`,
+      );
+    }
+
+    if (eventConfig.meta && eventConfig.kind !== "submitSuccess") {
+      throw new Error(`tracking.events.${eventConfig.kind}.meta is only supported on submitSuccess events.`);
+    }
+  }
+}
+
+function assertStepTrackingContract(contract: FormContract, stepDefinition: FormStep): void {
+  if (!stepDefinition.tracking) {
+    return;
+  }
+
+  const contextKeys = new Set(getSchemaKeys(contract.context));
+
+  for (const [eventKind, override] of Object.entries(stepDefinition.tracking)) {
+    if (override === false) {
+      continue;
+    }
+
+    if (!override.name.trim()) {
+      throw new Error(`tracking override for step "${stepDefinition.key}" event "${eventKind}" requires a name.`);
+    }
+
+    const unknownContextKeys = (override.includeContext ?? []).filter((key) => !contextKeys.has(key));
+    if (unknownContextKeys.length > 0) {
+      throw new Error(
+        `tracking override for step "${stepDefinition.key}" event "${eventKind}" references unknown contract.context keys: ${unknownContextKeys.join(", ")}.`,
+      );
+    }
   }
 }
 

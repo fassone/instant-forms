@@ -1,5 +1,6 @@
 export { defineFormFlow } from "./dsl/define-form-flow";
 export { defineFormTemplate } from "./dsl/define-form-template";
+export { createTrackingAuthoringHelpers } from "./dsl/tracking-builders";
 export {
   canResolveStepDynamicValues,
   getOptionalStepDynamicResolverDependencies,
