@@ -7,6 +7,8 @@ export function registerScriptRoutes(app: Hono, registry: ScriptProxyRegistry): 
   app.all("/_instant/trustedform/proxy", (c) => proxyTrustedFormRequest(c.req.raw));
   app.all("/_instant/google-tags/proxy", (c) => proxyGoogleTagRequest(c.req.raw));
   app.all("/_instant/meta/proxy", (c) => proxyMetaPixelRequest(c.req.raw));
+  app.all("/_instant/meta/tr", (c) => proxyMetaPixelBeaconRequest(c.req.raw));
+  app.all("/_instant/meta/tr/*", (c) => proxyMetaPixelBeaconRequest(c.req.raw));
 
   app.get("/_instant/scripts/*", (c) => {
     const scriptFile = getScriptFileFromPath(new URL(c.req.url).pathname);
@@ -66,6 +68,31 @@ async function proxyMetaPixelRequest(request: Request): Promise<Response> {
   } catch {
     return new Response("Invalid target URL.", { status: 400 });
   }
+
+  if (!isAllowedMetaPixelUrl(upstreamUrl)) {
+    return new Response("Target URL is not allowlisted.", { status: 400 });
+  }
+
+  if (!metaPixelProxyAllowedMethods.has(request.method)) {
+    return new Response("Method not allowed.", { status: 405 });
+  }
+
+  return proxyAllowlistedRequest(
+    request,
+    upstreamUrl,
+    metaPixelProxyTimeoutMs,
+    "Unable to proxy Meta Pixel request.",
+    rewriteMetaPixelScriptResponse,
+  );
+}
+
+async function proxyMetaPixelBeaconRequest(request: Request): Promise<Response> {
+  const requestUrl = new URL(request.url);
+  const upstreamUrl = new URL("https://www.facebook.com/tr");
+  const metaPathSuffix = requestUrl.pathname.slice("/_instant/meta/tr".length);
+
+  upstreamUrl.pathname = `/tr${metaPathSuffix}`;
+  upstreamUrl.search = requestUrl.search;
 
   if (!isAllowedMetaPixelUrl(upstreamUrl)) {
     return new Response("Target URL is not allowlisted.", { status: 400 });
@@ -135,6 +162,7 @@ async function proxyAllowlistedRequest(
   upstreamUrl: URL,
   timeoutMs: number,
   failureMessage: string,
+  transformResponse?: (body: ArrayBuffer, upstreamUrl: URL, headers: Headers) => { body: ArrayBuffer; contentType?: string },
 ): Promise<Response> {
   const abortController = new AbortController();
   const timeout = setTimeout(() => {
@@ -150,11 +178,13 @@ async function proxyAllowlistedRequest(
       redirect: "follow",
       signal: abortController.signal,
     });
-    const body = await upstreamResponse.arrayBuffer();
+    const upstreamBody = await upstreamResponse.arrayBuffer();
+    const transformedResponse = transformResponse?.(upstreamBody, upstreamUrl, upstreamResponse.headers);
+    const body = transformedResponse?.body ?? upstreamBody;
     const headers = new Headers({
       "Cache-Control": "no-store",
       "Content-Length": String(body.byteLength),
-      "Content-Type": upstreamResponse.headers.get("Content-Type") ?? "application/octet-stream",
+      "Content-Type": transformedResponse?.contentType ?? upstreamResponse.headers.get("Content-Type") ?? "application/octet-stream",
       "X-Content-Type-Options": "nosniff",
     });
 
@@ -174,6 +204,35 @@ async function proxyAllowlistedRequest(
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function rewriteMetaPixelScriptResponse(
+  body: ArrayBuffer,
+  upstreamUrl: URL,
+  headers: Headers,
+): { body: ArrayBuffer; contentType?: string } {
+  const contentType = headers.get("Content-Type") ?? "";
+  const isMetaScript =
+    upstreamUrl.hostname === "connect.facebook.net" &&
+    (upstreamUrl.pathname.endsWith(".js") || contentType.includes("javascript"));
+
+  if (!isMetaScript) {
+    return { body };
+  }
+
+  const source = new TextDecoder().decode(body);
+  const rewrittenSource = source
+    .replaceAll("https://www.facebook.com/tr/", "/_instant/meta/tr/")
+    .replaceAll("https://www.facebook.com/tr", "/_instant/meta/tr")
+    .replaceAll("http://www.facebook.com/tr/", "/_instant/meta/tr/")
+    .replaceAll("http://www.facebook.com/tr", "/_instant/meta/tr")
+    .replaceAll("//www.facebook.com/tr/", "/_instant/meta/tr/")
+    .replaceAll("//www.facebook.com/tr", "/_instant/meta/tr");
+
+  return {
+    body: new TextEncoder().encode(rewrittenSource).buffer,
+    contentType: contentType || "application/javascript; charset=utf-8",
+  };
 }
 
 function getProxyForwardHeaders(requestHeaders: Headers): Headers {

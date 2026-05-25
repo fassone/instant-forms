@@ -83,6 +83,7 @@ function getCoreRuntimeScript(): string {
   const resolvedStepCache = new Map();
   const resolvedStepRequests = new Map();
   const trustedFormPreloadedResources = new Set();
+  const initialTrackingEventKeys = new Set((Array.isArray(config.initialTrackingEvents) ? config.initialTrackingEvents : []).map(getTrackingEventKey));
   let lastTrackedStepViewKey = "";
 
   function registerBehaviorModule(kind, module) {
@@ -174,6 +175,8 @@ function getCoreRuntimeScript(): string {
       showErrorModal,
       showStep,
       submitForm,
+      isServerTrackedEvent,
+      trackServerFormEvent,
       trackFormEvent,
       updateNextButton,
     };
@@ -332,6 +335,7 @@ function getCoreRuntimeScript(): string {
     });
 
     captureMetaBrowserIds();
+    pushInitialClientTrackingEvents();
     showStep(config.activeStepIndex);
     preloadTransitionAsset();
     preloadTrustedFormAssets();
@@ -1486,6 +1490,43 @@ function getCoreRuntimeScript(): string {
     });
   }
 
+  function pushInitialClientTrackingEvents() {
+    pushTrackingEvents(config.initialTrackingEvents);
+  }
+
+  async function trackServerFormEvent(eventKind, payload = {}) {
+    const question = getQuestion();
+    if (!isServerTrackedEvent(eventKind, question)) {
+      trackFormEvent(eventKind, payload);
+      return;
+    }
+    const trackingEventKey = getTrackingEventKey({
+      event: getTrackingEventConfig(eventKind, question)?.name,
+      step_key: question?.key,
+      trusted_form_substep: payload.trusted_form_substep,
+    });
+    if (initialTrackingEventKeys.delete(trackingEventKey)) {
+      return;
+    }
+
+    const response = await fetch("/api/forms/" + encodeURIComponent(config.routeKey) + "/tracking-events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        eventKind,
+        stepKey: question?.key,
+        trustedFormSubstep: payload.trusted_form_substep,
+        answers,
+        tracking: getMetaBrowserTrackingData(),
+      }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return;
+    }
+    pushTrackingEvents(body.trackingEvents);
+  }
+
   function getTrackingEventConfig(eventKind, question) {
     const googleTagManager = config.tracking?.googleTagManager;
     const globalEvent = googleTagManager?.events?.[eventKind];
@@ -1504,6 +1545,17 @@ function getCoreRuntimeScript(): string {
   function isServerTrackedEvent(eventKind, question) {
     const eventConfig = getTrackingEventConfig(eventKind, question);
     return Boolean(eventConfig?.meta);
+  }
+
+  function getTrackingEventKey(eventPayload) {
+    if (!eventPayload || typeof eventPayload !== "object") {
+      return "";
+    }
+    return [
+      eventPayload.event || "",
+      eventPayload.step_key || "",
+      eventPayload.trusted_form_substep || "",
+    ].join("|");
   }
 
   function getTrackingContextPayload(eventConfig) {
@@ -2470,14 +2522,19 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
       });
       updateTrustedFormDisplayCopy(step, question);
       ctx.updateNextButton();
-      ctx.trackFormEvent("trustedFormSubstepView", {
+      const trackingPayload = {
         step_key: question.key,
         step_slug: question.slug,
         step_index: ctx.currentStep,
         step_kind: question.kind,
         step_url: question.url,
         trusted_form_substep: activeSubstep,
-      });
+      };
+      if (ctx.isServerTrackedEvent("trustedFormSubstepView", question)) {
+        void ctx.trackServerFormEvent("trustedFormSubstepView", trackingPayload);
+      } else {
+        ctx.trackFormEvent("trustedFormSubstepView", trackingPayload);
+      }
       if (activeSubstep === "review") {
         scheduleTrustedFormReviewScrollHints(step);
       } else {

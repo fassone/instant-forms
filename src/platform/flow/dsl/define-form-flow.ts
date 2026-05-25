@@ -275,8 +275,15 @@ function assertTrackingContract(contract: FormContract, tracking: FormTracking |
       );
     }
 
-    if (eventConfig.meta && eventConfig.kind !== "submitSuccess" && eventConfig.kind !== "stepAnswer") {
-      throw new Error(`tracking.events.${eventConfig.kind}.meta is only supported on submitSuccess and stepAnswer events.`);
+    if (
+      eventConfig.meta &&
+      eventConfig.kind !== "submitSuccess" &&
+      eventConfig.kind !== "stepAnswer" &&
+      eventConfig.kind !== "trustedFormSubstepView"
+    ) {
+      throw new Error(
+        `tracking.events.${eventConfig.kind}.meta is only supported on submitSuccess, stepAnswer, and trustedFormSubstepView events.`,
+      );
     }
   }
 }

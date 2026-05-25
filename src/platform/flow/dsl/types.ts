@@ -84,6 +84,7 @@ export type TrackingSubmissionContext = {
 export type TrackingRuntimeEventContext = {
   id: string;
   kind: TrackingEventKind;
+  trustedFormSubstep?: "review" | "consent";
 };
 
 export type TrackingRuntimeStepContext = {

@@ -20,7 +20,11 @@ import {
 } from "../../flow";
 import { createStateAutocompleteItems } from "../../steps/autocomplete/ranking";
 import { renderConsentMarkdown, renderMarkdown, type RenderedMarkdown } from "../markdown";
-import type { ClientTrackingConfig } from "../tracking";
+import {
+  createLifecycleTrackingPayload,
+  type ClientTrackingConfig,
+  type TrackingEventPayload,
+} from "../tracking";
 
 type ClientStepCondition = {
   questionKey: string;
@@ -124,6 +128,7 @@ export type ClientFormConfig = {
   };
   trustedFormPreloadAssets?: readonly ClientTrustedFormPreloadAsset[];
   tracking?: ClientTrackingConfig;
+  initialTrackingEvents?: readonly TrackingEventPayload[];
   transitionAssetUrl?: string;
 };
 
@@ -164,8 +169,17 @@ export function createClientFormConfig(
     form,
     initialAnswers,
   );
+  const routeKey = options.routeKey ?? "preview";
+  const initialTrackingEvents = createClientInitialTrackingEvents(
+    form,
+    routeKey,
+    currentStepDefinition,
+    activeStepIndex,
+    initialAnswers,
+    previewMode,
+  );
   return {
-    routeKey: options.routeKey ?? "preview",
+    routeKey,
     locale: form.locale,
     ui: form.ui,
     customVariables: form.customVariables,
@@ -189,7 +203,8 @@ export function createClientFormConfig(
         }
       : {}),
     ...(trustedFormPreloadAssets.length > 0 ? { trustedFormPreloadAssets } : {}),
-    ...createClientTrackingConfig(form, options.routeKey ?? "preview", previewMode),
+    ...createClientTrackingConfig(form, routeKey, previewMode),
+    ...(initialTrackingEvents.length > 0 ? { initialTrackingEvents } : {}),
     ...(options.transitionAssetUrl ? { transitionAssetUrl: options.transitionAssetUrl } : {}),
   };
 }
@@ -395,6 +410,33 @@ function createClientTrackingConfig(
       },
     },
   };
+}
+
+function createClientInitialTrackingEvents(
+  form: InstantForm,
+  routeKey: string,
+  currentStepDefinition: FormStep,
+  activeStepIndex: number,
+  initialAnswers: Record<string, string>,
+  previewMode: boolean,
+): readonly TrackingEventPayload[] {
+  if (previewMode || currentStepDefinition.kind !== "trusted_form_consent") {
+    return [];
+  }
+
+  const eventPayload = createLifecycleTrackingPayload({
+    form,
+    routeKey,
+    kind: "trustedFormSubstepView",
+    step: currentStepDefinition,
+    stepIndex: activeStepIndex,
+    extra: { trusted_form_substep: "review" },
+    answers: initialAnswers,
+    eventId: crypto.randomUUID(),
+    requireMeta: true,
+  });
+
+  return eventPayload ? [eventPayload] : [];
 }
 
 function getClientTrackingContextKeys(tracking: FormTracking | undefined): string[] {

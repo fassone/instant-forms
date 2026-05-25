@@ -204,6 +204,60 @@ export function registerFormRoutes(app: Hono, routes: FormRoutes, logger: Submis
     }
   });
 
+  app.post("/api/forms/:routeKey/tracking-events", async (c) => {
+    const routeKey = c.req.param("routeKey");
+    const routeEntry = getFormRouteByRouteKey(routes, routeKey);
+
+    if (!routeEntry) {
+      return jsonResponse(
+        c,
+        { ok: false, errors: [{ field: "routeKey", message: "Form route is not available." }] },
+        404,
+      );
+    }
+
+    const body = await parseJsonBody(c.req.raw);
+
+    if (!body.ok || !isRecord(body.value)) {
+      return jsonResponse(c, { ok: false, errors: [{ field: "body", message: routeEntry.form.ui.errors.submissionFailed }] }, 400);
+    }
+
+    const eventKind = typeof body.value.eventKind === "string" ? body.value.eventKind : "";
+    if (eventKind !== "trustedFormSubstepView") {
+      return jsonResponse(c, { ok: false, errors: [{ field: "eventKind", message: "Tracking event is not available." }] }, 400);
+    }
+
+    const stepKey = typeof body.value.stepKey === "string" ? body.value.stepKey : "";
+    const stepDefinition = getStepByKey(routeEntry.form, stepKey);
+    if (!stepDefinition || stepDefinition.kind !== "trusted_form_consent") {
+      return jsonResponse(c, { ok: false, errors: [{ field: "stepKey", message: routeEntry.form.ui.errors.unavailableQuestion }] }, 404);
+    }
+
+    const stepIndex = routeEntry.form.steps.findIndex((candidate) => candidate.key === stepDefinition.key);
+    const answerSnapshot = isRecord(body.value.answers) ? body.value.answers : {};
+    const checkpointAnswers = readCheckpointAnswers(c, routeEntry.form, routeEntry.routeKey);
+    const sanitizedAnswers = sanitizeCheckpointAnswers(routeEntry.form, { ...checkpointAnswers, ...answerSnapshot });
+
+    if (stepIndex === -1 || !canAccessStep(routeEntry.form, stepIndex, sanitizedAnswers)) {
+      return jsonResponse(c, { ok: false, errors: [{ field: "stepKey", message: routeEntry.form.ui.errors.unavailableQuestion }] }, 400);
+    }
+
+    const trustedFormSubstep = body.value.trustedFormSubstep === "consent" ? "consent" : "review";
+    const trackingEvents = createTrustedFormSubstepTrackingEvents(
+      routeEntry.form,
+      routeEntry.routeKey,
+      c.req.raw,
+      getFormRouteStepUrl(routeEntry.routeSegments, stepDefinition),
+      stepDefinition,
+      stepIndex,
+      trustedFormSubstep,
+      sanitizedAnswers,
+      getJsonMetaBrowserIds(body.value),
+    );
+
+    return jsonResponse(c, { ok: true, trackingEvents }, 200);
+  });
+
   app.post("/api/forms/:routeKey/submissions", async (c) => {
     const routeKey = c.req.param("routeKey");
     const routeEntry = getFormRouteByRouteKey(routes, routeKey);
@@ -411,6 +465,35 @@ function createCheckpointTrackingEvents(
     step,
     stepIndex: stepIndex === -1 ? undefined : stepIndex,
     extra: { answer_key: step.key },
+    answers,
+    browserIds,
+    eventId: crypto.randomUUID(),
+    eventSourceUrl,
+    requireMeta: true,
+  });
+
+  return eventPayload ? [eventPayload] : [];
+}
+
+function createTrustedFormSubstepTrackingEvents(
+  form: InstantForm,
+  routeKey: string,
+  request: Pick<Request, "url">,
+  stepUrl: string,
+  step: FormStep,
+  stepIndex: number,
+  trustedFormSubstep: "review" | "consent",
+  answers: Record<string, string>,
+  browserIds: MetaBrowserIds = {},
+) {
+  const eventSourceUrl = browserIds.eventSourceUrl ?? getRequestAbsoluteUrl(request.url, stepUrl);
+  const eventPayload = createLifecycleTrackingPayload({
+    form,
+    routeKey,
+    kind: "trustedFormSubstepView",
+    step,
+    stepIndex: stepIndex === -1 ? undefined : stepIndex,
+    extra: { trusted_form_substep: trustedFormSubstep },
     answers,
     browserIds,
     eventId: crypto.randomUUID(),

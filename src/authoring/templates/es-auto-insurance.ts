@@ -176,6 +176,36 @@ export const esAutoInsuranceTemplate = defineFormTemplate({
                 event.trustedFormSubstepView({
                   name: "instant_form_trusted_form_substep_view",
                   includeStep: true,
+                  ...(metaPixelId
+                    ? {
+                        meta: {
+                          pixelId: metaPixelId,
+                          eventName: "LeadProgress",
+                          eventId: ({ event }) => event.id,
+                          userData: ({ context, answers }) => ({
+                            ph: answers.phone_number,
+                            fn: answers.first_name,
+                            ln: answers.last_name,
+                            st: answers.belongs_to_state === "yes" ? context.areaCode : answers.residence_state,
+                          }),
+                          customData: ({ context, answers, step, event }) => ({
+                            content_name: context.product,
+                            content_category: "insurance",
+                            market_state: context.areaCode,
+                            market_name: context.areaName ?? context.areaCode,
+                            residence_state:
+                              answers.belongs_to_state === "yes" ? context.areaCode : answers.residence_state,
+                            belongs_to_state: answers.belongs_to_state,
+                            has_license: answers.has_license,
+                            has_insurance: answers.has_insurance,
+                            is_clean_title: answers.is_clean_title,
+                            number_of_registered_cars: answers.number_of_registered_cars,
+                            funnel_step: step?.key,
+                            trusted_form_substep: event.trustedFormSubstep,
+                          }),
+                        },
+                      }
+                    : {}),
                 }),
                 event.submitAttempt({
                   name: "instant_form_submit_attempt",

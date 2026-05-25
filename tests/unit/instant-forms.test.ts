@@ -873,7 +873,7 @@ describe("form registry", () => {
           }),
         ],
       }),
-    ).toThrow("meta is only supported on submitSuccess and stepAnswer events");
+    ).toThrow("meta is only supported on submitSuccess, stepAnswer, and trustedFormSubstepView events");
 
     const flow = createMetaRemarketingTestFlow();
     const residenceStep = requireStep(flow, "residence_state");
@@ -1002,6 +1002,115 @@ describe("form registry", () => {
       },
     });
     expect(typeof trackingEvent?.meta?.event_id).toBe("string");
+  });
+
+  it("returns server-built Meta events for TrustedForm substep views", async () => {
+    const handler = createFetchHandler();
+    const savedAnswers = {
+      ...seenMatchingAnswers,
+      first_name: "Ana",
+      last_name: "Lopez",
+      phone_number: "+16155551234",
+    };
+    const response = await handler(
+      new Request("http://localhost/api/forms/tn_custom/tracking-events", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: createCheckpointCookie(savedAnswers),
+        },
+        body: JSON.stringify({
+          eventKind: "trustedFormSubstepView",
+          stepKey: "trustedform_consent",
+          trustedFormSubstep: "review",
+          answers: {},
+          tracking: {
+            fbp: "fb.1.1.abc",
+            eventSourceUrl: "https://example.test/tn/custom/consentimiento",
+          },
+        }),
+      }),
+    );
+    const body = await response.json();
+    const responseBody = body as {
+      trackingEvents?: Array<{ meta?: { event_id?: unknown } } & Record<string, unknown>>;
+    };
+    const trackingEvent = responseBody.trackingEvents?.[0];
+
+    expect(response.status).toBe(200);
+    expect(trackingEvent).toMatchObject({
+      event: "instant_form_trusted_form_substep_view",
+      route_key: "tn_custom",
+      step_key: "trustedform_consent",
+      trusted_form_substep: "review",
+      meta: {
+        pixel_id: "1465068051587670",
+        event_name: "LeadProgress",
+        action_source: "website",
+        event_source_url: "https://example.test/tn/custom/consentimiento",
+        fbp: "fb.1.1.abc",
+        custom_data: {
+          residence_state: "TN",
+          funnel_step: "trustedform_consent",
+          trusted_form_substep: "review",
+        },
+        user_data: {
+          ph: sha256Hex("16155551234"),
+          fn: sha256Hex("ana"),
+          ln: sha256Hex("lopez"),
+          st: sha256Hex("tn"),
+        },
+      },
+    });
+    expect(typeof trackingEvent?.meta?.event_id).toBe("string");
+    expect(JSON.stringify(trackingEvent)).not.toContain("Ana");
+    expect(JSON.stringify(trackingEvent)).not.toContain("Lopez");
+    expect(JSON.stringify(trackingEvent)).not.toContain("6155551234");
+  });
+
+  it("injects a server-built initial Meta event on the TrustedForm consent route", async () => {
+    const form = getRequiredTennesseeForm();
+    const trustedFormStepIndex = form.steps.findIndex((stepDefinition) => stepDefinition.key === "trustedform_consent");
+    const savedAnswers = {
+      ...seenMatchingAnswers,
+      first_name: "Ana",
+      last_name: "Lopez",
+      phone_number: "+16155551234",
+    };
+    const html = await renderTennesseeForm({
+      activeStepIndex: trustedFormStepIndex,
+      answers: savedAnswers,
+    });
+    const config = extractRenderedFormConfig(html);
+    const trackingEvent = config.initialTrackingEvents?.[0];
+
+    expect(trustedFormStepIndex).toBeGreaterThan(-1);
+    expect(trackingEvent).toMatchObject({
+      event: "instant_form_trusted_form_substep_view",
+      route_key: "tn_custom",
+      step_key: "trustedform_consent",
+      trusted_form_substep: "review",
+      meta: {
+        pixel_id: "1465068051587670",
+        event_name: "LeadProgress",
+        custom_data: {
+          residence_state: "TN",
+          funnel_step: "trustedform_consent",
+          trusted_form_substep: "review",
+        },
+        user_data: {
+          ph: sha256Hex("16155551234"),
+          fn: sha256Hex("ana"),
+          ln: sha256Hex("lopez"),
+          st: sha256Hex("tn"),
+        },
+      },
+    });
+    expect(typeof trackingEvent?.meta?.event_id).toBe("string");
+    expect(JSON.stringify(trackingEvent)).not.toContain("Ana");
+    expect(JSON.stringify(trackingEvent)).not.toContain("Lopez");
+    expect(JSON.stringify(trackingEvent)).not.toContain("6155551234");
+    expect(html).toContain("pushInitialClientTrackingEvents();");
   });
 
   it("honors step-level disables for server-built partial remarketing events", () => {
@@ -2930,10 +3039,16 @@ describe("server routing", () => {
     globalThis.fetch = ((input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
       fetchedUrl = input instanceof Request ? input.url : String(input);
       fetchedHeaders = new Headers(init?.headers);
+      const body =
+        fetchedUrl === "https://connect.facebook.net/en_US/fbevents.js"
+          ? 'new Image().src="https://www.facebook.com/tr/?id=1234567890&ev=Lead";'
+          : "ok";
+      const contentType =
+        fetchedUrl === "https://connect.facebook.net/en_US/fbevents.js" ? "application/javascript" : "text/plain";
 
       return Promise.resolve(
-        new Response("ok", {
-          headers: { "Content-Type": "text/plain" },
+        new Response(body, {
+          headers: { "Content-Type": contentType },
         }),
       );
     }) as typeof fetch;
@@ -2950,7 +3065,7 @@ describe("server routing", () => {
       );
 
       expect(scriptResponse.status).toBe(200);
-      expect(await scriptResponse.text()).toBe("ok");
+      expect(await scriptResponse.text()).toBe('new Image().src="/_instant/meta/tr/?id=1234567890&ev=Lead";');
       expect(scriptResponse.headers.get("Cache-Control")).toBe("no-store");
       expect(fetchedUrl).toBe("https://connect.facebook.net/en_US/fbevents.js");
       expect(fetchedHeaders?.get("Accept")).toBe("text/plain");
@@ -2962,6 +3077,12 @@ describe("server routing", () => {
       expect(eventResponse.status).toBe(200);
       expect(await eventResponse.text()).toBe("ok");
       expect(fetchedUrl).toBe("https://www.facebook.com/tr?id=1234567890&ev=Lead&noscript=1");
+
+      const beaconResponse = await handler(new Request("http://localhost/_instant/meta/tr/?id=1234567890&ev=Lead"));
+
+      expect(beaconResponse.status).toBe(200);
+      expect(await beaconResponse.text()).toBe("ok");
+      expect(fetchedUrl).toBe("https://www.facebook.com/tr/?id=1234567890&ev=Lead");
 
       const rejectedResponse = await handler(
         new Request(`http://localhost/_instant/meta/proxy?u=${encodeURIComponent("https://evil.test/pixel")}`),
@@ -3721,6 +3842,8 @@ describe("server routing", () => {
     });
     body.set("trustedFormCertUrl", trustedFormCertUrl);
     body.set("xxTrustedFormCertUrl", trustedFormCertUrl);
+    body.set("tracking[fbp]", "fb.1.1.abc");
+    body.set("tracking[eventSourceUrl]", "https://example.test/tn/custom/consentimiento");
 
     const response = await handler(
       new Request("http://localhost/api/forms/tn_custom/native-submissions", {
@@ -3739,6 +3862,14 @@ describe("server routing", () => {
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(response.headers.get("Set-Cookie")).toContain("Max-Age=0");
     expect(html).toContain("Gracias.");
+    expect(html).toContain("instant_form_submit_success");
+    expect(html).toContain('"event_name":"Lead"');
+    expect(html).toContain('"pixel_id":"1465068051587670"');
+    expect(html).toContain('"fbp":"fb.1.1.abc"');
+    expect(html).toContain('document.addEventListener("pt0", pushInstantInitialTrackingEvents');
+    expect(html).not.toContain("Ana");
+    expect(html).not.toContain("Lopez");
+    expect(html).not.toContain("+16155551234");
     expect(logs).toHaveLength(1);
     expect(logs[0]).toMatchObject({
       routeKey: "tn_custom",
@@ -3883,7 +4014,11 @@ describe("form rendering", () => {
     const html = await renderFormPage(flow, { routeKey: "tracking_custom" });
 
     expect(html).toContain("window.dataLayer = window.dataLayer || []");
-    expect(html).toContain('"dataLayer.push"');
+    expect(html).toContain("window.__INSTANT_INITIAL_TRACKING_EVENTS__");
+    expect(html).toContain("function pushInstantInitialTrackingEvents()");
+    expect(html).toContain('document.addEventListener("pt0", pushInstantInitialTrackingEvents');
+    expect(html).toContain("window.setTimeout(pushInstantInitialTrackingEvents, 1500)");
+    expect(html).toContain('["dataLayer.push", { preserveBehavior: true }]');
     expect(html).toContain("installGoogleTagRequestProxyShim();");
     expect(html).toContain("function installGoogleTagRequestProxyShim()");
     expect(html).toContain("window.__INSTANT_GOOGLE_TAG_PROXY_SHIM__");
@@ -3899,6 +4034,7 @@ describe("form rendering", () => {
     expect(html).toContain("function readOriginalGoogleTagUrl");
     expect(html).toContain("function patchGoogleTagGetAttribute");
     expect(html).toContain('patchGoogleTagUrlProperty(HTMLLinkElement.prototype, "href")');
+    expect(html).toContain("/_instant/meta/tr");
     expect(html.indexOf("installGoogleTagRequestProxyShim();")).toBeLessThan(
       html.indexOf('type="text/partytown" src="/_instant/scripts/gtm.js?id=GTM-ABC123&amp;l=dataLayer"'),
     );
@@ -4677,6 +4813,10 @@ describe("form rendering", () => {
     expect(html).toContain(
       '"customVariables":{"areaCode":"TN","areaName":"Tennessee","product":"auto_insurance","advertiserName":"Liderna Inc y a sus socios, agentes y proveedores de seguros"}',
     );
+    expect(html).toContain('"metaPixelProxy":true');
+    expect(html).toContain('"pixelId":"1465068051587670"');
+    expect(html).toContain('"eventName":"LeadProgress"');
+    expect(html).toContain('"eventName":"Lead"');
     expect(html).not.toContain('"stateCode"');
     expect(html).toContain('"slug":"vive-en-tennessee"');
     expect(html).not.toContain('"slug":"estado-donde-vive"');
@@ -4791,6 +4931,16 @@ function createTennesseeStepUrlOverrides(form = getRequiredTennesseeForm()): Rec
       `/tn/custom/${getStepSlug(stepDefinition)}`,
     ]),
   );
+}
+
+function extractRenderedFormConfig(html: string): any {
+  const match = html.match(/window\.__FORM_CONFIG__ = (.*?);\n/su);
+
+  if (!match?.[1]) {
+    throw new Error("Expected rendered form config to be present.");
+  }
+
+  return JSON.parse(match[1]);
 }
 
 function createMetaRemarketingTestFlow(options: { disableResidenceStepAnswer?: boolean } = {}) {

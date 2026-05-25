@@ -59,9 +59,7 @@ export function renderGoogleTagManagerHead(
     return "";
   }
 
-  const eventLines = initialEvents
-    .map((eventPayload) => `      window.dataLayer.push(${serializeForScript(eventPayload)});`)
-    .join("\n");
+  const initialEventsJson = serializeForScript(initialEvents);
 
   return `    <script>
       installGoogleTagRequestProxyShim();
@@ -69,10 +67,28 @@ export function renderGoogleTagManagerHead(
         installMetaPixelRequestProxyShim();
       }
       window.dataLayer = window.dataLayer || [];
+      window.__INSTANT_INITIAL_TRACKING_EVENTS__ = ${initialEventsJson};
+      window.__INSTANT_INITIAL_TRACKING_EVENTS_PUSHED__ = false;
+      function pushInstantInitialTrackingEvents() {
+        if (window.__INSTANT_INITIAL_TRACKING_EVENTS_PUSHED__) {
+          return;
+        }
+        window.__INSTANT_INITIAL_TRACKING_EVENTS_PUSHED__ = true;
+        (window.__INSTANT_INITIAL_TRACKING_EVENTS__ || []).forEach((eventPayload) => {
+          window.dataLayer.push(eventPayload);
+        });
+      }
+      document.addEventListener("pt0", pushInstantInitialTrackingEvents, { once: true });
+      window.setTimeout(pushInstantInitialTrackingEvents, 1500);
       window.partytown = {
         ...(window.partytown || {}),
         lib: ${serializeForScript(googleTagManager.partytownLib)},
-        forward: Array.from(new Set([...(window.partytown?.forward || []), "dataLayer.push"])),
+        forward: [
+          ...(window.partytown?.forward || []).filter((entry) =>
+            Array.isArray(entry) ? entry[0] !== "dataLayer.push" : entry !== "dataLayer.push",
+          ),
+          ["dataLayer.push", { preserveBehavior: true }],
+        ],
         loadScriptsOnMainThread: [
           ...(window.partytown?.loadScriptsOnMainThread || []),
           "https://www.googletagmanager.com/debug/bootstrap",
@@ -87,7 +103,7 @@ export function renderGoogleTagManagerHead(
               return new URL("/_instant/google-tags/proxy?u=" + encodeURIComponent(nextUrl.toString()), window.location.origin);
             }
             if (${serializeForScript(googleTagManager.metaPixelProxy)} && isInstantFormMetaPixelUrl(nextUrl)) {
-              return new URL("/_instant/meta/proxy?u=" + encodeURIComponent(nextUrl.toString()), window.location.origin);
+              return new URL(rewriteMetaPixelUrl(nextUrl), window.location.origin);
             }
           } catch {}
           return url;
@@ -283,10 +299,18 @@ export function renderGoogleTagManagerHead(
           return value;
         }
         const url = value instanceof URL ? value : new URL(String(value), window.location.href);
+        if (url.hostname === "www.facebook.com" && url.pathname.startsWith("/tr")) {
+          const trPathSuffix = url.pathname.slice("/tr".length);
+          return "/_instant/meta/tr" + trPathSuffix + url.search + url.hash;
+        }
         return "/_instant/meta/proxy?u=" + encodeURIComponent(url.toString());
       }
       function isInstantFormMetaPixelProxyUrl(url) {
-        return url.origin === window.location.origin && url.pathname === "/_instant/meta/proxy";
+        return url.origin === window.location.origin && (
+          url.pathname === "/_instant/meta/proxy" ||
+          url.pathname === "/_instant/meta/tr" ||
+          url.pathname.startsWith("/_instant/meta/tr/")
+        );
       }
       function patchMetaPixelSetAttribute() {
         const nativeSetAttribute = Element.prototype.setAttribute;
@@ -329,7 +353,6 @@ export function renderGoogleTagManagerHead(
           (url) => String(rewriteMetaPixelUrl(url.replace(/&amp;/g, "&"))),
         );
       }
-${eventLines}
     </script>
     <script data-partytown-runtime="true">${escapeInlineScript(getPartytownBootstrapSource())}</script>
     <script type="text/partytown" src="${escapeHtml(googleTagManager.scriptUrl)}"></script>
@@ -439,6 +462,7 @@ function buildTrackingPayload(
             browserIds: options.browserIds,
             eventId: options.eventId,
             eventSourceUrl: options.eventSourceUrl,
+            extra: options.extra,
           }),
         }
       : {}),
@@ -490,6 +514,7 @@ function createMetaPayload(
     browserIds?: MetaBrowserIds;
     eventId?: string;
     eventSourceUrl?: string;
+    extra?: Record<string, unknown>;
   },
 ): Record<string, unknown> | undefined {
   const meta = eventConfig.meta;
@@ -507,11 +532,15 @@ function createMetaPayload(
         ...(typeof options.stepIndex === "number" ? { index: options.stepIndex } : {}),
       }
     : undefined;
+  const trustedFormSubstep: "review" | "consent" | undefined =
+    options.extra?.trusted_form_substep === "review" || options.extra?.trusted_form_substep === "consent"
+      ? options.extra.trusted_form_substep
+      : undefined;
   const input = {
     context: form.context,
     answers,
     submission: { id: options.submission?.submissionId ?? eventId },
-    event: { id: eventId, kind: eventConfig.kind },
+    event: { id: eventId, kind: eventConfig.kind, ...(trustedFormSubstep ? { trustedFormSubstep } : {}) },
     ...(step ? { step } : {}),
   };
   const rawUserData = meta.userData?.(input) ?? {};
