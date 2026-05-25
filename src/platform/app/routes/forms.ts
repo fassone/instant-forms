@@ -111,6 +111,16 @@ export function registerFormRoutes(app: Hono, routes: FormRoutes, logger: Submis
             getFormRouteStepUrl(routeEntry.routeSegments, step),
           )
         : undefined;
+    const trackingEvents = createCheckpointTrackingEvents(
+      form,
+      routeEntry.routeKey,
+      c.req.raw,
+      getFormRouteStepUrl(routeEntry.routeSegments, stepDefinition),
+      stepDefinition,
+      stepIndex,
+      sanitizedAnswers,
+      getJsonMetaBrowserIds(body.value),
+    );
 
     return jsonResponse(
       c,
@@ -119,6 +129,7 @@ export function registerFormRoutes(app: Hono, routes: FormRoutes, logger: Submis
         nextUrl: getFormRouteStepUrl(routeEntry.routeSegments, nextStep),
         answers: sanitizedAnswers,
         ...(nextStepPayload ? { nextStep: nextStepPayload } : {}),
+        ...(trackingEvents.length > 0 ? { trackingEvents } : {}),
       },
       200,
     );
@@ -382,6 +393,34 @@ function createNativeSubmissionTrackingEvents(
   return eventPayload ? [eventPayload] : [];
 }
 
+function createCheckpointTrackingEvents(
+  form: InstantForm,
+  routeKey: string,
+  request: Pick<Request, "url">,
+  stepUrl: string,
+  step: FormStep,
+  stepIndex: number,
+  answers: Record<string, string>,
+  browserIds: MetaBrowserIds = {},
+) {
+  const eventSourceUrl = browserIds.eventSourceUrl ?? getRequestAbsoluteUrl(request.url, stepUrl);
+  const eventPayload = createLifecycleTrackingPayload({
+    form,
+    routeKey,
+    kind: "stepAnswer",
+    step,
+    stepIndex: stepIndex === -1 ? undefined : stepIndex,
+    extra: { answer_key: step.key },
+    answers,
+    browserIds,
+    eventId: crypto.randomUUID(),
+    eventSourceUrl,
+    requireMeta: true,
+  });
+
+  return eventPayload ? [eventPayload] : [];
+}
+
 function getJsonMetaBrowserIds(input: unknown): MetaBrowserIds {
   if (!isRecord(input) || !isRecord(input.tracking)) {
     return {};
@@ -441,6 +480,10 @@ function getRequestPageUrl(url: string): string {
   const requestUrl = new URL(url);
   requestUrl.pathname = requestUrl.pathname.replace(/\/api\/forms\/[^/]+\/native-submissions$/u, "");
   return requestUrl.toString();
+}
+
+function getRequestAbsoluteUrl(requestUrl: string, path: string): string {
+  return new URL(path, new URL(requestUrl).origin).toString();
 }
 
 function renderNativeSubmissionThanksPage(

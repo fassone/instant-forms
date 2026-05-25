@@ -139,6 +139,35 @@ export const esAutoInsuranceTemplate = defineFormTemplate({
                 event.stepAnswer({
                   name: "instant_form_step_answer",
                   includeStep: true,
+                  ...(metaPixelId
+                    ? {
+                        meta: {
+                          pixelId: metaPixelId,
+                          eventName: "LeadProgress",
+                          eventId: ({ event }) => event.id,
+                          userData: ({ context, answers }) => ({
+                            ph: answers.phone_number,
+                            fn: answers.first_name,
+                            ln: answers.last_name,
+                            st: answers.belongs_to_state === "yes" ? context.areaCode : answers.residence_state,
+                          }),
+                          customData: ({ context, answers, step }) => ({
+                            content_name: context.product,
+                            content_category: "insurance",
+                            market_state: context.areaCode,
+                            market_name: context.areaName ?? context.areaCode,
+                            residence_state:
+                              answers.belongs_to_state === "yes" ? context.areaCode : answers.residence_state,
+                            belongs_to_state: answers.belongs_to_state,
+                            has_license: answers.has_license,
+                            has_insurance: answers.has_insurance,
+                            is_clean_title: answers.is_clean_title,
+                            number_of_registered_cars: answers.number_of_registered_cars,
+                            funnel_step: step?.key,
+                          }),
+                        },
+                      }
+                    : {}),
                 }),
                 event.validationError({
                   name: "instant_form_validation_error",
@@ -161,16 +190,19 @@ export const esAutoInsuranceTemplate = defineFormTemplate({
                           pixelId: metaPixelId,
                           eventName: "Lead",
                           eventId: ({ submission }) => submission.id,
-                          userData: ({ answers }) => ({
+                          userData: ({ context, answers }) => ({
                             ph: answers.phone_number,
                             fn: answers.first_name,
                             ln: answers.last_name,
+                            st: answers.belongs_to_state === "yes" ? context.areaCode : answers.residence_state,
                           }),
-                          customData: ({ context }) => ({
+                          customData: ({ context, answers }) => ({
                             content_name: context.product,
                             content_category: "insurance",
                             market_state: context.areaCode,
                             market_name: context.areaName ?? context.areaCode,
+                            residence_state:
+                              answers.belongs_to_state === "yes" ? context.areaCode : answers.residence_state,
                           }),
                         },
                       }

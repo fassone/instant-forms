@@ -81,6 +81,18 @@ export type TrackingSubmissionContext = {
   id: string;
 };
 
+export type TrackingRuntimeEventContext = {
+  id: string;
+  kind: TrackingEventKind;
+};
+
+export type TrackingRuntimeStepContext = {
+  key: string;
+  slug: string;
+  kind: string;
+  index?: number;
+};
+
 export type TrackingMetaMapping<TContract extends FormContract = FormContract> = {
   pixelId: MetaPixelId;
   eventName: string;
@@ -88,16 +100,22 @@ export type TrackingMetaMapping<TContract extends FormContract = FormContract> =
     context: ContractContext<TContract>;
     answers: ContractAnswers<TContract>;
     submission: TrackingSubmissionContext;
+    event: TrackingRuntimeEventContext;
+    step?: TrackingRuntimeStepContext;
   }) => string;
   userData?: (input: {
     context: ContractContext<TContract>;
     answers: ContractAnswers<TContract>;
     submission: TrackingSubmissionContext;
+    event: TrackingRuntimeEventContext;
+    step?: TrackingRuntimeStepContext;
   }) => Partial<Record<MetaUserDataKey, string | TextValue | undefined>>;
   customData?: (input: {
     context: ContractContext<TContract>;
     answers: ContractAnswers<TContract>;
     submission: TrackingSubmissionContext;
+    event: TrackingRuntimeEventContext;
+    step?: TrackingRuntimeStepContext;
   }) => Record<string, string | number | boolean | undefined>;
 };
 

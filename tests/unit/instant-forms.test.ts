@@ -8,6 +8,7 @@ import { trustedFormCertify } from "../../src/authoring/integrations/trusted-for
 import { selectedScripts } from "../../src/authoring/scripts/registry";
 import { formRoutes } from "../../src/authoring/routes/registry";
 import { createFetchHandler } from "../../src/platform/app/server";
+import { registerFormRoutes } from "../../src/platform/app/routes/forms";
 import { registerScriptRoutes } from "../../src/platform/app/routes/scripts";
 import {
   autocompleteSource,
@@ -828,6 +829,196 @@ describe("form registry", () => {
     expect(JSON.stringify(payload)).not.toContain("6155551234");
     expect(JSON.stringify(payload)).not.toContain("Ana");
     expect(JSON.stringify(payload)).not.toContain("Lopez");
+  });
+
+  it("allows Meta mappings on stepAnswer and rejects unsupported Meta event kinds", () => {
+    expect(() =>
+      defineFormFlow({
+        name: "Invalid Meta Event Test",
+        status: "ACTIVE",
+        ...testFlowCopy,
+        contract: {
+          context: z.object({ areaCode: z.string() }),
+          answers: z.object({ wants_quote: z.enum(["yes", "no"]) }),
+          payload: z.object({ wantsQuote: z.string() }),
+        },
+        context: { areaCode: "TN" },
+        payload: {
+          method: "POST",
+          encoding: "json",
+          mapping: ({ answers }) => ({ wantsQuote: answers.wants_quote }),
+        },
+        page: { name: "Invalid Meta Event Test" },
+        tracking: ({ event }) => ({
+          googleTagManager: googleTagManager({ containerId: "GTM-ABC123" }),
+          events: [
+            event.stepView({
+              name: "step_view",
+              meta: {
+                pixelId: "1234567890",
+                eventName: "LeadProgress",
+              },
+            }),
+          ],
+        }),
+        steps: [
+          step.choice({
+            key: "wants_quote",
+            slug: "quote",
+            label: "Do you want a quote?",
+            options: [
+              { key: "yes", label: "Yes" },
+              { key: "no", label: "No" },
+            ],
+          }),
+        ],
+      }),
+    ).toThrow("meta is only supported on submitSuccess and stepAnswer events");
+
+    const flow = createMetaRemarketingTestFlow();
+    const residenceStep = requireStep(flow, "residence_state");
+    const payload = createLifecycleTrackingPayload({
+      form: flow,
+      routeKey: "meta_test",
+      kind: "stepAnswer",
+      step: residenceStep,
+      stepIndex: 1,
+      extra: { answer_key: "residence_state" },
+      answers: {
+        belongs_to_state: "no",
+        residence_state: "TX",
+        first_name: "Ana",
+        last_name: "Lopez",
+        phone_number: "+16155551234",
+      },
+      browserIds: {
+        fbp: "fb.1.1.abc",
+        fbc: "fb.1.1.click",
+        fbclid: "click",
+      },
+      eventId: "progress-event-1",
+      eventSourceUrl: "https://example.test/estado-donde-vive",
+      requireMeta: true,
+    });
+
+    expect(payload).toMatchObject({
+      event: "instant_form_step_answer",
+      route_key: "meta_test",
+      step_key: "residence_state",
+      answer_key: "residence_state",
+      meta: {
+        pixel_id: "1234567890",
+        event_name: "LeadProgress",
+        event_id: "progress-event-1",
+        action_source: "website",
+        event_source_url: "https://example.test/estado-donde-vive",
+        fbp: "fb.1.1.abc",
+        fbc: "fb.1.1.click",
+        fbclid: "click",
+        custom_data: {
+          content_name: "auto_insurance",
+          content_category: "insurance",
+          market_state: "TN",
+          residence_state: "TX",
+          belongs_to_state: "no",
+          funnel_step: "residence_state",
+        },
+        user_data: {
+          ph: sha256Hex("16155551234"),
+          fn: sha256Hex("ana"),
+          ln: sha256Hex("lopez"),
+          st: sha256Hex("tx"),
+        },
+      },
+    });
+    expect(JSON.stringify(payload)).not.toContain("6155551234");
+    expect(JSON.stringify(payload)).not.toContain("Ana");
+    expect(JSON.stringify(payload)).not.toContain("Lopez");
+  });
+
+  it("returns partial Meta remarketing events from validated checkpoints", async () => {
+    const flow = createMetaRemarketingTestFlow();
+    const routes = defineFormRoutes({
+      index: redirectTo("/meta"),
+      folders: {
+        meta: flow,
+      },
+      notFound: unavailable(unavailableContent),
+    });
+    const app = new Hono();
+    registerFormRoutes(app, routes, () => undefined);
+
+    const response = await app.fetch(
+      new Request("http://localhost/api/forms/meta/checkpoints", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `${getCheckpointCookieName("meta")}=${encodeCheckpointAnswers({ belongs_to_state: "no" })}`,
+        },
+        body: JSON.stringify({
+          questionKey: "residence_state",
+          answer: "Texas",
+          tracking: {
+            fbp: "fb.1.1.abc",
+            fbc: "fb.1.1.click",
+            fbclid: "click",
+            eventSourceUrl: "https://example.test/meta/estado-donde-vive",
+          },
+        }),
+      }),
+    );
+    const body = await response.json();
+    const responseBody = body as {
+      trackingEvents?: Array<{ meta?: { event_id?: unknown } } & Record<string, unknown>>;
+    };
+    const trackingEvent = responseBody.trackingEvents?.[0];
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      ok: true,
+      answers: {
+        belongs_to_state: "no",
+        residence_state: "TX",
+      },
+    });
+    expect(trackingEvent).toMatchObject({
+      event: "instant_form_step_answer",
+      route_key: "meta",
+      step_key: "residence_state",
+      answer_key: "residence_state",
+      meta: {
+        pixel_id: "1234567890",
+        event_name: "LeadProgress",
+        action_source: "website",
+        event_source_url: "https://example.test/meta/estado-donde-vive",
+        custom_data: {
+          residence_state: "TX",
+          belongs_to_state: "no",
+          funnel_step: "residence_state",
+        },
+        user_data: {
+          st: sha256Hex("tx"),
+        },
+      },
+    });
+    expect(typeof trackingEvent?.meta?.event_id).toBe("string");
+  });
+
+  it("honors step-level disables for server-built partial remarketing events", () => {
+    const flow = createMetaRemarketingTestFlow({ disableResidenceStepAnswer: true });
+    const residenceStep = requireStep(flow, "residence_state");
+    const payload = createLifecycleTrackingPayload({
+      form: flow,
+      routeKey: "meta_test",
+      kind: "stepAnswer",
+      step: residenceStep,
+      stepIndex: 1,
+      answers: { belongs_to_state: "no", residence_state: "TX" },
+      eventId: "disabled-event",
+      requireMeta: true,
+    });
+
+    expect(payload).toBeUndefined();
   });
 
   it("validates Zod flow contracts and resolves answer variables into delivery payloads", () => {
@@ -4600,6 +4791,107 @@ function createTennesseeStepUrlOverrides(form = getRequiredTennesseeForm()): Rec
       `/tn/custom/${getStepSlug(stepDefinition)}`,
     ]),
   );
+}
+
+function createMetaRemarketingTestFlow(options: { disableResidenceStepAnswer?: boolean } = {}) {
+  return defineFormFlow({
+    name: "Meta Remarketing Test",
+    status: "ACTIVE",
+    ...testFlowCopy,
+    contract: {
+      context: z.object({
+        areaCode: z.string(),
+        areaName: z.string().optional(),
+        product: z.string(),
+      }),
+      answers: z.object({
+        belongs_to_state: z.enum(["yes", "no"]),
+        residence_state: z.string().optional(),
+        first_name: z.string().optional(),
+        last_name: z.string().optional(),
+        phone_number: z.string().optional(),
+      }),
+      payload: z.object({
+        belongsToState: z.string(),
+      }),
+    },
+    context: {
+      areaCode: "TN",
+      areaName: "Tennessee",
+      product: "auto_insurance",
+    },
+    payload: {
+      method: "POST",
+      encoding: "json",
+      mapping: ({ answers }) => ({
+        belongsToState: answers.belongs_to_state,
+      }),
+    },
+    page: { name: "Meta Remarketing Test" },
+    tracking: ({ event }) => ({
+      googleTagManager: googleTagManager({ containerId: "GTM-ABC123" }),
+      events: [
+        event.stepAnswer({
+          name: "instant_form_step_answer",
+          includeStep: true,
+          meta: {
+            pixelId: "1234567890",
+            eventName: "LeadProgress",
+            eventId: ({ event }) => event.id,
+            userData: ({ context, answers }) => ({
+              ph: answers.phone_number,
+              fn: answers.first_name,
+              ln: answers.last_name,
+              st: answers.belongs_to_state === "yes" ? context.areaCode : answers.residence_state,
+            }),
+            customData: ({ context, answers, step }) => ({
+              content_name: context.product,
+              content_category: "insurance",
+              market_state: context.areaCode,
+              market_name: context.areaName ?? context.areaCode,
+              residence_state: answers.belongs_to_state === "yes" ? context.areaCode : answers.residence_state,
+              belongs_to_state: answers.belongs_to_state,
+              funnel_step: step?.key,
+            }),
+          },
+        }),
+      ],
+    }),
+    steps: [
+      step.choice({
+        key: "belongs_to_state",
+        slug: "state",
+        label: "Do you live in Tennessee?",
+        options: [
+          { key: "yes", label: "Yes" },
+          { key: "no", label: "No" },
+        ],
+      }),
+      step.autocomplete({
+        key: "residence_state",
+        slug: "state-where-you-live",
+        label: "What state do you live in?",
+        autocomplete: "address-level1",
+        source: autocompleteSource.usStates(),
+        showWhen: {
+          questionKey: "belongs_to_state",
+          answer: "no",
+        },
+        ...(options.disableResidenceStepAnswer ? { tracking: { stepAnswer: false } } : {}),
+      }),
+      step.text({ key: "first_name", slug: "first-name", label: "First name", autocomplete: "given-name" }),
+      step.text({ key: "last_name", slug: "last-name", label: "Last name", autocomplete: "family-name" }),
+      step.phone({ key: "phone_number", slug: "phone", label: "Phone" }),
+    ],
+  });
+}
+
+function requireStep(flow: ReturnType<typeof createMetaRemarketingTestFlow>, key: string) {
+  const stepDefinition = flow.steps.find((stepCandidate) => stepCandidate.key === key);
+  if (!stepDefinition) {
+    throw new Error(`Expected test flow to include step "${key}".`);
+  }
+  return stepDefinition;
 }
 
 function createCheckpointCookie(answers: Record<string, string>): string {

@@ -352,12 +352,15 @@ export function createLifecycleTrackingPayload(input: {
   step?: FormStep;
   stepIndex?: number;
   extra?: Record<string, unknown>;
+  answers?: Record<string, string | undefined>;
   submission?: SubmissionPayload;
   browserIds?: MetaBrowserIds;
+  eventId?: string;
   eventSourceUrl?: string;
+  requireMeta?: boolean;
 }): TrackingEventPayload | undefined {
   const eventConfig = getTrackingEventConfig(input.form, input.kind, input.step);
-  if (!eventConfig) {
+  if (!eventConfig || (input.requireMeta && !eventConfig.meta)) {
     return undefined;
   }
 
@@ -365,8 +368,10 @@ export function createLifecycleTrackingPayload(input: {
     step: input.step,
     stepIndex: input.stepIndex,
     extra: input.extra,
+    answers: input.answers,
     submission: input.submission,
     browserIds: input.browserIds,
+    eventId: input.eventId,
     eventSourceUrl: input.eventSourceUrl,
   });
 }
@@ -409,8 +414,10 @@ function buildTrackingPayload(
     step?: FormStep;
     stepIndex?: number;
     extra?: Record<string, unknown>;
+    answers?: Record<string, string | undefined>;
     submission?: SubmissionPayload;
     browserIds?: MetaBrowserIds;
+    eventId?: string;
     eventSourceUrl?: string;
   },
 ): TrackingEventPayload {
@@ -422,8 +429,18 @@ function buildTrackingPayload(
     ...getIncludedContextPayload(form, eventConfig.includeContext),
     ...(eventConfig.includeStep ? getStepTrackingPayload(options.step, options.stepIndex) : {}),
     ...(options.extra ?? {}),
-    ...(eventConfig.meta && options.submission
-      ? { meta: createMetaPayload(form, eventConfig, options.submission, options.browserIds, options.eventSourceUrl) }
+    ...(eventConfig.meta
+      ? {
+          meta: createMetaPayload(form, eventConfig, {
+            step: options.step,
+            stepIndex: options.stepIndex,
+            answers: options.answers,
+            submission: options.submission,
+            browserIds: options.browserIds,
+            eventId: options.eventId,
+            eventSourceUrl: options.eventSourceUrl,
+          }),
+        }
       : {}),
   };
 }
@@ -465,36 +482,54 @@ function getStepTrackingPayload(
 function createMetaPayload(
   form: InstantForm,
   eventConfig: TrackingEventConfig,
-  submission: SubmissionPayload,
-  browserIds: MetaBrowserIds | undefined,
-  eventSourceUrl: string | undefined,
+  options: {
+    step?: FormStep;
+    stepIndex?: number;
+    answers?: Record<string, string | undefined>;
+    submission?: SubmissionPayload;
+    browserIds?: MetaBrowserIds;
+    eventId?: string;
+    eventSourceUrl?: string;
+  },
 ): Record<string, unknown> | undefined {
   const meta = eventConfig.meta;
   if (!meta) {
     return undefined;
   }
 
+  const eventId = options.eventId ?? options.submission?.submissionId ?? crypto.randomUUID();
+  const answers = options.submission?.answers ?? options.answers ?? {};
+  const step = options.step
+    ? {
+        key: options.step.key,
+        slug: options.step.slug,
+        kind: options.step.kind,
+        ...(typeof options.stepIndex === "number" ? { index: options.stepIndex } : {}),
+      }
+    : undefined;
   const input = {
     context: form.context,
-    answers: submission.answers,
-    submission: { id: submission.submissionId },
+    answers,
+    submission: { id: options.submission?.submissionId ?? eventId },
+    event: { id: eventId, kind: eventConfig.kind },
+    ...(step ? { step } : {}),
   };
   const rawUserData = meta.userData?.(input) ?? {};
   const customData = meta.customData?.(input) ?? {};
-  const eventId = meta.eventId?.(input) ?? submission.submissionId;
+  const resolvedEventId = meta.eventId?.(input) ?? eventId;
 
   return {
     pixel_id: meta.pixelId,
     event_name: meta.eventName,
-    event_id: eventId,
+    event_id: resolvedEventId,
     action_source: "website",
-    event_source_url: eventSourceUrl,
+    event_source_url: options.eventSourceUrl,
     user_data: hashMetaUserData(rawUserData),
     custom_data: removeUndefinedValues(customData),
     ...removeUndefinedValues({
-      fbp: browserIds?.fbp,
-      fbc: browserIds?.fbc,
-      fbclid: browserIds?.fbclid,
+      fbp: options.browserIds?.fbp,
+      fbc: options.browserIds?.fbc,
+      fbclid: options.browserIds?.fbclid,
     }),
   };
 }

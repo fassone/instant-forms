@@ -1035,16 +1035,20 @@ function getCoreRuntimeScript(): string {
     }, 0);
   }
 
-  async function writeCheckpointNow(questionKey, answer) {
+  async function writeCheckpointNow(questionKey, answer, options = {}) {
     if (config.previewMode) {
       answers[questionKey] = answer;
       return config.steps[currentStep]?.url;
     }
 
+    const tracking = getMetaBrowserTrackingData();
+    if (typeof options.stepUrl === "string") {
+      tracking.eventSourceUrl = new URL(options.stepUrl, window.location.origin).toString();
+    }
     const response = await fetch("/api/forms/" + encodeURIComponent(config.routeKey) + "/checkpoints", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ questionKey, answer }),
+      body: JSON.stringify({ questionKey, answer, tracking }),
     });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -1058,6 +1062,7 @@ function getCoreRuntimeScript(): string {
     if (body.nextStep && typeof body.nextStep === "object") {
       cacheResolvedStepPayload(body.nextStep);
     }
+    pushTrackingEvents(body.trackingEvents);
     preloadResolvedDynamicSteps();
 
     return typeof body.nextUrl === "string" ? getRouteAwareNextUrl(body.nextUrl) : undefined;
@@ -1073,7 +1078,7 @@ function getCoreRuntimeScript(): string {
       return Promise.resolve(options.predictedUrl ?? config.steps[currentStep]?.url);
     }
 
-    const checkpointTask = checkpointQueue.then(() => writeCheckpointNow(questionKey, answer));
+    const checkpointTask = checkpointQueue.then(() => writeCheckpointNow(questionKey, answer, options));
     checkpointQueue = checkpointTask.catch(() => undefined);
 
     return checkpointTask.then((nextUrl) => {
@@ -1380,10 +1385,12 @@ function getCoreRuntimeScript(): string {
 
   async function advanceOptimistically(question, answer, options = {}) {
     answers[question.key] = answer;
-    trackFormEvent("stepAnswer", {
-      ...getStepTrackingPayload(question, currentStep),
-      answer_key: question.key,
-    });
+    if (!isServerTrackedEvent("stepAnswer", question)) {
+      trackFormEvent("stepAnswer", {
+        ...getStepTrackingPayload(question, currentStep),
+        answer_key: question.key,
+      });
+    }
     preloadResolvedDynamicSteps();
     const stepUrl = question.url;
     const mode = options.mode ?? "push";
@@ -1492,6 +1499,11 @@ function getCoreRuntimeScript(): string {
     }
 
     return globalEvent;
+  }
+
+  function isServerTrackedEvent(eventKind, question) {
+    const eventConfig = getTrackingEventConfig(eventKind, question);
+    return Boolean(eventConfig?.meta);
   }
 
   function getTrackingContextPayload(eventConfig) {
