@@ -683,7 +683,7 @@ function getCoreRuntimeScript(): string {
       }
 
       asset.resources.forEach((resource) => {
-        preloadTrustedFormResource(resource.url, resource.as);
+        preloadTrustedFormResource(resource.url, resource.as, resource.rel);
       });
     });
   }
@@ -701,7 +701,7 @@ function getCoreRuntimeScript(): string {
           stepKey: question.key,
           stepUrl: question.url,
           preloadAssets: question.trustedForm.preloadAssets,
-          resources: getTrustedFormPreloadResources(question.trustedForm),
+          resources: getTrustedFormPreloadResources(question.trustedForm, question.trustedForm.preloadAssets),
         };
       })
       .filter((asset) => asset.resources.length > 0);
@@ -726,13 +726,17 @@ function getCoreRuntimeScript(): string {
     return isQuestionVisible(config.steps[stepIndex]) && stepIndex >= currentStep;
   }
 
-  function getTrustedFormPreloadResources(trustedForm) {
+  function getTrustedFormPreloadResources(trustedForm, preloadAssets) {
     const sdkUrl = buildTrustedFormSdkPreloadUrl(trustedForm);
     if (!sdkUrl) {
       return [];
     }
 
-    return [{ url: sdkUrl, as: "script" }];
+    return [{ url: sdkUrl, as: "script", rel: getTrustedFormPreloadRel(preloadAssets) }];
+  }
+
+  function getTrustedFormPreloadRel(preloadAssets) {
+    return preloadAssets === "previous_step" ? "preload" : "prefetch";
   }
 
   function buildTrustedFormSdkPreloadUrl(trustedForm) {
@@ -771,7 +775,7 @@ function getCoreRuntimeScript(): string {
     );
   }
 
-  function preloadTrustedFormResource(url, resourceType) {
+  function preloadTrustedFormResource(url, resourceType, resourceRel) {
     if (!url) {
       return;
     }
@@ -783,7 +787,7 @@ function getCoreRuntimeScript(): string {
 
     trustedFormPreloadedResources.add(sameOriginPath);
     const link = document.createElement("link");
-    link.rel = "preload";
+    link.rel = resourceRel === "preload" ? "preload" : "prefetch";
     link.as = resourceType || "script";
     link.href = sameOriginPath;
     link.dataset.trustedFormPreload = "true";

@@ -47,6 +47,7 @@ type ClientStepBase = {
 type ClientTrustedFormPreloadResource = {
   url: string;
   as: "script";
+  rel: "prefetch" | "preload";
 };
 
 type ClientDisplayCopy = RenderedMarkdown;
@@ -482,7 +483,10 @@ function createClientTrustedFormPreloadAssets(
       return [];
     }
 
-    const resources = getTrustedFormPreloadResources(stepDefinition.trustedForm);
+    const resources = getTrustedFormPreloadResources(
+      stepDefinition.trustedForm,
+      stepDefinition.trustedForm.preloadAssets,
+    );
     return resources.length > 0
       ? [
           {
@@ -516,13 +520,20 @@ function shouldIncludeTrustedFormPreloadAsset(
 
 function getTrustedFormPreloadResources(
   trustedForm: TrustedFormConsentStep["trustedForm"],
+  preloadAssets: TrustedFormConsentStep["trustedForm"]["preloadAssets"],
 ): readonly ClientTrustedFormPreloadResource[] {
   const sdkUrl = buildTrustedFormSdkPreloadUrl(trustedForm);
   if (!sdkUrl) {
     return [];
   }
 
-  return [{ url: sdkUrl, as: "script" }];
+  return [{ url: sdkUrl, as: "script", rel: getTrustedFormPreloadRel(preloadAssets) }];
+}
+
+function getTrustedFormPreloadRel(
+  preloadAssets: TrustedFormConsentStep["trustedForm"]["preloadAssets"],
+): ClientTrustedFormPreloadResource["rel"] {
+  return preloadAssets === "previous_step" ? "preload" : "prefetch";
 }
 
 function buildTrustedFormSdkPreloadUrl(trustedForm: TrustedFormConsentStep["trustedForm"]): string | undefined {

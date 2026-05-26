@@ -5043,6 +5043,8 @@ describe("form rendering", () => {
 
     expect(phoneHtml).toContain('"trustedFormPreloadAssets":[{"stepKey":"trustedform_consent"');
     expect(phoneHtml).toContain('"url":"/_instant/scripts/trustedform.com/tfc.js?f=xxTrustedFormCertUrl\\u0026t=true"');
+    expect(phoneHtml).toContain('"as":"script","rel":"prefetch"');
+    expect(phoneHtml).not.toContain('"as":"script","rel":"preload"');
     expect(phoneHtml).not.toContain('"url":"/~partytown/partytown.js"');
     expect(phoneHtml).not.toContain('"fieldName":"xxTrustedFormCertUrl"');
     expect(html).toContain('"kind":"trusted_form_consent"');
@@ -5144,7 +5146,8 @@ describe("form rendering", () => {
     expect(html).toContain('script.type = "text/partytown"');
     expect(html).toContain('window.dispatchEvent(new CustomEvent("ptupdate"))');
     expect(html).toContain("function preloadTrustedFormAssets()");
-    expect(html).toContain("function preloadTrustedFormResource(url, resourceType)");
+    expect(html).toContain("function preloadTrustedFormResource(url, resourceType, resourceRel)");
+    expect(html).toContain('link.rel = resourceRel === "preload" ? "preload" : "prefetch"');
     expect(html).not.toContain("function preloadTrustedFormSdk(trustedForm)");
     expect(html).toContain("function ensureTrustedFormReady(trustedForm)");
     expect(html).toContain("function waitForTrustedFormCertUrl(trustedForm)");
@@ -5178,6 +5181,69 @@ describe("form rendering", () => {
     expect(html).toContain('ctx.form.setAttribute("data-tf-element-role", "offer")');
     expect(html).toContain("/_instant/scripts/trustedform.com/tfc.js");
     expect(html).not.toContain("https://api.trustedform.com/trustedform.js");
+  });
+
+  it("uses preload only for immediate previous-step TrustedForm warmup", async () => {
+    const flow = defineFormFlow({
+      name: "Previous Step TrustedForm",
+      status: "ACTIVE",
+      ...testFlowCopy,
+      contract: {
+        context: z.object({}),
+        answers: z.object({
+          start: z.enum(["yes"]),
+        }),
+        payload: z.object({}),
+      },
+      context: {},
+      payload: {
+        method: "POST",
+        encoding: "json",
+        mapping: () => ({}),
+      },
+      page: { name: "Page" },
+      steps: [
+        step.choice({
+          key: "start",
+          slug: "start",
+          label: "Start?",
+          options: [{ key: "yes", label: "Yes" }],
+        }),
+        step.trustedFormConsent({
+          key: "trustedform_consent",
+          slug: "consent",
+          review: {
+            title: text("Review"),
+            fields: [
+              {
+                name: "trusted_form_grantor_name",
+                label: "Name",
+                value: "Jane Example",
+                trustedForm: { role: "consent-grantor-name" },
+              },
+            ],
+          },
+          consent: {
+            title: text("Consent"),
+            disclosure: consentMd("Consent language."),
+          },
+          trustedForm: {
+            delivery: "main_thread",
+            scriptProxyKey: "tfc",
+            preloadAssets: "previous_step",
+            execute: "on_step_mount",
+            requireReadyBefore: "consent_substep",
+            allowSubmitWithoutCert: true,
+          },
+        }),
+      ],
+    });
+
+    const html = await renderFormPage(flow, { routeKey: "previous_step_trustedform" });
+
+    expect(html).toContain('"trustedFormPreloadAssets":[{"stepKey":"trustedform_consent"');
+    expect(html).toContain('"as":"script","rel":"preload"');
+    expect(html).not.toContain('"as":"script","rel":"prefetch"');
   });
 
   it("renders a lightweight error modal instead of inline form errors", async () => {
