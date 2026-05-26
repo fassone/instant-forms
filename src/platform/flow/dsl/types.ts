@@ -49,6 +49,16 @@ export type FormPage = {
   presentation?: FormPagePresentation;
 };
 
+export type FormPostSubmit = {
+  slug: string;
+  title: string;
+  message: string;
+  cta?: {
+    label: string;
+    href: string;
+  };
+};
+
 export type GoogleTagManagerContainerId = `GTM-${string}`;
 export type GoogleTagManagerDelivery = "partytown";
 export type GoogleTagManagerProxy = "first_party";
@@ -520,10 +530,6 @@ export type FormUiErrorCopy = {
 };
 
 export type FormUiPageCopy = {
-  thankYou: {
-    title: string;
-    message: string;
-  };
   nativeSubmissionError: {
     title: string;
     heading: string;
@@ -549,6 +555,7 @@ export type InstantForm = {
   customVariables: Readonly<Record<string, string>>;
   payload: FormPayloadDelivery;
   page: FormPage;
+  postSubmit: FormPostSubmit;
   tracking?: FormTracking;
   steps: readonly FormStep[];
 };
@@ -810,6 +817,7 @@ export type FormFlowDefinitionBase<TContract extends FormContract = FormContract
   context: Readonly<Partial<ContractContextInput<TContract>>>;
   payload: FormPayloadDelivery<TContract>;
   page: FormPage;
+  postSubmit: FormPostSubmit;
   tracking?: FormTracking<TContract> | ((helpers: TrackingAuthoringHelpers<TContract>) => FormTracking<TContract>);
 };
 

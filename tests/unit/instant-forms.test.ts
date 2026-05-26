@@ -143,16 +143,17 @@ const testFlowCopy = {
       trustedFormCertFailed: "We could not prepare the consent certificate. Check your connection and try again.",
     },
     pages: {
-      thankYou: {
-        title: "Thanks.",
-        message: "We received your information.",
-      },
       nativeSubmissionError: {
         title: "We could not submit the form",
         heading: "We could not submit the form.",
         fallbackMessage: "We could not submit the form.",
       },
     },
+  },
+  postSubmit: {
+    slug: "thanks",
+    title: "Thanks.",
+    message: "We received your information.",
   },
 } as const;
 
@@ -1452,6 +1453,108 @@ describe("form registry", () => {
     expect(() => createFlowWithDesktopHeight("780")).toThrow(
       "page.presentation.desktopHeightPx must be a finite positive number.",
     );
+  });
+
+  it("rejects invalid or colliding post-submit slugs", () => {
+    const createFlowWithPostSubmitSlug = (slug: string) =>
+      defineFormFlow({
+        name: "Invalid Post Submit",
+        status: "ACTIVE",
+        ...testFlowCopy,
+        postSubmit: {
+          slug,
+          title: "Thanks.",
+          message: "We received your information.",
+        },
+        contract: {
+          context: z.object({}),
+          answers: z.object({ choice_key: z.enum(["yes"]) }),
+          payload: z.object({ choice: z.string() }),
+        },
+        context: {},
+        payload: {
+          method: "POST",
+          encoding: "json",
+          mapping: ({ answers }) => ({ choice: answers.choice_key }),
+        },
+        page: { name: "Page" },
+        steps: [
+          step.choice({
+            key: "choice_key",
+            slug: "elige",
+            label: "Elige",
+            options: [{ key: "yes", label: "Si" }],
+          }),
+        ],
+      });
+
+    expect(() => createFlowWithPostSubmitSlug("Gracias")).toThrow(
+      "postSubmit.slug must be a lowercase URL-safe slug.",
+    );
+    expect(() => createFlowWithPostSubmitSlug("not gracias")).toThrow(
+      "postSubmit.slug must be a lowercase URL-safe slug.",
+    );
+    expect(() => createFlowWithPostSubmitSlug("api")).toThrow('postSubmit.slug "api" is reserved.');
+    expect(() => createFlowWithPostSubmitSlug("elige")).toThrow('postSubmit.slug "elige" collides with a step slug.');
+    expect(() => createFlowWithPostSubmitSlug("choice-key")).toThrow(
+      'postSubmit.slug "choice-key" collides with a step slug.',
+    );
+  });
+
+  it("rejects unsafe post-submit CTA config", () => {
+    const createFlowWithPostSubmitCta = (cta: { label: string; href: string }) =>
+      defineFormFlow({
+        name: "Invalid Post Submit CTA",
+        status: "ACTIVE",
+        ...testFlowCopy,
+        postSubmit: {
+          slug: "thanks",
+          title: "Thanks.",
+          message: "We received your information.",
+          cta,
+        },
+        contract: {
+          context: z.object({}),
+          answers: z.object({ choice_key: z.enum(["yes"]) }),
+          payload: z.object({ choice: z.string() }),
+        },
+        context: {},
+        payload: {
+          method: "POST",
+          encoding: "json",
+          mapping: ({ answers }) => ({ choice: answers.choice_key }),
+        },
+        page: { name: "Page" },
+        steps: [
+          step.choice({
+            key: "choice_key",
+            slug: "elige",
+            label: "Elige",
+            options: [{ key: "yes", label: "Si" }],
+          }),
+        ],
+      });
+
+    expect(() => createFlowWithPostSubmitCta({ label: "", href: "/" })).toThrow(
+      "postSubmit.cta.label is required when postSubmit.cta is provided.",
+    );
+    expect(() => createFlowWithPostSubmitCta({ label: "Done", href: "" })).toThrow(
+      'postSubmit.cta.href must be a relative "/" URL or an "https://" URL.',
+    );
+    expect(() => createFlowWithPostSubmitCta({ label: "Done", href: "javascript:alert(1)" })).toThrow(
+      'postSubmit.cta.href must be a relative "/" URL or an "https://" URL.',
+    );
+    expect(() => createFlowWithPostSubmitCta({ label: "Done", href: "//example.test" })).toThrow(
+      'postSubmit.cta.href must be a relative "/" URL or an "https://" URL.',
+    );
+    expect(createFlowWithPostSubmitCta({ label: "Done", href: "/tn/custom" }).postSubmit.cta).toEqual({
+      label: "Done",
+      href: "/tn/custom",
+    });
+    expect(createFlowWithPostSubmitCta({ label: "Done", href: "https://example.test" }).postSubmit.cta).toEqual({
+      label: "Done",
+      href: "https://example.test",
+    });
   });
 
   it("rejects answer-producing steps that do not match the answer contract", () => {
@@ -4055,7 +4158,7 @@ describe("server routing", () => {
     expect(setCookie).toContain("Max-Age=0");
   });
 
-  it("accepts native TrustedForm form submissions and returns thank-you HTML", async () => {
+  it("accepts native TrustedForm form submissions and redirects to a one-time post-submit page", async () => {
     const logs: unknown[] = [];
     const handler = createFetchHandler({ logger: (payload) => logs.push(payload) });
     const body = new URLSearchParams();
@@ -4077,13 +4180,39 @@ describe("server routing", () => {
         body,
       }),
     );
-    const html = await response.text();
+    const setCookie = response.headers.get("Set-Cookie") ?? "";
+    const postSubmitCookie = getPostSubmitCookie(setCookie);
 
-    expect(response.status).toBe(200);
-    expect(response.headers.get("Content-Type")).toBe("text/html; charset=utf-8");
+    expect(response.status).toBe(303);
+    expect(response.headers.get("Location")).toBe("/tn/custom/gracias");
     expect(response.headers.get("Cache-Control")).toBe("no-store");
-    expect(response.headers.get("Set-Cookie")).toContain("Max-Age=0");
+    expect(setCookie).toContain("Max-Age=0");
+    expect(setCookie).toContain("instant_forms_tn_custom_post_submit=");
+    expect(postSubmitCookie).toStartWith("instant_forms_tn_custom_post_submit=");
+    const postSubmitResponse = await handler(
+      new Request("http://localhost/tn/custom/gracias", {
+        headers: {
+          Cookie: postSubmitCookie,
+        },
+      }),
+    );
+    const html = await postSubmitResponse.text();
+
+    expect(postSubmitResponse.status).toBe(200);
+    expect(postSubmitResponse.headers.get("Content-Type")).toContain("text/html");
+    expect(postSubmitResponse.headers.get("Cache-Control")).toBe("no-store");
+    expect(postSubmitResponse.headers.get("Set-Cookie")).toContain("Max-Age=0");
+    expect(html).toContain('<form class="form-panel" id="lead-form"');
+    expect(html).toContain('data-form-view="post-submit"');
+    expect(html).toContain('<img class="brand-logo"');
+    expect(html).toContain('class="area-pill">TN</span>');
+    expect(html).toContain("Paso");
+    expect(html).toContain('style="width: 100%"');
     expect(html).toContain("Gracias.");
+    expect(html).toContain("Recibimos su información. Un agente se pondrá en contacto con usted pronto.");
+    expect(html).not.toContain('id="back-button"');
+    expect(html).not.toContain('id="next-button"');
+    expect(html).not.toContain('window.__FORM_CONFIG__');
     expect(html).toContain("instant_form_submit_success");
     expect(html).toContain('"event_name":"Lead"');
     expect(html).toContain('"pixel_id":"1465068051587670"');
@@ -4092,6 +4221,10 @@ describe("server routing", () => {
     expect(html).not.toContain("Ana");
     expect(html).not.toContain("Lopez");
     expect(html).not.toContain("+16155551234");
+    const repeatedPostSubmitResponse = await handler(new Request("http://localhost/tn/custom/gracias"));
+
+    expect(repeatedPostSubmitResponse.status).toBe(302);
+    expect(repeatedPostSubmitResponse.headers.get("Location")).toBe("/tn/custom");
     expect(logs).toHaveLength(1);
     expect(logs[0]).toMatchObject({
       routeKey: "tn_custom",
@@ -4164,6 +4297,71 @@ describe("form rendering", () => {
         message: "This answer is required.",
       });
     }
+  });
+
+  it("renders post-submit pages in the shared form shell with an optional CTA", async () => {
+    const flow = defineFormFlow({
+      name: "Post Submit Fixture",
+      status: "ACTIVE",
+      ...testFlowCopy,
+      postSubmit: {
+        slug: "done",
+        title: "Done.",
+        message: "We received your form.",
+        cta: {
+          label: "Start over",
+          href: "/tn/custom",
+        },
+      },
+      contract: {
+        context: z.object({}),
+        answers: z.object({
+          wants_quote: z.enum(["yes", "no"]),
+        }),
+        payload: z.object({
+          wantsQuote: z.string(),
+        }),
+      },
+      context: {},
+      payload: {
+        method: "POST",
+        encoding: "json",
+        mapping: ({ answers }) => ({
+          wantsQuote: answers.wants_quote,
+        }),
+      },
+      page: {
+        name: "Post Submit Form",
+      },
+      steps: [
+        step.choice({
+          key: "wants_quote",
+          slug: "quote",
+          label: "Do you want a quote?",
+          options: [
+            { key: "yes", label: "Yes" },
+            { key: "no", label: "No" },
+          ],
+        }),
+      ],
+    });
+    const html = await renderFormPage(flow, {
+      routeKey: "post_submit_custom",
+      postSubmit: {
+        trackingEvents: [{ event: "instant_form_submit_success" }],
+        stepCountLabel: "Step 1 of 1",
+      },
+    });
+
+    expect(html).toContain('<form class="form-panel" id="lead-form"');
+    expect(html).toContain('data-form-view="post-submit"');
+    expect(html).toContain('style="width: 100%"');
+    expect(html).toContain("Step 1 of 1");
+    expect(html).toContain("<h1 class=\"question-title\">Done.</h1>");
+    expect(html).toContain('<a class="button button-primary" href="/tn/custom">Start over</a>');
+    expect(html).not.toContain('id="back-button"');
+    expect(html).not.toContain('id="next-button"');
+    expect(html).not.toContain("window.__FORM_CONFIG__");
   });
 
   it("renders GTM with first-party Partytown delivery and safe dataLayer events", async () => {
@@ -5289,6 +5487,10 @@ function requireStep(flow: ReturnType<typeof createMetaRemarketingTestFlow>, key
 
 function createCheckpointCookie(answers: Record<string, string>): string {
   return `${getCheckpointCookieName(routeKey)}=${encodeCheckpointAnswers(answers)}`;
+}
+
+function getPostSubmitCookie(setCookie: string): string {
+  return /instant_forms_tn_custom_post_submit=[^;,]*/u.exec(setCookie)?.[0] ?? "";
 }
 
 function getBunFetchSelectedScriptRegistry() {

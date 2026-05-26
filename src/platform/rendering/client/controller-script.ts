@@ -2673,10 +2673,33 @@ ${requestProxyRuntimeScript}
         trustedFormCertUrl = getTrustedFormCertUrl(question.trustedForm);
       }
 
+      try {
+        submitNativeFormWithHiddenSubmitter(ctx, question, step, trustedFormCertUrl);
+      } catch {
+        ctx.setNextButtonLoading(trustedFormSubmitLoadingReason, false);
+        ctx.trackFormEvent("submitError", {
+          step_key: question.key,
+          step_slug: question.slug,
+          step_index: ctx.currentStep,
+          step_kind: question.kind,
+          step_url: question.url,
+          trusted_form_substep: activeSubstep,
+          error_message: ctx.config.ui.errors.submissionFailed,
+        });
+        ctx.showErrorModal(ctx.config.ui.errors.submissionFailed);
+      }
+    }
+
+    function submitNativeFormWithHiddenSubmitter(ctx, question, step, trustedFormCertUrl) {
       syncNativeSubmissionFields(ctx, question, step, trustedFormCertUrl);
-      ctx.setNextButtonLoading(trustedFormSubmitLoadingReason, false);
+      const submitter = document.createElement("button");
+      submitter.type = "submit";
+      submitter.hidden = true;
+      submitter.tabIndex = -1;
+      submitter.dataset.nativeSubmitter = "true";
+      ctx.form.appendChild(submitter);
       allowNativeSubmit = true;
-      ctx.form.requestSubmit(ctx.nextButton);
+      ctx.form.requestSubmit(submitter);
     }
 
     function syncNativeSubmissionFields(ctx, question, step, trustedFormCertUrl) {

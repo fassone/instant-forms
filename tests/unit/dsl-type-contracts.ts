@@ -62,16 +62,17 @@ const testFlowCopy = {
       trustedFormCertFailed: "We could not prepare the consent certificate. Check your connection and try again.",
     },
     pages: {
-      thankYou: {
-        title: "Thanks.",
-        message: "We received your information.",
-      },
       nativeSubmissionError: {
         title: "We could not submit the form",
         heading: "We could not submit the form.",
         fallbackMessage: "We could not submit the form.",
       },
     },
+  },
+  postSubmit: {
+    slug: "thanks",
+    title: "Thanks.",
+    message: "We received your information.",
   },
 } as const;
 
@@ -199,6 +200,40 @@ void defineFormFlow({
       desktopHeightPx: "780px",
     },
   },
+  steps: [],
+});
+
+void defineFormFlow({
+  name: "Old Thank You Type Fixture",
+  status: "ACTIVE",
+  locale: "en",
+  ui: {
+    actions: testFlowCopy.ui.actions,
+    progress: testFlowCopy.ui.progress,
+    errorModal: testFlowCopy.ui.errorModal,
+    errors: testFlowCopy.ui.errors,
+    pages: {
+      nativeSubmissionError: testFlowCopy.ui.pages.nativeSubmissionError,
+      // @ts-expect-error thank-you copy moved to flow-level postSubmit.
+      thankYou: {
+        title: "Thanks.",
+        message: "We received your information.",
+      },
+    },
+  },
+  postSubmit: testFlowCopy.postSubmit,
+  contract: {
+    context: z.object({}),
+    answers: z.object({}),
+    payload: z.object({ ok: z.string() }),
+  },
+  context: {},
+  payload: {
+    method: "POST",
+    encoding: "json",
+    mapping: () => ({ ok: "yes" }),
+  },
+  page: { name: "Page" },
   steps: [],
 });
 

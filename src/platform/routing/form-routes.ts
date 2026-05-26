@@ -1,6 +1,10 @@
 import type { Context, Hono } from "hono";
 
-import { readCheckpointAnswers } from "../app/http/cookies";
+import {
+  clearPostSubmitState,
+  readCheckpointAnswers,
+  readPostSubmitState,
+} from "../app/http/cookies";
 import { htmlResponse, redirectNoStore } from "../app/http/responses";
 import {
   canAccessStep,
@@ -17,6 +21,7 @@ import {
 import {
   readPrebuiltFormPage,
   readPrebuiltUnavailablePage,
+  renderPostSubmitPage,
   renderFormPage,
   renderUnavailablePage,
   type UnavailablePageContent,
@@ -127,6 +132,10 @@ export function getFormRouteStepUrl(routeSegments: readonly string[], stepDefini
   return getPublicStepUrl(routeSegments, stepDefinition);
 }
 
+export function getFormRoutePostSubmitUrl(routeSegments: readonly string[], form: InstantForm): string {
+  return `${getFolderRoot(routeSegments)}/${form.postSubmit.slug}`;
+}
+
 export function getFormRouteStepUrlOverrides(
   routeSegments: readonly string[],
   form: InstantForm,
@@ -180,6 +189,25 @@ function registerPublicFormFolder(app: Hono, routeSegments: readonly string[], f
     const resumeStep = getStepAt(form, getResumeStepIndex(form, answers));
 
     return redirectNoStore(c, getPublicStepUrl(routeSegments, resumeStep));
+  });
+
+  app.get(getFormRoutePostSubmitUrl(routeSegments, form), async (c) => {
+    const postSubmitState = readPostSubmitState(c, routeKey);
+
+    if (!postSubmitState) {
+      return redirectNoStore(c, folderRoot);
+    }
+
+    clearPostSubmitState(c, routeKey);
+    c.header("Cache-Control", "no-store");
+
+    return c.html(
+      await renderPostSubmitPage(form, routeKey, {
+        trackingEvents: postSubmitState.trackingEvents,
+        stepCountLabel: postSubmitState.stepCountLabel,
+      }),
+      200,
+    );
   });
 
   app.get(`${folderRoot}/:stepSlug`, async (c) => {

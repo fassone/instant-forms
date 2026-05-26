@@ -12,12 +12,14 @@ import {
   getStepByKey,
   canResolveStepDynamicValues,
   hasStepDynamicResolvers,
+  isCountedStep,
   isStepVisible,
   type FormStep,
   type InstantForm,
 } from "../../flow";
 import {
   getFormRouteByRouteKey,
+  getFormRoutePostSubmitUrl,
   getFormRouteStepUrl,
   type FormRoutes,
 } from "../../routing";
@@ -29,8 +31,13 @@ import {
   type MetaBrowserIds,
 } from "../../rendering";
 import { createClientFormConfig } from "../../rendering/client/config";
-import { clearCheckpointAnswers, readCheckpointAnswers, setCheckpointAnswers } from "../http/cookies";
-import { htmlResponse, jsonResponse } from "../http/responses";
+import {
+  clearCheckpointAnswers,
+  readCheckpointAnswers,
+  setCheckpointAnswers,
+  setPostSubmitState,
+} from "../http/cookies";
+import { htmlResponse, jsonResponse, redirectNoStore } from "../http/responses";
 
 export type SubmissionLogger = (payload: SubmissionPayload) => void;
 
@@ -342,24 +349,19 @@ export function registerFormRoutes(app: Hono, routes: FormRoutes, logger: Submis
 
     logger(validation.payload);
     clearCheckpointAnswers(c, routeEntry.routeKey);
-
-    const response = htmlResponse(
-      renderNativeSubmissionThanksPage(
-        routeEntry.form,
-        routeEntry.routeKey,
-        validation.payload,
-        createNativeSubmissionMetaBrowserIds(c, formDataResult.value),
-        c.req.raw.url,
-      ),
-      200,
-      "no-store",
+    const trackingEvents = createNativeSubmissionTrackingEvents(
+      routeEntry.form,
+      routeEntry.routeKey,
+      c.req.raw,
+      validation.payload,
+      createNativeSubmissionMetaBrowserIds(c, formDataResult.value),
     );
-    const setCookie = c.res.headers.get("Set-Cookie");
-    if (setCookie) {
-      response.headers.set("Set-Cookie", setCookie);
-    }
+    setPostSubmitState(c, routeEntry.routeKey, {
+      trackingEvents,
+      stepCountLabel: getPostSubmitStepCountLabel(routeEntry.form, validation.payload.answers),
+    });
 
-    return response;
+    return redirectNoStore(c, getFormRoutePostSubmitUrl(routeEntry.routeSegments, routeEntry.form), 303);
   });
 }
 
@@ -569,64 +571,15 @@ function getRequestAbsoluteUrl(requestUrl: string, path: string): string {
   return new URL(path, new URL(requestUrl).origin).toString();
 }
 
-function renderNativeSubmissionThanksPage(
-  form: InstantForm,
-  routeKey: string,
-  payload: SubmissionPayload,
-  browserIds: MetaBrowserIds,
-  eventSourceUrl: string,
-): string {
-  const googleTagManager = getNativePageGoogleTagManager(form, routeKey);
-  const trackingHead = renderGoogleTagManagerHead(
-    googleTagManager,
-    createNativeSubmissionTrackingEvents(form, routeKey, { url: eventSourceUrl }, payload, browserIds),
-  );
+function getPostSubmitStepCountLabel(form: InstantForm, answers: Record<string, string>): string {
+  const countedStepCount = form.steps.filter(
+    (stepDefinition) => isStepVisible(stepDefinition, answers) && isCountedStep(stepDefinition),
+  ).length;
+  const finalCount = Math.max(countedStepCount, 1);
 
-  return `<!doctype html>
-<html lang="${escapeHtml(form.locale)}">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>${escapeHtml(form.ui.pages.thankYou.title)}</title>
-${trackingHead}
-    <style>
-      body {
-        min-height: 100vh;
-        margin: 0;
-        display: grid;
-        place-items: center;
-        background: #fffdf4;
-        color: #111427;
-        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        padding: 24px;
-      }
-      main {
-        width: min(100%, 720px);
-        border: 1px solid #d9dff0;
-        border-radius: 8px;
-        background: #fffdf4;
-        padding: clamp(28px, 6vw, 64px);
-      }
-      h1 {
-        margin: 0 0 16px;
-        font-size: clamp(2.2rem, 8vw, 4.5rem);
-        line-height: 1;
-      }
-      p {
-        margin: 0;
-        color: #4d5878;
-        font-size: 1.1rem;
-        line-height: 1.6;
-      }
-    </style>
-  </head>
-  <body>
-    <main>
-      <h1>${escapeHtml(form.ui.pages.thankYou.title)}</h1>
-      <p>${escapeHtml(form.ui.pages.thankYou.message)}</p>
-    </main>
-  </body>
-</html>`;
+  return form.ui.progress.stepCount
+    .replaceAll("{{current}}", String(finalCount))
+    .replaceAll("{{total}}", String(finalCount));
 }
 
 function renderNativeSubmissionErrorPage(form: InstantForm, routeKey: string, messages: readonly string[]): string;

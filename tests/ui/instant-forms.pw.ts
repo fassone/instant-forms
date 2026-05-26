@@ -465,14 +465,27 @@ test.describe("instant routed form UI", () => {
     await expect(
       activeStep(page).locator('[data-trusted-form-substep="consent"] [data-tf-element-role="consent-grantor-phone"]'),
     ).toHaveText("(615) 555-1234");
+
+    let resolveNativeRequest!: (postData: string) => void;
+    const nativeSubmissionRequest = new Promise<string>((resolve) => {
+      resolveNativeRequest = resolve;
+    });
+    await page.route("**/api/forms/tn_custom/native-submissions", async (route) => {
+      resolveNativeRequest(route.request().postData() ?? "");
+      await route.fulfill({ status: 204, body: "" });
+    });
+
     const submitButton = page.getByRole("button", { name: trustedFormSubmitLabel });
-    const submissionRequest = page.waitForRequest(/\/api\/forms\/tn_custom\/native-submissions/u);
     await submitButton.click();
 
-    expect((await submissionRequest).postData() ?? "").toContain(
+    const submittedBody = await nativeSubmissionRequest;
+    const submitLoadingButton = await assertSpinnerOnlyLoadingButton(page);
+    await expect(submitLoadingButton.locator(".button-label")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: trustedFormSubmitLabel })).toHaveCount(0);
+
+    expect(submittedBody).toContain(
       "trustedFormCertUrl=https%3A%2F%2Fcert.trustedform.com%2F454a35b802f3e7b63ffabb4efedb7c6ebe67886c",
     );
-    await expect(page.getByRole("heading", { name: "Gracias." })).toBeVisible();
   });
 
   test("TrustedForm consent copy scrolls on small mobile without covering actions", async ({ page }) => {

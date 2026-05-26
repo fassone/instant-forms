@@ -5,6 +5,7 @@ import type {
   FormFlowDefinitionBase,
   FormFlowInput,
   FormPage,
+  FormPostSubmit,
   FormStep,
   FormTracking,
   InstantForm,
@@ -46,6 +47,7 @@ export function defineFormFlow<const TContract extends FormContract, const TStep
     typeof input.tracking === "function" ? input.tracking(createTrackingAuthoringHelpers()) : input.tracking;
   assertAnswerStepContract(input.contract, steps);
   assertPagePresentation(input.page);
+  assertPostSubmit(input.postSubmit, steps);
   assertTrackingContract(input.contract, tracking);
   assertKnownTemplateVariables(input.contract, { name: input.name, page: input.page, steps });
 
@@ -59,6 +61,7 @@ export function defineFormFlow<const TContract extends FormContract, const TStep
     customVariables: context,
     payload: input.payload,
     page: input.page,
+    postSubmit: input.postSubmit,
     ...(tracking ? { tracking } : {}),
     steps,
   };
@@ -235,6 +238,54 @@ function assertPagePresentation(page: FormPage): void {
   if (typeof desktopHeightPx !== "number" || !Number.isFinite(desktopHeightPx) || desktopHeightPx <= 0) {
     throw new Error("page.presentation.desktopHeightPx must be a finite positive number.");
   }
+}
+
+function assertPostSubmit(postSubmit: FormPostSubmit, steps: readonly FormStep[]): void {
+  if (!postSubmit.title.trim()) {
+    throw new Error("postSubmit.title is required.");
+  }
+
+  if (!postSubmit.message.trim()) {
+    throw new Error("postSubmit.message is required.");
+  }
+
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(postSubmit.slug)) {
+    throw new Error("postSubmit.slug must be a lowercase URL-safe slug.");
+  }
+
+  if (new Set(["api", "_instant", "__preview"]).has(postSubmit.slug)) {
+    throw new Error(`postSubmit.slug "${postSubmit.slug}" is reserved.`);
+  }
+
+  const stepSlugs = new Set(steps.flatMap((stepDefinition) => [
+    stepDefinition.slug,
+    stepDefinition.key.replaceAll("_", "-"),
+  ]));
+
+  if (stepSlugs.has(postSubmit.slug)) {
+    throw new Error(`postSubmit.slug "${postSubmit.slug}" collides with a step slug.`);
+  }
+
+  if (!postSubmit.cta) {
+    return;
+  }
+
+  if (!postSubmit.cta.label.trim()) {
+    throw new Error("postSubmit.cta.label is required when postSubmit.cta is provided.");
+  }
+
+  if (!isSafePostSubmitCtaHref(postSubmit.cta.href)) {
+    throw new Error('postSubmit.cta.href must be a relative "/" URL or an "https://" URL.');
+  }
+}
+
+function isSafePostSubmitCtaHref(href: string): boolean {
+  const trimmedHref = href.trim();
+
+  return (
+    (trimmedHref.startsWith("/") && !trimmedHref.startsWith("//")) ||
+    trimmedHref.startsWith("https://")
+  );
 }
 
 function assertTrackingContract(contract: FormContract, tracking: FormTracking | undefined): void {

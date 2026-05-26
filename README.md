@@ -102,6 +102,7 @@ Every source and test folder has its own `README.md` describing ownership and sa
 | `GET /~partytown/*` | Partytown worker/runtime assets used after the small bootstrap has been inlined. |
 | `POST /api/forms/:routeKey/checkpoints` | Validates one answer, writes the checkpoint cookie, and returns the next URL. |
 | `POST /api/forms/:routeKey/submissions` | Validates and logs completed submissions. |
+| `POST /api/forms/:routeKey/native-submissions` | Validates native TrustedForm submissions and redirects to the authored post-submit page. |
 
 Unavailable public routes use author-controlled title, message, CTA, and status from `src/authoring/routes/registry.ts`.
 
@@ -111,7 +112,7 @@ The Tennessee flow lives in `src/authoring/flows/tn/flow.ts` and is built with t
 
 Reusable flow shapes live in `src/authoring/templates/` and use `defineFormTemplate(...)`. A template declares a Zod `variables` contract and exposes `.create(input)`, which validates required, optional, and unknown variables before returning a normal `InstantForm` through `defineFormFlow(...)`. Tennessee is currently an instantiation of the reusable Spanish auto-insurance template.
 
-Each flow declares a `locale` plus an explicit `ui` copy block for platform-owned labels, progress text, modal copy, validation/failure messages, and native thank-you/error pages. There is no hidden Spanish fallback: a new language is authored by creating a flow whose step copy and `ui` copy are in that language.
+Each flow declares a `locale`, an explicit `ui` copy block for platform-owned labels, progress text, modal copy, validation/failure messages, and native error pages, plus a neutral `postSubmit` page for the successful post-submission destination. There is no hidden Spanish fallback: a new language is authored by creating a flow whose step copy, `ui` copy, and `postSubmit` copy are in that language.
 
 Each flow also declares a Zod-backed `contract` with `context`, `answers`, and `payload` schemas. Authored business context such as `areaCode: "TN"`, `areaName: "Tennessee"`, and `product: "auto_insurance"` lives in `context`; answer-producing steps must use keys declared in `contract.answers`; and `payload.mapping` builds a typed delivery payload from `{ context, answers }`. V1 logs that delivery block but does not send it to an external endpoint. Supported step kinds are `choice`, `text`, `phone`, `autocomplete`, `interstitial`, and `trusted_form_consent`.
 

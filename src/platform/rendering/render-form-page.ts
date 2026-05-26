@@ -21,7 +21,7 @@ import { createClientFormConfig } from "./client/config";
 import { getFormControllerScript } from "./client/controller-script";
 import { prepareInlineAssetHtml } from "./inline-assets";
 import { renderConsentMarkdownToHtml, renderMarkdownToHtml } from "./markdown";
-import { createLifecycleTrackingPayload, renderGoogleTagManagerHead } from "./tracking";
+import { createLifecycleTrackingPayload, renderGoogleTagManagerHead, type TrackingEventPayload } from "./tracking";
 
 export const FORM_CONFIG_JSON_PLACEHOLDER = "__FORM_CONFIG_JSON__";
 export const FORM_CONFIG_PLACEHOLDER_EXPRESSION = JSON.stringify(FORM_CONFIG_JSON_PLACEHOLDER);
@@ -34,6 +34,10 @@ export type RenderFormPageOptions = {
   stepUrlOverrides?: Record<string, string>;
   formConfigExpression?: string;
   transitionAssetUrl?: string;
+  postSubmit?: {
+    trackingEvents: readonly TrackingEventPayload[];
+    stepCountLabel: string;
+  };
 };
 
 export type UnavailablePageContent = {
@@ -47,6 +51,7 @@ export type UnavailablePageContent = {
 };
 
 export async function renderFormPage(form: InstantForm, options: RenderFormPageOptions = {}): Promise<string> {
+  const isPostSubmit = Boolean(options.postSubmit);
   const lastStepIndex = Math.max(0, form.steps.length - 1);
   const activeStepIndex = Math.max(0, Math.min(options.activeStepIndex ?? 0, lastStepIndex));
   const initialAnswers = options.answers ?? {};
@@ -54,25 +59,34 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
   const getClientStepUrl = (stepDefinition: FormStep) =>
     stepUrlOverrides[stepDefinition.key] ?? getStepUrl(form, stepDefinition);
   const initialStepCountLabels = form.steps.map((_, index) => getStepCountLabel(form, index, initialAnswers));
-  const initialProgressPercent = getStepProgressPercent(form, activeStepIndex, initialAnswers);
+  const initialProgressPercent = isPostSubmit ? 100 : getStepProgressPercent(form, activeStepIndex, initialAnswers);
   const activeStepSource = form.steps[activeStepIndex] ?? form.steps[0];
-  const activeStep = activeStepSource ? resolveStepDynamicValues(form, activeStepSource, initialAnswers) : undefined;
+  const activeStep = !isPostSubmit && activeStepSource ? resolveStepDynamicValues(form, activeStepSource, initialAnswers) : undefined;
   const activeStepKind = activeStep?.kind ?? "choice";
   const routeKey = options.routeKey ?? "preview";
   const displayAreaCode = getDisplayAreaCode(form, routeKey);
-  const initialStepCountAriaHidden = activeStep && !isCountedStep(activeStep) ? ' aria-hidden="true"' : "";
+  const initialStepCountAriaHidden = !isPostSubmit && activeStep && !isCountedStep(activeStep) ? ' aria-hidden="true"' : "";
   const usesNativeTrustedFormSubmit = activeStep?.kind === "trusted_form_consent";
-  const initialFormChrome = getInitialFormChrome(activeStep);
+  const initialFormChrome = isPostSubmit ? "visible" : getInitialFormChrome(activeStep);
+  const initialStepCountLabel = isPostSubmit
+    ? options.postSubmit?.stepCountLabel
+    : initialStepCountLabels[activeStepIndex] ?? formatStepCountLabel(form.ui.progress.stepCount, 1, 1);
   const initialNextButtonLabel =
     activeStep?.kind === "trusted_form_consent"
       ? activeStep.review.nextLabel || form.ui.actions.next
       : activeStepIndex === lastStepIndex
         ? form.ui.actions.submit
         : form.ui.actions.next;
+  const renderedStepContent = isPostSubmit
+    ? renderPostSubmitContent(form)
+    : activeStep
+      ? renderQuestion(activeStep, activeStepIndex, activeStepIndex, initialAnswers, form)
+      : "";
+  const renderedFooter = isPostSubmit ? renderPostSubmitFooter(form) : renderFormFooter(form, initialNextButtonLabel);
   const formStyleAttribute = getFormPanelStyleAttribute(form);
   const formAttributes = usesNativeTrustedFormSubmit
     ? ` data-form-chrome="${escapeHtml(initialFormChrome)}" method="post" action="/api/forms/${escapeHtml(routeKey)}/native-submissions" enctype="application/x-www-form-urlencoded" data-tf-element-role="offer"`
-    : ` data-form-chrome="${escapeHtml(initialFormChrome)}" novalidate`;
+    : ` data-form-chrome="${escapeHtml(initialFormChrome)}"${isPostSubmit ? ' data-form-view="post-submit"' : ""} novalidate`;
   const clientConfig = createClientFormConfig(
     form,
     activeStepIndex,
@@ -88,7 +102,9 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
   const googleTagManager = clientConfig.tracking?.googleTagManager;
   const trackingHead = renderGoogleTagManagerHead(
     googleTagManager,
-    googleTagManager
+    isPostSubmit
+      ? options.postSubmit?.trackingEvents ?? []
+      : googleTagManager
       ? [
           createLifecycleTrackingPayload({
             form,
@@ -106,7 +122,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>${escapeHtml(form.page.name)} | ${escapeHtml(displayAreaCode.toUpperCase())}</title>
+    <title>${escapeHtml(isPostSubmit ? form.postSubmit.title : form.page.name)} | ${escapeHtml(displayAreaCode.toUpperCase())}</title>
 ${trackingHead}
     <style>
       :root {
@@ -141,6 +157,7 @@ ${trackingHead}
         color: var(--text);
       }
 
+      a,
       button,
       input {
         font: inherit;
@@ -180,6 +197,14 @@ ${trackingHead}
       .form-panel[data-form-chrome="hidden"] .brand,
       .form-panel[data-form-chrome="hidden"] .progress-area {
         display: none;
+      }
+
+      .form-panel[data-form-view="post-submit"] {
+        grid-template-rows: auto auto minmax(0, 1fr);
+      }
+
+      .form-panel[data-form-view="post-submit"]:has(footer) {
+        grid-template-rows: auto auto minmax(0, 1fr) auto;
       }
 
       .brand-identity {
@@ -246,6 +271,17 @@ ${trackingHead}
 
       .step[aria-hidden="false"] {
         display: block;
+      }
+
+      .post-submit-step {
+        align-self: center;
+      }
+
+      .post-submit-message {
+        margin: 0;
+        color: var(--muted);
+        font-size: 1.1rem;
+        line-height: 1.6;
       }
 
       #steps {
@@ -819,6 +855,11 @@ ${trackingHead}
         cursor: pointer;
         font-weight: 700;
         padding: 0 20px;
+        text-decoration: none;
+      }
+
+      .actions-single {
+        justify-content: flex-end;
       }
 
       .button:disabled {
@@ -1319,26 +1360,18 @@ ${trackingHead}
         </header>
         <div class="progress-area">
           <div class="progress-meta">
-            <p class="step-count" data-step-count${initialStepCountAriaHidden}>${escapeHtml(initialStepCountLabels[activeStepIndex] ?? formatStepCountLabel(form.ui.progress.stepCount, 1, 1))}</p>
+            <p class="step-count" data-step-count${initialStepCountAriaHidden}>${escapeHtml(initialStepCountLabel ?? formatStepCountLabel(form.ui.progress.stepCount, 1, 1))}</p>
           </div>
           <div class="progress-shell" aria-hidden="true">
             <div class="progress-bar" id="progress-bar" style="width: ${initialProgressPercent}%"></div>
           </div>
         </div>
         <section id="steps">
-          ${activeStep ? renderQuestion(activeStep, activeStepIndex, activeStepIndex, initialAnswers, form) : ""}
+          ${renderedStepContent}
         </section>
-        <footer>
-          <div class="actions">
-            <button class="button button-secondary" id="back-button" name="back" type="button">${escapeHtml(form.ui.actions.back)}</button>
-            <button class="button button-primary" id="next-button" name="next" type="button">${escapeHtml(initialNextButtonLabel)}</button>
-          </div>
-        </footer>
+        ${renderedFooter}
       </form>
-      <section class="thanks" id="thanks" tabindex="-1" hidden>
-        <h1>${escapeHtml(form.ui.pages.thankYou.title)}</h1>
-        <p>${escapeHtml(form.ui.pages.thankYou.message)}</p>
-      </section>
+      ${isPostSubmit ? "" : renderHiddenThanks(form)}
       <div
         class="error-modal"
         id="error-modal"
@@ -1355,16 +1388,70 @@ ${trackingHead}
         </div>
       </div>
     </main>
-    <script>
-      window.__FORM_CONFIG__ = ${formConfigExpression};
-    </script>
-    <script>
-${getFormControllerScript(activeStepKind)}
-    </script>
+    ${isPostSubmit ? "" : renderControllerScripts(formConfigExpression, activeStepKind)}
   </body>
 </html>`;
 
   return prepareInlineAssetHtml(html);
+}
+
+export function renderPostSubmitPage(
+  form: InstantForm,
+  routeKey: string,
+  postSubmit: NonNullable<RenderFormPageOptions["postSubmit"]>,
+): Promise<string> {
+  return renderFormPage(form, {
+    routeKey,
+    postSubmit,
+  });
+}
+
+function renderPostSubmitContent(form: InstantForm): string {
+  return `
+          <section class="step post-submit-step" aria-hidden="false">
+            <h1 class="question-title">${escapeHtml(form.postSubmit.title)}</h1>
+            <p class="post-submit-message">${escapeHtml(form.postSubmit.message)}</p>
+          </section>`;
+}
+
+function renderPostSubmitFooter(form: InstantForm): string {
+  if (!form.postSubmit.cta) {
+    return "";
+  }
+
+  return `
+        <footer>
+          <div class="actions actions-single">
+            <a class="button button-primary" href="${escapeHtml(form.postSubmit.cta.href)}">${escapeHtml(form.postSubmit.cta.label)}</a>
+          </div>
+        </footer>`;
+}
+
+function renderFormFooter(form: InstantForm, nextButtonLabel: string): string {
+  return `
+        <footer>
+          <div class="actions">
+            <button class="button button-secondary" id="back-button" name="back" type="button">${escapeHtml(form.ui.actions.back)}</button>
+            <button class="button button-primary" id="next-button" name="next" type="button">${escapeHtml(nextButtonLabel)}</button>
+          </div>
+        </footer>`;
+}
+
+function renderHiddenThanks(form: InstantForm): string {
+  return `
+      <section class="thanks" id="thanks" tabindex="-1" hidden>
+        <h1>${escapeHtml(form.postSubmit.title)}</h1>
+        <p>${escapeHtml(form.postSubmit.message)}</p>
+      </section>`;
+}
+
+function renderControllerScripts(formConfigExpression: string, activeStepKind: FormStep["kind"]): string {
+  return `<script>
+      window.__FORM_CONFIG__ = ${formConfigExpression};
+    </script>
+    <script>
+${getFormControllerScript(activeStepKind)}
+    </script>`;
 }
 
 export async function renderUnavailablePage(content: UnavailablePageContent): Promise<string> {

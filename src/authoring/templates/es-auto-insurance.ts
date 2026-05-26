@@ -36,10 +36,6 @@ const esUiCopy = {
       "No pudimos preparar el certificado de consentimiento. Revise su conexión e intente de nuevo.",
   },
   pages: {
-    thankYou: {
-      title: "Gracias.",
-      message: "Recibimos su información. Un agente se pondrá en contacto con usted pronto.",
-    },
     nativeSubmissionError: {
       title: "No pudimos enviar el formulario",
       heading: "No pudimos enviar el formulario.",
@@ -124,6 +120,11 @@ export const esAutoInsuranceTemplate = defineFormTemplate({
       },
       page: {
         name: variables.pageName,
+      },
+      postSubmit: {
+        slug: "gracias",
+        title: "Gracias.",
+        message: "Recibimos su información. Un agente se pondrá en contacto con usted pronto.",
       },
       ...(gtmContainerId
         ? {

@@ -11,10 +11,10 @@ export function htmlResponse(body: string, status = 200, cacheControl = "public,
   });
 }
 
-export function redirectNoStore(c: Context, url: string): Response {
+export function redirectNoStore(c: Context, url: string, status: 302 | 303 = 302): Response {
   c.header("Cache-Control", "no-store");
 
-  return c.redirect(url, 302);
+  return c.redirect(url, status);
 }
 
 export function jsonResponse(c: Context, body: unknown, status: ContentfulStatusCode): Response {

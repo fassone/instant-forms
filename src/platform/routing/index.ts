@@ -3,6 +3,7 @@ export {
   getFormRouteByRouteKey,
   getFormRouteBuildEntries,
   getFormRouteKey,
+  getFormRoutePostSubmitUrl,
   getFormRouteStepUrl,
   getFormRouteStepUrlOverrides,
   redirectTo,

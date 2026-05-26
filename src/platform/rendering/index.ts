@@ -2,6 +2,7 @@ export {
   FORM_CONFIG_JSON_PLACEHOLDER,
   FORM_CONFIG_PLACEHOLDER_EXPRESSION,
   renderFormPage,
+  renderPostSubmitPage,
   renderUnavailablePage,
   serializeForScript,
   type RenderFormPageOptions,
