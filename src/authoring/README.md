@@ -12,6 +12,7 @@
 - Area-to-flow registration.
 - Public route-folder placement for authored flows.
 - Selected third-party script registrations that are safe to proxy.
+- Follow-up request proxy allowlists for third-party integrations.
 - Market copy, slugs, order, and authored conditional flow choices.
 
 ## Does Not Belong Here

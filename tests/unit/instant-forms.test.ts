@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { googleTagManager, gtmContainerIdSchema } from "../../src/authoring/integrations/google-tag-manager";
 import { trustedFormCertify } from "../../src/authoring/integrations/trusted-form";
+import { requestProxies } from "../../src/authoring/proxies/registry";
 import { selectedScripts } from "../../src/authoring/scripts/registry";
 import { formRoutes } from "../../src/authoring/routes/registry";
 import { createFetchHandler } from "../../src/platform/app/server";
@@ -48,7 +49,16 @@ import {
   registerFormRoutePages,
   unavailable,
 } from "../../src/platform/routing";
-import { buildScriptProxyUpstreamUrl, proxySelectedScript } from "../../src/platform/scripts";
+import {
+  buildRequestProxySpecialRouteUpstreamUrl,
+  buildRequestProxyUpstreamUrl,
+  buildScriptProxyUpstreamUrl,
+  defineRequestProxyRegistry,
+  getRequestProxyDefinition,
+  isRequestProxyMethodAllowed,
+  isRequestProxyUrlAllowed,
+  proxySelectedScript,
+} from "../../src/platform/scripts";
 import { createStateAutocompleteItems, rankAutocompleteItems } from "../../src/platform/steps/autocomplete/ranking";
 import { normalizeUsPhoneNumber } from "../../src/platform/steps/phone/us-phone";
 import { validateSubmission } from "../../src/platform/submissions/validation";
@@ -2084,6 +2094,7 @@ describe("repository structure", () => {
     "src/authoring/README.md",
     "src/authoring/flows/README.md",
     "src/authoring/flows/tn/README.md",
+    "src/authoring/proxies/README.md",
     "src/authoring/routes/README.md",
     "src/authoring/scripts/README.md",
     "src/authoring/templates/README.md",
@@ -2532,6 +2543,108 @@ describe("selected script proxy", () => {
       ok: false,
       status: 400,
     });
+  });
+});
+
+describe("request proxy registry", () => {
+  it("registers the authored follow-up request proxies", () => {
+    const trustedForm = getRequestProxyDefinition(requestProxies, "trustedForm");
+    const googleTags = getRequestProxyDefinition(requestProxies, "googleTags");
+    const metaPixel = getRequestProxyDefinition(requestProxies, "metaPixel");
+
+    expect(trustedForm?.route).toBe("/_instant/trustedform/proxy");
+    expect(googleTags?.route).toBe("/_instant/google-tags/proxy");
+    expect(metaPixel?.route).toBe("/_instant/meta/proxy");
+    expect(metaPixel?.specialRoutes).toContainEqual({
+      route: "/_instant/meta/tr",
+      upstreamOrigin: "https://www.facebook.com",
+      upstreamPath: "/tr",
+    });
+  });
+
+  it("validates request proxy allowlists, methods, and static routes", () => {
+    const googleTags = getRequestProxyDefinition(requestProxies, "googleTags");
+    const metaPixel = getRequestProxyDefinition(requestProxies, "metaPixel");
+    if (!googleTags || !metaPixel) {
+      throw new Error("Expected authored request proxies to be registered.");
+    }
+
+    expect(isRequestProxyUrlAllowed(googleTags, new URL("https://www.googletagmanager.com/debug/bootstrap"))).toBe(
+      true,
+    );
+    expect(isRequestProxyUrlAllowed(googleTags, new URL("https://evil.test/debug/bootstrap"))).toBe(false);
+    expect(isRequestProxyUrlAllowed(metaPixel, new URL("https://www.facebook.com/tr?id=123&ev=Lead"))).toBe(true);
+    expect(isRequestProxyUrlAllowed(metaPixel, new URL("https://www.facebook.com/plugins/like.php"))).toBe(false);
+    expect(isRequestProxyMethodAllowed(metaPixel, "POST")).toBe(true);
+    expect(isRequestProxyMethodAllowed(metaPixel, "DELETE")).toBe(false);
+  });
+
+  it("builds request proxy upstream URLs from registry definitions", () => {
+    const trustedForm = getRequestProxyDefinition(requestProxies, "trustedForm");
+    const metaPixel = getRequestProxyDefinition(requestProxies, "metaPixel");
+    const specialRoute = metaPixel?.specialRoutes?.[0];
+    if (!trustedForm || !metaPixel || !specialRoute) {
+      throw new Error("Expected authored request proxies to be registered.");
+    }
+
+    const result = buildRequestProxyUpstreamUrl(
+      trustedForm,
+      new URL(
+        `http://localhost/_instant/trustedform/proxy?u=${encodeURIComponent("https://events.trustedform.com/v1/beacon")}`,
+      ),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.url.toString()).toBe("https://events.trustedform.com/v1/beacon");
+    }
+
+    const specialResult = buildRequestProxySpecialRouteUpstreamUrl(
+      metaPixel,
+      specialRoute,
+      new URL("http://localhost/_instant/meta/tr/?id=123&ev=Lead"),
+    );
+    expect(specialResult.ok).toBe(true);
+    if (specialResult.ok) {
+      expect(specialResult.url.toString()).toBe("https://www.facebook.com/tr/?id=123&ev=Lead");
+    }
+  });
+
+  it("rejects unsafe request proxy definitions", () => {
+    expect(() =>
+      defineRequestProxyRegistry({
+        unsafe: {
+          route: "https://evil.test/proxy",
+          allowedMethods: ["GET"],
+          timeoutMs: 1000,
+          allow: [{ protocol: "https:", hostname: "example.com" }],
+          clientRewrite: { kind: "query_param", param: "u" },
+        },
+      }),
+    ).toThrow("route must be a static absolute route");
+
+    expect(() =>
+      defineRequestProxyRegistry({
+        unsafe: {
+          route: "/_instant/unsafe/proxy",
+          allowedMethods: ["DELETE" as "GET"],
+          timeoutMs: 1000,
+          allow: [{ protocol: "https:", hostname: "example.com" }],
+          clientRewrite: { kind: "query_param", param: "u" },
+        },
+      }),
+    ).toThrow('method "DELETE" is not supported');
+
+    expect(() =>
+      defineRequestProxyRegistry({
+        unsafe: {
+          route: "/_instant/unsafe/proxy",
+          allowedMethods: ["GET"],
+          timeoutMs: 0,
+          allow: [{ protocol: "https:", hostname: "example.com" }],
+          clientRewrite: { kind: "query_param", param: "u" },
+        },
+      }),
+    ).toThrow("timeoutMs must be a finite positive number");
   });
 });
 
@@ -3095,7 +3208,7 @@ describe("server routing", () => {
 
   it("routes nested selected-script proxy URLs through their script key", async () => {
     const app = new Hono();
-    registerScriptRoutes(app, getBunFetchSelectedScriptRegistry());
+    registerScriptRoutes(app, getBunFetchSelectedScriptRegistry(), requestProxies);
     const originalFetch = globalThis.fetch;
 
     globalThis.fetch = (() =>
@@ -4022,6 +4135,8 @@ describe("form rendering", () => {
     expect(html).toContain("installGoogleTagRequestProxyShim();");
     expect(html).toContain("function installGoogleTagRequestProxyShim()");
     expect(html).toContain("window.__INSTANT_GOOGLE_TAG_PROXY_SHIM__");
+    expect(html).toContain("window.__INSTANT_COMPOSE_PARTYTOWN_CONFIG__");
+    expect(html).toContain('requestProxyKeys: ["googleTags","metaPixel","trustedForm"]');
     expect(html).toContain("loadScriptsOnMainThread");
     expect(html).toContain('"https://www.googletagmanager.com/debug/bootstrap"');
     expect(html).toContain('"https://www.google-analytics.com/debug/bootstrap"');
@@ -4030,10 +4145,12 @@ describe("form rendering", () => {
     expect(html).toContain('<script data-partytown-runtime="true">/* Partytown');
     expect(html).not.toContain('<script src="/~partytown/partytown.js" data-partytown-runtime="true"></script>');
     expect(html).toContain('type="text/partytown" src="/_instant/scripts/gtm.js?id=GTM-ABC123&amp;l=dataLayer"');
-    expect(html).toContain("/_instant/google-tags/proxy?u=");
-    expect(html).toContain("function readOriginalGoogleTagUrl");
-    expect(html).toContain("function patchGoogleTagGetAttribute");
-    expect(html).toContain('patchGoogleTagUrlProperty(HTMLLinkElement.prototype, "href")');
+    expect(html).toContain("/_instant/google-tags/proxy");
+    expect(html).toContain('"param":"u"');
+    expect(html).toContain("window.__INSTANT_READ_ORIGINAL_REQUEST_PROXY_URL__");
+    expect(html).toContain("function patchInstantRequestProxyGetAttribute");
+    expect(html).toContain('patchInstantRequestProxyUrlProperty(HTMLLinkElement.prototype, "href")');
+    expect(html).toContain('"trustedForm"');
     expect(html).toContain("/_instant/meta/tr");
     expect(html.indexOf("installGoogleTagRequestProxyShim();")).toBeLessThan(
       html.indexOf('type="text/partytown" src="/_instant/scripts/gtm.js?id=GTM-ABC123&amp;l=dataLayer"'),
@@ -4710,6 +4827,8 @@ describe("form rendering", () => {
     expect(html).toContain("function loadTrustedFormSdk(trustedForm)");
     expect(html).toContain("function loadTrustedFormSdkWithPartytown(trustedForm, sdkUrl)");
     expect(html).toContain("function ensurePartytownReady(trustedForm)");
+    expect(html).toContain("window.__INSTANT_COMPOSE_PARTYTOWN_CONFIG__");
+    expect(html).toContain('requestProxyKeys: ["trustedForm"]');
     expect(html).toContain("function getTrustedFormGlobalState()");
     expect(html).toContain("function shouldUseTrustedFormProxyAliases(trustedForm, url)");
     expect(html).toContain("const partytownBootstrapSource =");
@@ -4747,7 +4866,8 @@ describe("form rendering", () => {
     expect(html).toContain('tfRole: "submit"');
     expect(html).toContain('form.addEventListener("submit"');
     expect(html).toContain('function installTrustedFormRequestProxyShim()');
-    expect(html).toContain('"/_instant/trustedform/proxy?u="');
+    expect(html).toContain('"/_instant/trustedform/proxy"');
+    expect(html).toContain('window.__INSTANT_INSTALL_REQUEST_PROXY_SHIM__("trustedForm", ["trustedForm"])');
     expect(html).toContain('ctx.form.setAttribute("data-tf-element-role", "offer")');
     expect(html).toContain("/_instant/scripts/trustedform.com/tfc.js");
     expect(html).not.toContain("https://api.trustedform.com/trustedform.js");

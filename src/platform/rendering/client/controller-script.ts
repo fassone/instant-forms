@@ -1,5 +1,8 @@
 import type { FormStep } from "../../flow";
+import { requestProxies } from "../../../authoring/proxies/registry";
 import { getPartytownBootstrapSource } from "../../scripts/partytown-bootstrap";
+import { getRequestProxyClientDefinitions } from "../../scripts/request-proxy-registry";
+import { renderRequestProxyClientRuntimeScript } from "../request-proxy-client";
 
 export type ClientBehaviorKind = FormStep["kind"];
 
@@ -2430,8 +2433,12 @@ function getInterstitialBehaviorScript(registerExpression: string): string {
 
 function getTrustedFormBehaviorScript(registerExpression: string): string {
   const partytownBootstrapSource = JSON.stringify(getPartytownBootstrapSource()).replace(/<\/script/giu, "<\\/script");
+  const requestProxyRuntimeScript = renderRequestProxyClientRuntimeScript(
+    getRequestProxyClientDefinitions(requestProxies, ["trustedForm"]),
+  );
   return `
   ${registerExpression}("trusted_form_consent", (() => {
+${requestProxyRuntimeScript}
     const partytownBootstrapSource = ${partytownBootstrapSource};
     const trustedFormReadyPollMs = 100;
     const trustedFormReadyTimeoutMs = 5000;
@@ -2806,10 +2813,10 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
     function ensurePartytownReady(trustedForm) {
       if (partytownLoaded) return Promise.resolve();
       if (partytownLoadPromise) return partytownLoadPromise;
-      window.partytown = {
-        ...(window.partytown || {}),
+      window.partytown = window.__INSTANT_COMPOSE_PARTYTOWN_CONFIG__(window.partytown || {}, {
         lib: trustedForm.partytownLib || "/~partytown/",
-      };
+        requestProxyKeys: ["trustedForm"],
+      });
       const existingRuntime = document.querySelector('script[data-partytown-runtime="true"]');
       if (existingRuntime) {
         partytownLoaded = true;
@@ -2889,91 +2896,7 @@ function getTrustedFormBehaviorScript(registerExpression: string): string {
     function installTrustedFormRequestProxyShim() {
       if (window.__INSTANT_TRUSTED_FORM_PROXY_SHIM__) return;
       window.__INSTANT_TRUSTED_FORM_PROXY_SHIM__ = true;
-      const nativeFetch = window.fetch;
-      window.fetch = function(input, init) {
-        if (typeof input === "string" || input instanceof URL) {
-          return nativeFetch.call(this, rewriteTrustedFormUrl(input), init);
-        }
-        if (input instanceof Request && shouldProxyTrustedFormUrl(input.url)) {
-          return nativeFetch.call(this, new Request(rewriteTrustedFormUrl(input.url), input), init);
-        }
-        return nativeFetch.call(this, input, init);
-      };
-
-      const nativeOpen = XMLHttpRequest.prototype.open;
-      XMLHttpRequest.prototype.open = function(method, url, ...rest) {
-        return nativeOpen.call(this, method, rewriteTrustedFormUrl(url), ...rest);
-      };
-
-      if (navigator.sendBeacon) {
-        const nativeSendBeacon = navigator.sendBeacon.bind(navigator);
-        navigator.sendBeacon = function(url, data) {
-          return nativeSendBeacon(rewriteTrustedFormUrl(url), data);
-        };
-      }
-
-      patchElementSetAttribute();
-      patchSrcProperty(HTMLImageElement.prototype);
-      patchSrcProperty(HTMLScriptElement.prototype);
-      patchSrcProperty(HTMLIFrameElement.prototype);
-      patchHtmlStringWriter(document, "write");
-      patchHtmlStringWriter(document, "writeln");
-      patchInsertAdjacentHTML();
-    }
-
-    function rewriteTrustedFormUrl(value) {
-      if (!shouldProxyTrustedFormUrl(value)) return value;
-      const url = new URL(String(value), window.location.href);
-      return "/_instant/trustedform/proxy?u=" + encodeURIComponent(url.toString());
-    }
-
-    function shouldProxyTrustedFormUrl(value) {
-      try {
-        const url = new URL(String(value), window.location.href);
-        return url.protocol === "https:" && (url.hostname === "trustedform.com" || url.hostname.endsWith(".trustedform.com"));
-      } catch {
-        return false;
-      }
-    }
-
-    function patchElementSetAttribute() {
-      const nativeSetAttribute = Element.prototype.setAttribute;
-      Element.prototype.setAttribute = function(name, value) {
-        if (String(name).toLowerCase() === "src") {
-          return nativeSetAttribute.call(this, name, rewriteTrustedFormUrl(value));
-        }
-        return nativeSetAttribute.call(this, name, value);
-      };
-    }
-
-    function patchSrcProperty(prototype) {
-      const descriptor = Object.getOwnPropertyDescriptor(prototype, "src");
-      if (!descriptor || !descriptor.set) return;
-      Object.defineProperty(prototype, "src", {
-        ...descriptor,
-        set(value) {
-          descriptor.set.call(this, rewriteTrustedFormUrl(value));
-        },
-      });
-    }
-
-    function patchHtmlStringWriter(target, methodName) {
-      const nativeMethod = target[methodName];
-      if (typeof nativeMethod !== "function") return;
-      target[methodName] = function(...parts) {
-        return nativeMethod.apply(this, parts.map(rewriteTrustedFormHtml));
-      };
-    }
-
-    function patchInsertAdjacentHTML() {
-      const nativeInsertAdjacentHTML = Element.prototype.insertAdjacentHTML;
-      Element.prototype.insertAdjacentHTML = function(position, text) {
-        return nativeInsertAdjacentHTML.call(this, position, rewriteTrustedFormHtml(text));
-      };
-    }
-
-    function rewriteTrustedFormHtml(value) {
-      return String(value).replace(/https:\\/\\/[^"'<>\\s)]+trustedform\\.com[^"'<>\\s)]*/g, (url) => rewriteTrustedFormUrl(url));
+      window.__INSTANT_INSTALL_REQUEST_PROXY_SHIM__("trustedForm", ["trustedForm"]);
     }
 
     function formatUsPhoneForDisplay(value) {

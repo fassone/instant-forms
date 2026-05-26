@@ -7,6 +7,7 @@
 ## Belongs Here
 
 - Allowlisted script proxy validation.
+- Allowlisted follow-up request proxy validation.
 - Upstream URL construction from safe query aliases.
 - Partytown static asset serving helpers.
 - Partytown bootstrap source loading for pages that inline the small runtime while still serving worker assets from `/~partytown/`.
@@ -19,5 +20,5 @@
 
 ## Change Safely
 
-Add proxy capabilities here only when they can be expressed as allowlisted script keys and explicit query parameters. Authored script selections belong in `src/authoring/scripts`.
+Add proxy capabilities here only when they can be expressed as static allowlists and explicit query parameters. Authored initial script selections belong in `src/authoring/scripts`; authored follow-up request allowlists belong in `src/authoring/proxies`.
 Selected script responses should remain private browser-cacheable only; follow-up request proxies should remain `no-store` so shared caches such as Cloudflare do not serve stale third-party content.

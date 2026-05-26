@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 
+import { requestProxies } from "../../authoring/proxies/registry";
 import { selectedScripts } from "../../authoring/scripts/registry";
 import { formRoutes } from "../../authoring/routes/registry";
 import { registerFormRoutePages, renderFormRouteNotFound } from "../routing";
@@ -24,7 +25,7 @@ export function createApp(options: AppOptions = {}) {
   const app = new Hono();
 
   registerAssetRoutes(app);
-  registerScriptRoutes(app, selectedScripts);
+  registerScriptRoutes(app, selectedScripts, requestProxies);
   registerFormRoutePages(app, formRoutes);
   registerFormRoutes(app, formRoutes, logger);
 

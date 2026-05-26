@@ -7,7 +7,10 @@ import type {
   TrackingEventKind,
 } from "../flow";
 import type { SubmissionPayload } from "../submissions/validation";
+import { requestProxies } from "../../authoring/proxies/registry";
 import { getPartytownBootstrapSource } from "../scripts/partytown-bootstrap";
+import { getRequestProxyClientDefinitions } from "../scripts/request-proxy-registry";
+import { renderRequestProxyClientRuntimeScript } from "./request-proxy-client";
 
 export type ClientGoogleTagManagerConfig = {
   containerId: string;
@@ -60,8 +63,13 @@ export function renderGoogleTagManagerHead(
   }
 
   const initialEventsJson = serializeForScript(initialEvents);
+  const requestProxyRuntimeScript = renderRequestProxyClientRuntimeScript(
+    getRequestProxyClientDefinitions(requestProxies, ["googleTags", "metaPixel", "trustedForm"]),
+  );
+  const partytownRequestProxyKeys = serializeForScript(["googleTags", "metaPixel", "trustedForm"]);
 
   return `    <script>
+${requestProxyRuntimeScript}
       installGoogleTagRequestProxyShim();
       if (${serializeForScript(googleTagManager.metaPixelProxy)}) {
         installMetaPixelRequestProxyShim();
@@ -80,278 +88,32 @@ export function renderGoogleTagManagerHead(
       }
       document.addEventListener("pt0", pushInstantInitialTrackingEvents, { once: true });
       window.setTimeout(pushInstantInitialTrackingEvents, 1500);
-      window.partytown = {
-        ...(window.partytown || {}),
+      window.partytown = window.__INSTANT_COMPOSE_PARTYTOWN_CONFIG__(window.partytown || {}, {
         lib: ${serializeForScript(googleTagManager.partytownLib)},
         forward: [
-          ...(window.partytown?.forward || []).filter((entry) =>
-            Array.isArray(entry) ? entry[0] !== "dataLayer.push" : entry !== "dataLayer.push",
-          ),
           ["dataLayer.push", { preserveBehavior: true }],
         ],
         loadScriptsOnMainThread: [
-          ...(window.partytown?.loadScriptsOnMainThread || []),
           "https://www.googletagmanager.com/debug/bootstrap",
           "https://www.google-analytics.com/debug/bootstrap",
           /\\/_instant\\/google-tags\\/proxy\\?u=https%3A%2F%2Fwww\\.googletagmanager\\.com%2Fdebug%2Fbootstrap/,
           /\\/_instant\\/google-tags\\/proxy\\?u=https%3A%2F%2Fwww\\.google-analytics\\.com%2Fdebug%2Fbootstrap/,
         ],
-        resolveUrl(url) {
-          try {
-            const nextUrl = url instanceof URL ? url : new URL(String(url), window.location.href);
-            if (isInstantFormGoogleTagUrl(nextUrl)) {
-              return new URL("/_instant/google-tags/proxy?u=" + encodeURIComponent(nextUrl.toString()), window.location.origin);
-            }
-            if (${serializeForScript(googleTagManager.metaPixelProxy)} && isInstantFormMetaPixelUrl(nextUrl)) {
-              return new URL(rewriteMetaPixelUrl(nextUrl), window.location.origin);
-            }
-          } catch {}
-          return url;
-        },
-      };
-      function isInstantFormGoogleTagUrl(url) {
-        return url.protocol === "https:" && [
-          "www.googletagmanager.com",
-          "www.google-analytics.com",
-          "region1.google-analytics.com",
-          "stats.g.doubleclick.net",
-          "www.googleadservices.com",
-        ].includes(url.hostname);
-      }
-      function isInstantFormMetaPixelUrl(url) {
-        return url.protocol === "https:" && (
-          url.hostname === "connect.facebook.net" ||
-          (url.hostname === "www.facebook.com" && url.pathname.startsWith("/tr"))
-        );
-      }
+        requestProxyKeys: ${partytownRequestProxyKeys},
+      });
       function installGoogleTagRequestProxyShim() {
         if (window.__INSTANT_GOOGLE_TAG_PROXY_SHIM__) {
           return;
         }
         window.__INSTANT_GOOGLE_TAG_PROXY_SHIM__ = true;
-        const nativeFetch = window.fetch;
-        if (typeof nativeFetch === "function") {
-          window.fetch = function(input, init) {
-            if (input instanceof Request) {
-              if (shouldProxyGoogleTagUrl(input.url)) {
-                return nativeFetch.call(this, new Request(rewriteGoogleTagUrl(input.url), input), init);
-              }
-              return nativeFetch.call(this, input, init);
-            }
-            return nativeFetch.call(this, rewriteGoogleTagUrl(input), init);
-          };
-        }
-        const nativeOpen = XMLHttpRequest.prototype.open;
-        XMLHttpRequest.prototype.open = function(method, url, ...rest) {
-          return nativeOpen.call(this, method, rewriteGoogleTagUrl(url), ...rest);
-        };
-        if (typeof navigator.sendBeacon === "function") {
-          const nativeSendBeacon = navigator.sendBeacon.bind(navigator);
-          navigator.sendBeacon = function(url, data) {
-            return nativeSendBeacon(rewriteGoogleTagUrl(url), data);
-          };
-        }
-        patchGoogleTagSetAttribute();
-        patchGoogleTagGetAttribute();
-        patchGoogleTagUrlProperty(HTMLImageElement.prototype, "src");
-        patchGoogleTagUrlProperty(HTMLScriptElement.prototype, "src");
-        patchGoogleTagUrlProperty(HTMLIFrameElement.prototype, "src");
-        patchGoogleTagUrlProperty(HTMLLinkElement.prototype, "href");
-        patchGoogleTagUrlProperty(HTMLAnchorElement.prototype, "href");
-        patchGoogleTagHtmlStringWriter(document, "write");
-        patchGoogleTagHtmlStringWriter(document, "writeln");
-        patchGoogleTagInsertAdjacentHTML();
-      }
-      function shouldProxyGoogleTagUrl(value) {
-        try {
-          const url = value instanceof URL ? value : new URL(String(value), window.location.href);
-          return isInstantFormGoogleTagUrl(url) && !isInstantFormGoogleTagProxyUrl(url);
-        } catch {
-          return false;
-        }
-      }
-      function rewriteGoogleTagUrl(value) {
-        if (!shouldProxyGoogleTagUrl(value)) {
-          return value;
-        }
-        const url = value instanceof URL ? value : new URL(String(value), window.location.href);
-        return "/_instant/google-tags/proxy?u=" + encodeURIComponent(url.toString());
-      }
-      function readOriginalGoogleTagUrl(value) {
-        try {
-          const url = value instanceof URL ? value : new URL(String(value), window.location.href);
-          if (!isInstantFormGoogleTagProxyUrl(url)) {
-            return value;
-          }
-          const target = url.searchParams.get("u");
-          if (!target) {
-            return value;
-          }
-          const targetUrl = new URL(target);
-          return isInstantFormGoogleTagUrl(targetUrl) ? targetUrl.toString() : value;
-        } catch {
-          return value;
-        }
-      }
-      function isInstantFormGoogleTagProxyUrl(url) {
-        return url.origin === window.location.origin && url.pathname === "/_instant/google-tags/proxy";
-      }
-      function patchGoogleTagSetAttribute() {
-        const nativeSetAttribute = Element.prototype.setAttribute;
-        Element.prototype.setAttribute = function(name, value) {
-          const attributeName = String(name).toLowerCase();
-          if (attributeName === "src" || attributeName === "href") {
-            return nativeSetAttribute.call(this, name, rewriteGoogleTagUrl(value));
-          }
-          return nativeSetAttribute.call(this, name, value);
-        };
-      }
-      function patchGoogleTagGetAttribute() {
-        const nativeGetAttribute = Element.prototype.getAttribute;
-        Element.prototype.getAttribute = function(name) {
-          const value = nativeGetAttribute.call(this, name);
-          if (value === null) {
-            return value;
-          }
-          const attributeName = String(name).toLowerCase();
-          return attributeName === "src" || attributeName === "href" ? readOriginalGoogleTagUrl(value) : value;
-        };
-      }
-      function patchGoogleTagUrlProperty(prototype, propertyName) {
-        const descriptor = Object.getOwnPropertyDescriptor(prototype, propertyName);
-        if (!descriptor || typeof descriptor.set !== "function" || typeof descriptor.get !== "function") {
-          return;
-        }
-        Object.defineProperty(prototype, propertyName, {
-          configurable: true,
-          enumerable: descriptor.enumerable,
-          get: function() {
-            return readOriginalGoogleTagUrl(descriptor.get.call(this));
-          },
-          set: function(value) {
-            return descriptor.set.call(this, rewriteGoogleTagUrl(value));
-          },
-        });
-      }
-      function patchGoogleTagHtmlStringWriter(target, methodName) {
-        const nativeMethod = target[methodName];
-        target[methodName] = function(...values) {
-          return nativeMethod.apply(this, values.map((value) => rewriteGoogleTagHtml(String(value))));
-        };
-      }
-      function patchGoogleTagInsertAdjacentHTML() {
-        const nativeInsertAdjacentHTML = Element.prototype.insertAdjacentHTML;
-        Element.prototype.insertAdjacentHTML = function(position, html) {
-          return nativeInsertAdjacentHTML.call(this, position, rewriteGoogleTagHtml(String(html)));
-        };
-      }
-      function rewriteGoogleTagHtml(html) {
-        return html.replace(
-          /https:\\/\\/(?:www\\.googletagmanager\\.com|www\\.google-analytics\\.com|region1\\.google-analytics\\.com|stats\\.g\\.doubleclick\\.net|www\\.googleadservices\\.com)[^"'<>\\s)]*/g,
-          (url) => String(rewriteGoogleTagUrl(url.replace(/&amp;/g, "&"))),
-        );
+        window.__INSTANT_INSTALL_REQUEST_PROXY_SHIM__("googleTags", ["googleTags"]);
       }
       function installMetaPixelRequestProxyShim() {
         if (window.__INSTANT_META_PIXEL_PROXY_SHIM__) {
           return;
         }
         window.__INSTANT_META_PIXEL_PROXY_SHIM__ = true;
-        const nativeFetch = window.fetch;
-        if (typeof nativeFetch === "function") {
-          window.fetch = function(input, init) {
-            if (input instanceof Request) {
-              if (shouldProxyMetaPixelUrl(input.url)) {
-                return nativeFetch.call(this, new Request(rewriteMetaPixelUrl(input.url), input), init);
-              }
-              return nativeFetch.call(this, input, init);
-            }
-            return nativeFetch.call(this, rewriteMetaPixelUrl(input), init);
-          };
-        }
-        const nativeOpen = XMLHttpRequest.prototype.open;
-        XMLHttpRequest.prototype.open = function(method, url, ...rest) {
-          return nativeOpen.call(this, method, rewriteMetaPixelUrl(url), ...rest);
-        };
-        if (typeof navigator.sendBeacon === "function") {
-          const nativeSendBeacon = navigator.sendBeacon.bind(navigator);
-          navigator.sendBeacon = function(url, data) {
-            return nativeSendBeacon(rewriteMetaPixelUrl(url), data);
-          };
-        }
-        patchMetaPixelSetAttribute();
-        patchMetaPixelUrlProperty(HTMLImageElement.prototype, "src");
-        patchMetaPixelUrlProperty(HTMLScriptElement.prototype, "src");
-        patchMetaPixelUrlProperty(HTMLIFrameElement.prototype, "src");
-        patchMetaPixelHtmlStringWriter(document, "write");
-        patchMetaPixelHtmlStringWriter(document, "writeln");
-        patchMetaPixelInsertAdjacentHTML();
-      }
-      function shouldProxyMetaPixelUrl(value) {
-        try {
-          const url = value instanceof URL ? value : new URL(String(value), window.location.href);
-          return isInstantFormMetaPixelUrl(url) && !isInstantFormMetaPixelProxyUrl(url);
-        } catch {
-          return false;
-        }
-      }
-      function rewriteMetaPixelUrl(value) {
-        if (!shouldProxyMetaPixelUrl(value)) {
-          return value;
-        }
-        const url = value instanceof URL ? value : new URL(String(value), window.location.href);
-        if (url.hostname === "www.facebook.com" && url.pathname.startsWith("/tr")) {
-          const trPathSuffix = url.pathname.slice("/tr".length);
-          return "/_instant/meta/tr" + trPathSuffix + url.search + url.hash;
-        }
-        return "/_instant/meta/proxy?u=" + encodeURIComponent(url.toString());
-      }
-      function isInstantFormMetaPixelProxyUrl(url) {
-        return url.origin === window.location.origin && (
-          url.pathname === "/_instant/meta/proxy" ||
-          url.pathname === "/_instant/meta/tr" ||
-          url.pathname.startsWith("/_instant/meta/tr/")
-        );
-      }
-      function patchMetaPixelSetAttribute() {
-        const nativeSetAttribute = Element.prototype.setAttribute;
-        Element.prototype.setAttribute = function(name, value) {
-          if (String(name).toLowerCase() === "src") {
-            return nativeSetAttribute.call(this, name, rewriteMetaPixelUrl(value));
-          }
-          return nativeSetAttribute.call(this, name, value);
-        };
-      }
-      function patchMetaPixelUrlProperty(prototype, propertyName) {
-        const descriptor = Object.getOwnPropertyDescriptor(prototype, propertyName);
-        if (!descriptor || typeof descriptor.set !== "function") {
-          return;
-        }
-        Object.defineProperty(prototype, propertyName, {
-          configurable: true,
-          enumerable: descriptor.enumerable,
-          get: descriptor.get,
-          set: function(value) {
-            return descriptor.set.call(this, rewriteMetaPixelUrl(value));
-          },
-        });
-      }
-      function patchMetaPixelHtmlStringWriter(target, methodName) {
-        const nativeMethod = target[methodName];
-        target[methodName] = function(...values) {
-          return nativeMethod.apply(this, values.map((value) => rewriteMetaPixelHtml(String(value))));
-        };
-      }
-      function patchMetaPixelInsertAdjacentHTML() {
-        const nativeInsertAdjacentHTML = Element.prototype.insertAdjacentHTML;
-        Element.prototype.insertAdjacentHTML = function(position, html) {
-          return nativeInsertAdjacentHTML.call(this, position, rewriteMetaPixelHtml(String(html)));
-        };
-      }
-      function rewriteMetaPixelHtml(html) {
-        return html.replace(
-          /https:\\/\\/(?:connect\\.facebook\\.net|www\\.facebook\\.com\\/tr)[^"'<>\\s)]*/g,
-          (url) => String(rewriteMetaPixelUrl(url.replace(/&amp;/g, "&"))),
-        );
+        window.__INSTANT_INSTALL_REQUEST_PROXY_SHIM__("metaPixel", ["metaPixel"]);
       }
     </script>
     <script data-partytown-runtime="true">${escapeInlineScript(getPartytownBootstrapSource())}</script>

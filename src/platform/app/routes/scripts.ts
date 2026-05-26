@@ -1,14 +1,27 @@
 import type { Hono } from "hono";
 
-import type { ScriptProxyRegistry } from "../../scripts";
-import { getPartytownAssetPath, proxySelectedScript } from "../../scripts";
+import type { RequestProxyDefinition, RequestProxyRegistry, RequestProxySpecialRoute, ScriptProxyRegistry } from "../../scripts";
+import {
+  buildRequestProxySpecialRouteUpstreamUrl,
+  buildRequestProxyUpstreamUrl,
+  getPartytownAssetPath,
+  getRequestProxyDefinitions,
+  isRequestProxyMethodAllowed,
+  proxySelectedScript,
+} from "../../scripts";
 
-export function registerScriptRoutes(app: Hono, registry: ScriptProxyRegistry): void {
-  app.all("/_instant/trustedform/proxy", (c) => proxyTrustedFormRequest(c.req.raw));
-  app.all("/_instant/google-tags/proxy", (c) => proxyGoogleTagRequest(c.req.raw));
-  app.all("/_instant/meta/proxy", (c) => proxyMetaPixelRequest(c.req.raw));
-  app.all("/_instant/meta/tr", (c) => proxyMetaPixelBeaconRequest(c.req.raw));
-  app.all("/_instant/meta/tr/*", (c) => proxyMetaPixelBeaconRequest(c.req.raw));
+export function registerScriptRoutes(
+  app: Hono,
+  registry: ScriptProxyRegistry,
+  requestProxyRegistry: RequestProxyRegistry,
+): void {
+  for (const definition of getRequestProxyDefinitions(requestProxyRegistry)) {
+    app.all(definition.route, (c) => proxyRequestProxyRequest(c.req.raw, definition));
+    for (const specialRoute of definition.specialRoutes ?? []) {
+      app.all(specialRoute.route, (c) => proxyRequestProxySpecialRoute(c.req.raw, definition, specialRoute));
+      app.all(`${specialRoute.route}/*`, (c) => proxyRequestProxySpecialRoute(c.req.raw, definition, specialRoute));
+    }
+  }
 
   app.get("/_instant/scripts/*", (c) => {
     const scriptFile = getScriptFileFromPath(new URL(c.req.url).pathname);
@@ -40,121 +53,46 @@ export function registerScriptRoutes(app: Hono, registry: ScriptProxyRegistry): 
   });
 }
 
-const trustedFormProxyTimeoutMs = 4_500;
-const trustedFormProxyAllowedMethods = new Set(["GET", "HEAD", "POST"]);
-const googleTagProxyTimeoutMs = 4_500;
-const googleTagProxyAllowedMethods = new Set(["GET", "HEAD", "POST"]);
-const metaPixelProxyTimeoutMs = 4_500;
-const metaPixelProxyAllowedMethods = new Set(["GET", "HEAD", "POST"]);
-const allowedGoogleTagHosts = new Set([
-  "www.googletagmanager.com",
-  "www.google-analytics.com",
-  "region1.google-analytics.com",
-  "stats.g.doubleclick.net",
-  "www.googleadservices.com",
-]);
-
-async function proxyMetaPixelRequest(request: Request): Promise<Response> {
+async function proxyRequestProxyRequest(request: Request, definition: RequestProxyDefinition): Promise<Response> {
   const requestUrl = new URL(request.url);
-  const target = requestUrl.searchParams.get("u");
-
-  if (!target) {
-    return new Response("Missing target URL.", { status: 400 });
+  const upstreamUrlResult = buildRequestProxyUpstreamUrl(definition, requestUrl);
+  if (!upstreamUrlResult.ok) {
+    return new Response(upstreamUrlResult.message, { status: upstreamUrlResult.status });
   }
-
-  let upstreamUrl: URL;
-  try {
-    upstreamUrl = new URL(target);
-  } catch {
-    return new Response("Invalid target URL.", { status: 400 });
-  }
-
-  if (!isAllowedMetaPixelUrl(upstreamUrl)) {
-    return new Response("Target URL is not allowlisted.", { status: 400 });
-  }
-
-  if (!metaPixelProxyAllowedMethods.has(request.method)) {
+  if (!isRequestProxyMethodAllowed(definition, request.method)) {
     return new Response("Method not allowed.", { status: 405 });
   }
 
   return proxyAllowlistedRequest(
     request,
-    upstreamUrl,
-    metaPixelProxyTimeoutMs,
-    "Unable to proxy Meta Pixel request.",
-    rewriteMetaPixelScriptResponse,
+    upstreamUrlResult.url,
+    definition.timeoutMs,
+    `Unable to proxy ${getRequestProxyFailureName(definition)} request.`,
+    getRequestProxyTransform(definition),
   );
 }
 
-async function proxyMetaPixelBeaconRequest(request: Request): Promise<Response> {
+async function proxyRequestProxySpecialRoute(
+  request: Request,
+  definition: RequestProxyDefinition,
+  specialRoute: RequestProxySpecialRoute,
+): Promise<Response> {
   const requestUrl = new URL(request.url);
-  const upstreamUrl = new URL("https://www.facebook.com/tr");
-  const metaPathSuffix = requestUrl.pathname.slice("/_instant/meta/tr".length);
-
-  upstreamUrl.pathname = `/tr${metaPathSuffix}`;
-  upstreamUrl.search = requestUrl.search;
-
-  if (!isAllowedMetaPixelUrl(upstreamUrl)) {
-    return new Response("Target URL is not allowlisted.", { status: 400 });
+  const upstreamUrlResult = buildRequestProxySpecialRouteUpstreamUrl(definition, specialRoute, requestUrl);
+  if (!upstreamUrlResult.ok) {
+    return new Response(upstreamUrlResult.message, { status: upstreamUrlResult.status });
   }
-
-  if (!metaPixelProxyAllowedMethods.has(request.method)) {
+  if (!isRequestProxyMethodAllowed(definition, request.method)) {
     return new Response("Method not allowed.", { status: 405 });
   }
 
-  return proxyAllowlistedRequest(request, upstreamUrl, metaPixelProxyTimeoutMs, "Unable to proxy Meta Pixel request.");
-}
-
-async function proxyGoogleTagRequest(request: Request): Promise<Response> {
-  const requestUrl = new URL(request.url);
-  const target = requestUrl.searchParams.get("u");
-
-  if (!target) {
-    return new Response("Missing target URL.", { status: 400 });
-  }
-
-  let upstreamUrl: URL;
-  try {
-    upstreamUrl = new URL(target);
-  } catch {
-    return new Response("Invalid target URL.", { status: 400 });
-  }
-
-  if (!isAllowedGoogleTagUrl(upstreamUrl)) {
-    return new Response("Target URL is not allowlisted.", { status: 400 });
-  }
-
-  if (!googleTagProxyAllowedMethods.has(request.method)) {
-    return new Response("Method not allowed.", { status: 405 });
-  }
-
-  return proxyAllowlistedRequest(request, upstreamUrl, googleTagProxyTimeoutMs, "Unable to proxy Google tag request.");
-}
-
-async function proxyTrustedFormRequest(request: Request): Promise<Response> {
-  const requestUrl = new URL(request.url);
-  const target = requestUrl.searchParams.get("u");
-
-  if (!target) {
-    return new Response("Missing target URL.", { status: 400 });
-  }
-
-  let upstreamUrl: URL;
-  try {
-    upstreamUrl = new URL(target);
-  } catch {
-    return new Response("Invalid target URL.", { status: 400 });
-  }
-
-  if (!isAllowedTrustedFormUrl(upstreamUrl)) {
-    return new Response("Target URL is not allowlisted.", { status: 400 });
-  }
-
-  if (!trustedFormProxyAllowedMethods.has(request.method)) {
-    return new Response("Method not allowed.", { status: 405 });
-  }
-
-  return proxyAllowlistedRequest(request, upstreamUrl, trustedFormProxyTimeoutMs, "Unable to proxy TrustedForm request.");
+  return proxyAllowlistedRequest(
+    request,
+    upstreamUrlResult.url,
+    definition.timeoutMs,
+    `Unable to proxy ${getRequestProxyFailureName(definition)} request.`,
+    getRequestProxyTransform(definition),
+  );
 }
 
 async function proxyAllowlistedRequest(
@@ -251,19 +189,23 @@ function getProxyForwardHeaders(requestHeaders: Headers): Headers {
   return headers;
 }
 
-function isAllowedTrustedFormUrl(url: URL): boolean {
-  return url.protocol === "https:" && (url.hostname === "trustedform.com" || url.hostname.endsWith(".trustedform.com"));
+function getRequestProxyFailureName(definition: RequestProxyDefinition): string {
+  switch (definition.key) {
+    case "googleTags":
+      return "Google tag";
+    case "metaPixel":
+      return "Meta Pixel";
+    case "trustedForm":
+      return "TrustedForm";
+    default:
+      return definition.key;
+  }
 }
 
-function isAllowedGoogleTagUrl(url: URL): boolean {
-  return url.protocol === "https:" && allowedGoogleTagHosts.has(url.hostname);
-}
-
-function isAllowedMetaPixelUrl(url: URL): boolean {
-  return (
-    url.protocol === "https:" &&
-    (url.hostname === "connect.facebook.net" || (url.hostname === "www.facebook.com" && url.pathname.startsWith("/tr")))
-  );
+function getRequestProxyTransform(
+  definition: RequestProxyDefinition,
+): ((body: ArrayBuffer, upstreamUrl: URL, headers: Headers) => { body: ArrayBuffer; contentType?: string }) | undefined {
+  return definition.key === "metaPixel" ? rewriteMetaPixelScriptResponse : undefined;
 }
 
 function getScriptFileFromPath(pathname: string): string | undefined {

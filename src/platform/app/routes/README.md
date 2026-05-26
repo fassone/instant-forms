@@ -9,6 +9,7 @@
 - Static asset routes.
 - Built production transition-bundle routes under `/_instant/forms/...`.
 - Allowlisted selected-script proxy routes under `/_instant/scripts/...`.
+- Allowlisted vendor follow-up request proxy routes such as Google tags, Meta Pixel, and TrustedForm beacons.
 - Partytown static runtime files under `/~partytown/...`.
 - Checkpoint and submission API routes.
 - Request body parsing at API boundaries.
