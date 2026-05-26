@@ -4,6 +4,7 @@ import type {
   FormContract,
   FormFlowDefinitionBase,
   FormFlowInput,
+  FormAttribution,
   FormPage,
   FormPostSubmit,
   FormStep,
@@ -48,6 +49,7 @@ export function defineFormFlow<const TContract extends FormContract, const TStep
   assertAnswerStepContract(input.contract, steps);
   assertPagePresentation(input.page);
   assertPostSubmit(input.postSubmit, steps);
+  assertAttribution(input.attribution);
   assertTrackingContract(input.contract, tracking);
   assertKnownTemplateVariables(input.contract, { name: input.name, page: input.page, steps });
 
@@ -62,6 +64,7 @@ export function defineFormFlow<const TContract extends FormContract, const TStep
     payload: input.payload,
     page: input.page,
     postSubmit: input.postSubmit,
+    ...(input.attribution ? { attribution: input.attribution } : {}),
     ...(tracking ? { tracking } : {}),
     steps,
   };
@@ -276,6 +279,25 @@ function assertPostSubmit(postSubmit: FormPostSubmit, steps: readonly FormStep[]
 
   if (!isSafePostSubmitCtaHref(postSubmit.cta.href)) {
     throw new Error('postSubmit.cta.href must be a relative "/" URL or an "https://" URL.');
+  }
+}
+
+function assertAttribution(attribution: FormAttribution | undefined): void {
+  if (!attribution) {
+    return;
+  }
+
+  const seenQueryParams = new Set<string>();
+  for (const queryParam of attribution.preserveQueryParams) {
+    if (!/^[A-Za-z0-9_.~-]+$/u.test(queryParam)) {
+      throw new Error("attribution.preserveQueryParams values must be non-empty safe query parameter names.");
+    }
+
+    if (seenQueryParams.has(queryParam)) {
+      throw new Error(`attribution.preserveQueryParams includes "${queryParam}" more than once.`);
+    }
+
+    seenQueryParams.add(queryParam);
   }
 }
 

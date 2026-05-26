@@ -59,6 +59,28 @@ export type FormPostSubmit = {
   };
 };
 
+export type AttributionCookieOptions = {
+  path?: string;
+  maxAge?: number;
+  sameSite?: "Strict" | "Lax" | "None" | "strict" | "lax" | "none";
+  httpOnly?: boolean;
+  secure?: boolean;
+};
+
+export type AttributionCookieHelpers = {
+  get: (name: string) => string | undefined;
+  set: (name: string, value: string, options?: AttributionCookieOptions) => void;
+};
+
+export type FormAttribution = {
+  preserveQueryParams: readonly string[];
+  capture?: (input: {
+    url: URL;
+    now: Date;
+    cookies: AttributionCookieHelpers;
+  }) => void;
+};
+
 export type GoogleTagManagerContainerId = `GTM-${string}`;
 export type GoogleTagManagerDelivery = "partytown";
 export type GoogleTagManagerProxy = "first_party";
@@ -556,6 +578,7 @@ export type InstantForm = {
   payload: FormPayloadDelivery;
   page: FormPage;
   postSubmit: FormPostSubmit;
+  attribution?: FormAttribution;
   tracking?: FormTracking;
   steps: readonly FormStep[];
 };
@@ -818,6 +841,7 @@ export type FormFlowDefinitionBase<TContract extends FormContract = FormContract
   payload: FormPayloadDelivery<TContract>;
   page: FormPage;
   postSubmit: FormPostSubmit;
+  attribution?: FormAttribution;
   tracking?: FormTracking<TContract> | ((helpers: TrackingAuthoringHelpers<TContract>) => FormTracking<TContract>);
 };
 

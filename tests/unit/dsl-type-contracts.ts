@@ -204,6 +204,95 @@ void defineFormFlow({
 });
 
 void defineFormFlow({
+  name: "Attribution Cookie Type Fixture",
+  status: "ACTIVE",
+  ...testFlowCopy,
+  contract: {
+    context: z.object({}),
+    answers: z.object({}),
+    payload: z.object({ ok: z.string() }),
+  },
+  context: {},
+  payload: {
+    method: "POST",
+    encoding: "json",
+    mapping: () => ({ ok: "yes" }),
+  },
+  page: { name: "Page" },
+  attribution: {
+    preserveQueryParams: ["fbclid"],
+    capture: ({ url, now, cookies }) => {
+      const existingCookie: string | undefined = cookies.get("_fbc");
+      const fbclid = url.searchParams.get("fbclid");
+
+      if (fbclid) {
+        cookies.set("_fbc", `fb.1.${now.getTime()}.${fbclid}`, {
+          path: "/",
+          maxAge: 90 * 24 * 60 * 60,
+          sameSite: "Lax",
+          httpOnly: false,
+        });
+      }
+
+      void existingCookie;
+    },
+  },
+  steps: [],
+});
+
+void defineFormFlow({
+  name: "Old Attribution Response Type Fixture",
+  status: "ACTIVE",
+  ...testFlowCopy,
+  contract: {
+    context: z.object({}),
+    answers: z.object({}),
+    payload: z.object({ ok: z.string() }),
+  },
+  context: {},
+  payload: {
+    method: "POST",
+    encoding: "json",
+    mapping: () => ({ ok: "yes" }),
+  },
+  page: { name: "Page" },
+  attribution: {
+    preserveQueryParams: ["fbclid"],
+    // @ts-expect-error attribution capture exposes cookies, not response.
+    capture: ({ response }) => {
+      response.setCookie("_fbc", "value");
+    },
+  },
+  steps: [],
+});
+
+void defineFormFlow({
+  name: "Attribution Answers Type Fixture",
+  status: "ACTIVE",
+  ...testFlowCopy,
+  contract: {
+    context: z.object({}),
+    answers: z.object({}),
+    payload: z.object({ ok: z.string() }),
+  },
+  context: {},
+  payload: {
+    method: "POST",
+    encoding: "json",
+    mapping: () => ({ ok: "yes" }),
+  },
+  page: { name: "Page" },
+  attribution: {
+    preserveQueryParams: ["fbclid"],
+    // @ts-expect-error attribution capture runs before answer validation and does not expose answers.
+    capture: ({ answers }) => {
+      void answers;
+    },
+  },
+  steps: [],
+});
+
+void defineFormFlow({
   name: "Old Thank You Type Fixture",
   status: "ACTIVE",
   locale: "en",

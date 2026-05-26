@@ -1,6 +1,8 @@
 import type { Context, Hono } from "hono";
 
 import {
+  createAttributionCookieCollector,
+  type AttributionCookieCollector,
   clearPostSubmitState,
   readCheckpointAnswers,
   readPostSubmitState,
@@ -185,32 +187,37 @@ function registerPublicFormFolder(app: Hono, routeSegments: readonly string[], f
   const routeKey = getFormRouteKey(routeSegments);
 
   app.get(folderRoot, (c) => {
+    const attribution = captureFlowAttribution(c, form);
     const answers = readCheckpointAnswers(c, form, routeKey);
     const resumeStep = getStepAt(form, getResumeStepIndex(form, answers));
 
-    return redirectNoStore(c, getPublicStepUrl(routeSegments, resumeStep));
+    return redirectToFlowUrl(c, form, getPublicStepUrl(routeSegments, resumeStep), attribution);
   });
 
   app.get(getFormRoutePostSubmitUrl(routeSegments, form), async (c) => {
+    const attribution = captureFlowAttribution(c, form);
     const postSubmitState = readPostSubmitState(c, routeKey);
 
     if (!postSubmitState) {
-      return redirectNoStore(c, folderRoot);
+      return redirectToFlowUrl(c, form, folderRoot, attribution);
     }
 
     clearPostSubmitState(c, routeKey);
     c.header("Cache-Control", "no-store");
 
-    return c.html(
-      await renderPostSubmitPage(form, routeKey, {
-        trackingEvents: postSubmitState.trackingEvents,
-        stepCountLabel: postSubmitState.stepCountLabel,
-      }),
-      200,
+    return attribution.applyTo(
+      c.html(
+        await renderPostSubmitPage(form, routeKey, {
+          trackingEvents: postSubmitState.trackingEvents,
+          stepCountLabel: postSubmitState.stepCountLabel,
+        }),
+        200,
+      ),
     );
   });
 
   app.get(`${folderRoot}/:stepSlug`, async (c) => {
+    const attribution = captureFlowAttribution(c, form);
     const stepSlug = c.req.param("stepSlug");
     const stepIndex = getStepIndexBySlug(form, stepSlug);
 
@@ -223,15 +230,15 @@ function registerPublicFormFolder(app: Hono, routeSegments: readonly string[], f
         if (!canAccessStep(form, legacyStepIndex, answers)) {
           const resumeStep = getStepAt(form, getResumeStepIndex(form, answers));
 
-          return redirectNoStore(c, getPublicStepUrl(routeSegments, resumeStep));
+          return redirectToFlowUrl(c, form, getPublicStepUrl(routeSegments, resumeStep), attribution);
         }
 
         const legacyStep = getStepAt(form, legacyStepIndex);
 
-        return redirectNoStore(c, getPublicStepUrl(routeSegments, legacyStep));
+        return redirectToFlowUrl(c, form, getPublicStepUrl(routeSegments, legacyStep), attribution);
       }
 
-      return redirectNoStore(c, folderRoot);
+      return redirectToFlowUrl(c, form, folderRoot, attribution);
     }
 
     const answers = readCheckpointAnswers(c, form, routeKey);
@@ -239,7 +246,7 @@ function registerPublicFormFolder(app: Hono, routeSegments: readonly string[], f
     if (!canAccessStep(form, stepIndex, answers)) {
       const resumeStep = getStepAt(form, getResumeStepIndex(form, answers));
 
-      return redirectNoStore(c, getPublicStepUrl(routeSegments, resumeStep));
+      return redirectToFlowUrl(c, form, getPublicStepUrl(routeSegments, resumeStep), attribution);
     }
 
     const requestedStep = getStepAt(form, stepIndex);
@@ -247,7 +254,7 @@ function registerPublicFormFolder(app: Hono, routeSegments: readonly string[], f
     if (requestedStep.kind === "interstitial" && answers[requestedStep.key] === requestedStep.seenAnswer) {
       const nextStep = getStepAt(form, getNextStepIndex(form, stepIndex, answers));
 
-      return redirectNoStore(c, getPublicStepUrl(routeSegments, nextStep));
+      return redirectToFlowUrl(c, form, getPublicStepUrl(routeSegments, nextStep), attribution);
     }
 
     const renderOptions = {
@@ -261,17 +268,23 @@ function registerPublicFormFolder(app: Hono, routeSegments: readonly string[], f
       routeSegments,
     });
 
-    return htmlResponse(
-      prebuiltHtml ??
-        (await renderFormPage(form, {
-          ...renderOptions,
-        })),
-      200,
-      "no-store",
+    return attribution.applyTo(
+      htmlResponse(
+        prebuiltHtml ??
+          (await renderFormPage(form, {
+            ...renderOptions,
+          })),
+        200,
+        "no-store",
+      ),
     );
   });
 
-  app.get(`${folderRoot}/*`, (c) => redirectNoStore(c, folderRoot));
+  app.get(`${folderRoot}/*`, (c) => {
+    const attribution = captureFlowAttribution(c, form);
+
+    return redirectToFlowUrl(c, form, folderRoot, attribution);
+  });
 }
 
 function registerPreviewRouteNode(
@@ -347,7 +360,7 @@ async function executeRouteAction(
   preferPrebuiltUnavailable = false,
 ): Promise<Response> {
   if (action.type === "redirect") {
-    return redirectNoStore(c, getRedirectTarget(action.to, redirectPrefix));
+    return redirectNoStore(c, appendQueryParams(getRedirectTarget(action.to, redirectPrefix), getIncomingQueryParams(c)));
   }
 
   return renderUnavailableResponse(action, preferPrebuiltUnavailable);
@@ -376,6 +389,63 @@ function createStepUrlOverrides(routeSegments: readonly string[], form: InstantF
 
 function getPublicStepUrl(routeSegments: readonly string[], stepDefinition: FormStep): string {
   return `${getFolderRoot(routeSegments)}/${getStepSlug(stepDefinition)}`;
+}
+
+function captureFlowAttribution(c: Context, form: InstantForm): AttributionCookieCollector {
+  const collector = createAttributionCookieCollector(c);
+
+  form.attribution?.capture?.({
+    url: new URL(c.req.url),
+    now: new Date(),
+    cookies: collector.cookies,
+  });
+
+  return collector;
+}
+
+function redirectToFlowUrl(
+  c: Context,
+  form: InstantForm,
+  target: string,
+  attribution: AttributionCookieCollector,
+): Response {
+  return attribution.applyTo(
+    redirectNoStore(c, appendQueryParams(target, getPreservedFlowQueryParams(c, form))),
+  );
+}
+
+function getIncomingQueryParams(c: Context): URLSearchParams {
+  return new URL(c.req.url).searchParams;
+}
+
+function getPreservedFlowQueryParams(c: Context, form: InstantForm): URLSearchParams {
+  const sourceQueryParams = new URL(c.req.url).searchParams;
+  const preservedQueryParams = new URLSearchParams();
+
+  for (const queryParam of form.attribution?.preserveQueryParams ?? []) {
+    for (const value of sourceQueryParams.getAll(queryParam)) {
+      preservedQueryParams.append(queryParam, value);
+    }
+  }
+
+  return preservedQueryParams;
+}
+
+function appendQueryParams(target: string, queryParams: URLSearchParams): string {
+  if ([...queryParams].length === 0) {
+    return target;
+  }
+
+  const targetUrl = new URL(target, "http://instant.local");
+  for (const [key, value] of queryParams) {
+    targetUrl.searchParams.append(key, value);
+  }
+
+  if (/^https?:\/\//u.test(target)) {
+    return targetUrl.toString();
+  }
+
+  return `${targetUrl.pathname}${targetUrl.search}${targetUrl.hash}`;
 }
 
 function getPreviewStepUrl(routeSegments: readonly string[], stepDefinition: FormStep): string {

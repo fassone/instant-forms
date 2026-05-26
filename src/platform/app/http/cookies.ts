@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import { deleteCookie, getCookie, setCookie } from "hono/cookie";
+import { deleteCookie, generateCookie, getCookie, setCookie } from "hono/cookie";
 
 import {
   CHECKPOINT_COOKIE_MAX_AGE_SECONDS,
@@ -9,7 +9,7 @@ import {
   sanitizeCheckpointAnswers,
   type CheckpointAnswers,
 } from "../../persistence/checkpoints";
-import type { InstantForm } from "../../flow";
+import type { AttributionCookieHelpers, AttributionCookieOptions, InstantForm } from "../../flow";
 import type { TrackingEventPayload } from "../../rendering";
 
 const POST_SUBMIT_COOKIE_MAX_AGE_SECONDS = 5 * 60;
@@ -17,6 +17,11 @@ const POST_SUBMIT_COOKIE_MAX_AGE_SECONDS = 5 * 60;
 export type PostSubmitState = {
   trackingEvents: readonly TrackingEventPayload[];
   stepCountLabel: string;
+};
+
+export type AttributionCookieCollector = {
+  cookies: AttributionCookieHelpers;
+  applyTo: (response: Response) => Response;
 };
 
 export function readCheckpointAnswers(c: Context, form: InstantForm, routeKey: string): CheckpointAnswers {
@@ -69,6 +74,34 @@ export function clearPostSubmitState(c: Context, routeKey: string): void {
     path: "/",
     secure: isSecureRequest(c.req.raw),
   });
+}
+
+export function createAttributionCookieCollector(c: Context): AttributionCookieCollector {
+  const setCookieHeaders: string[] = [];
+
+  return {
+    cookies: {
+      get: (name: string) => getCookie(c, name),
+      set: (name: string, value: string, options: AttributionCookieOptions = {}) => {
+        setCookieHeaders.push(
+          generateCookie(name, value, {
+            path: options.path ?? "/",
+            maxAge: options.maxAge,
+            sameSite: options.sameSite,
+            httpOnly: options.httpOnly,
+            secure: options.secure ?? isSecureRequest(c.req.raw),
+          }),
+        );
+      },
+    },
+    applyTo: (response: Response) => {
+      for (const cookie of setCookieHeaders) {
+        response.headers.append("Set-Cookie", cookie);
+      }
+
+      return response;
+    },
+  };
 }
 
 function getPostSubmitCookieName(routeKey: string): string {

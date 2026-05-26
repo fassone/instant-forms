@@ -180,6 +180,7 @@ describe("form registry", () => {
       areaName: "Tennessee",
     });
     expect(routeEntry.form.page.name).toBe("Seguros Aseguranza");
+    expect(routeEntry.form.attribution?.preserveQueryParams).toEqual(["fbclid"]);
   });
 
   it("maps the public Tennessee route folder to the Tennessee flow", () => {
@@ -1453,6 +1454,80 @@ describe("form registry", () => {
     expect(() => createFlowWithDesktopHeight("780")).toThrow(
       "page.presentation.desktopHeightPx must be a finite positive number.",
     );
+  });
+
+  it("rejects unsafe attribution query parameter names", () => {
+    const createFlowWithAttributionParam = (queryParam: string) =>
+      defineFormFlow({
+        name: "Invalid Attribution",
+        status: "ACTIVE",
+        ...testFlowCopy,
+        attribution: {
+          preserveQueryParams: [queryParam],
+        },
+        contract: {
+          context: z.object({}),
+          answers: z.object({ choice_key: z.enum(["yes"]) }),
+          payload: z.object({ choice: z.string() }),
+        },
+        context: {},
+        payload: {
+          method: "POST",
+          encoding: "json",
+          mapping: ({ answers }) => ({ choice: answers.choice_key }),
+        },
+        page: {
+          name: "Page",
+        },
+        steps: [
+          step.choice({
+            key: "choice_key",
+            slug: "elige",
+            label: "Elige",
+            options: [{ key: "yes", label: "Si" }],
+          }),
+        ],
+      });
+
+    expect(() => createFlowWithAttributionParam("")).toThrow(
+      "attribution.preserveQueryParams values must be non-empty safe query parameter names.",
+    );
+    expect(() => createFlowWithAttributionParam("bad&param")).toThrow(
+      "attribution.preserveQueryParams values must be non-empty safe query parameter names.",
+    );
+    expect(createFlowWithAttributionParam("fbclid").attribution?.preserveQueryParams).toEqual(["fbclid"]);
+    expect(() =>
+      defineFormFlow({
+        name: "Duplicate Attribution",
+        status: "ACTIVE",
+        ...testFlowCopy,
+        attribution: {
+          preserveQueryParams: ["fbclid", "fbclid"],
+        },
+        contract: {
+          context: z.object({}),
+          answers: z.object({ choice_key: z.enum(["yes"]) }),
+          payload: z.object({ choice: z.string() }),
+        },
+        context: {},
+        payload: {
+          method: "POST",
+          encoding: "json",
+          mapping: ({ answers }) => ({ choice: answers.choice_key }),
+        },
+        page: {
+          name: "Page",
+        },
+        steps: [
+          step.choice({
+            key: "choice_key",
+            slug: "elige",
+            label: "Elige",
+            options: [{ key: "yes", label: "Si" }],
+          }),
+        ],
+      }),
+    ).toThrow('attribution.preserveQueryParams includes "fbclid" more than once.');
   });
 
   it("rejects invalid or colliding post-submit slugs", () => {
@@ -3044,6 +3119,102 @@ describe("server routing", () => {
     expect(response.headers.get("Location")).toBe("/tn/custom/telefono");
   });
 
+  it("captures fbclid into _fbc before guarded redirects and preserves authored query params", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(new Request("https://example.test/tn/custom/apellido?fbclid=CLICK123&utm_source=ignored"));
+    const setCookie = response.headers.get("Set-Cookie") ?? "";
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe("/tn/custom/vive-en-tennessee?fbclid=CLICK123");
+    expect(setCookie).toContain("_fbc=fb.1.");
+    expect(setCookie).toContain(".CLICK123");
+    expect(setCookie).toContain("Path=/");
+    expect(setCookie).toContain("Max-Age=7776000");
+    expect(setCookie).toContain("SameSite=Lax");
+    expect(setCookie).toContain("Secure");
+    expect(setCookie).not.toContain("HttpOnly");
+  });
+
+  it("captures fbclid into _fbc when rendering the requested accessible form page", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(new Request("https://example.test/tn/custom/vive-en-tennessee?fbclid=CLICK123"));
+    const html = await response.text();
+    const setCookie = response.headers.get("Set-Cookie") ?? "";
+
+    expect(response.status).toBe(200);
+    expect(html).toContain("¿Usted vive en Tennessee?");
+    expect(setCookie).toContain("_fbc=fb.1.");
+    expect(setCookie).toContain(".CLICK123");
+    expect(setCookie).toContain("Path=/");
+    expect(setCookie).toContain("Max-Age=7776000");
+    expect(setCookie).toContain("SameSite=Lax");
+    expect(setCookie).toContain("Secure");
+    expect(setCookie).not.toContain("HttpOnly");
+  });
+
+  it("does not refresh _fbc when the existing cookie already matches the URL fbclid", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(
+      new Request("https://example.test/tn/custom/vive-en-tennessee?fbclid=CLICK123", {
+        headers: {
+          Cookie: "_fbc=fb.1.111.CLICK123",
+        },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Set-Cookie") ?? "").not.toContain("_fbc=");
+  });
+
+  it("overwrites _fbc when the existing cookie has a different or malformed click id", async () => {
+    const handler = createFetchHandler();
+    const differentClickResponse = await handler(
+      new Request("https://example.test/tn/custom/vive-en-tennessee?fbclid=CLICK123", {
+        headers: {
+          Cookie: "_fbc=fb.1.111.OLDCLICK",
+        },
+      }),
+    );
+    const malformedClickResponse = await handler(
+      new Request("https://example.test/tn/custom/vive-en-tennessee?fbclid=CLICK456", {
+        headers: {
+          Cookie: "_fbc=malformed",
+        },
+      }),
+    );
+
+    expect(differentClickResponse.headers.get("Set-Cookie") ?? "").toContain(".CLICK123");
+    expect(malformedClickResponse.headers.get("Set-Cookie") ?? "").toContain(".CLICK456");
+  });
+
+  it("carries query params through pre-flow redirects so flow attribution can capture them", async () => {
+    const handler = createFetchHandler();
+    const groupResponse = await handler(new Request("http://localhost/tn?fbclid=CLICK123"));
+    const flowResponse = await handler(new Request(`http://localhost${groupResponse.headers.get("Location") ?? ""}`));
+
+    expect(groupResponse.status).toBe(302);
+    expect(groupResponse.headers.get("Location")).toBe("/tn/custom?fbclid=CLICK123");
+    expect(flowResponse.status).toBe(302);
+    expect(flowResponse.headers.get("Location")).toBe("/tn/custom/vive-en-tennessee?fbclid=CLICK123");
+    expect(flowResponse.headers.get("Set-Cookie") ?? "").toContain(".CLICK123");
+  });
+
+  it("does not set _fbc without a valid captured fbclid", async () => {
+    const handler = createFetchHandler();
+    const noClickResponse = await handler(new Request("https://example.test/tn/custom/vive-en-tennessee"));
+    const emptyClickResponse = await handler(new Request("https://example.test/tn/custom/vive-en-tennessee?fbclid="));
+    const oversizedClickResponse = await handler(
+      new Request(`https://example.test/tn/custom/vive-en-tennessee?fbclid=${"x".repeat(501)}`),
+    );
+
+    expect(noClickResponse.status).toBe(200);
+    expect(noClickResponse.headers.get("Set-Cookie") ?? "").not.toContain("_fbc=");
+    expect(emptyClickResponse.status).toBe(200);
+    expect(emptyClickResponse.headers.get("Set-Cookie") ?? "").not.toContain("_fbc=");
+    expect(oversizedClickResponse.status).toBe(200);
+    expect(oversizedClickResponse.headers.get("Set-Cookie") ?? "").not.toContain("_fbc=");
+  });
+
   it("redirects an already-seen matching step to the next contact step", async () => {
     const handler = createFetchHandler();
     const response = await handler(
@@ -4457,6 +4628,8 @@ describe("form rendering", () => {
     expect(html).toContain("window.__INSTANT_READ_ORIGINAL_REQUEST_PROXY_URL__");
     expect(html).toContain("function patchInstantRequestProxyGetAttribute");
     expect(html).toContain('patchInstantRequestProxyUrlProperty(HTMLLinkElement.prototype, "href")');
+    expect(html).toContain("function shouldSetMetaFbcCookie(existingFbc, fbclid)");
+    expect(html).toContain('shouldSetMetaFbcCookie(readBrowserCookie("_fbc"), fbclid)');
     expect(html).toContain('"trustedForm"');
     expect(html).toContain("/_instant/meta/tr");
     expect(html.indexOf("installGoogleTagRequestProxyShim();")).toBeLessThan(

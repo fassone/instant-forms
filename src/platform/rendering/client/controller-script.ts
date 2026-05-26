@@ -1634,8 +1634,8 @@ function getCoreRuntimeScript(): string {
       return;
     }
 
-    const fbclid = new URLSearchParams(window.location.search).get("fbclid");
-    if (fbclid) {
+    const fbclid = (new URLSearchParams(window.location.search).get("fbclid") || "").trim();
+    if (fbclid && fbclid.length <= 500 && shouldSetMetaFbcCookie(readBrowserCookie("_fbc"), fbclid)) {
       setBrowserCookie("_fbc", "fb.1." + Date.now() + "." + fbclid);
     }
 
@@ -1647,6 +1647,19 @@ function getCoreRuntimeScript(): string {
   function hasMetaTrackingEvents() {
     const events = config.tracking?.googleTagManager?.events || {};
     return Object.values(events).some((eventConfig) => Boolean(eventConfig?.meta));
+  }
+
+  function shouldSetMetaFbcCookie(existingFbc, fbclid) {
+    if (!existingFbc) {
+      return true;
+    }
+
+    const lastSeparatorIndex = existingFbc.lastIndexOf(".");
+    if (lastSeparatorIndex === -1) {
+      return true;
+    }
+
+    return existingFbc.slice(lastSeparatorIndex + 1) !== fbclid;
   }
 
   function getMetaBrowserTrackingData() {
