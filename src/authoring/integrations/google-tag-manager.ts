@@ -9,6 +9,10 @@ export const metaPixelIdSchema = z.string().regex(/^\d{5,30}$/u, {
   message: "Expected a numeric Meta Pixel ID.",
 });
 
+export const metaTestEventCodeSchema = z.string().regex(/^TEST[A-Z0-9_-]+$/iu, {
+  message: "Expected a Meta test event code like TEST12345.",
+});
+
 export type GoogleTagManagerOverrides<TContextKey extends string = string> = {
   containerId: GoogleTagManagerContainerId;
   delivery?: "partytown";

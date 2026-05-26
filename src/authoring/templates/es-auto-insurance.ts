@@ -1,5 +1,10 @@
 import { autocompleteSource, defineFormFlow, defineFormTemplate, z, type TrackingAuthoringHelpers } from "../../platform/flow";
-import { googleTagManager, gtmContainerIdSchema, metaPixelIdSchema } from "../integrations/google-tag-manager";
+import {
+  googleTagManager,
+  gtmContainerIdSchema,
+  metaPixelIdSchema,
+  metaTestEventCodeSchema,
+} from "../integrations/google-tag-manager";
 import { trustedFormCertify } from "../integrations/trusted-form";
 
 const esUiCopy = {
@@ -84,6 +89,7 @@ export const esAutoInsuranceVariables = z.object({
   advertiserName: z.string(),
   gtmContainerId: gtmContainerIdSchema.optional(),
   metaPixelId: metaPixelIdSchema.optional(),
+  metaTestEventCode: metaTestEventCodeSchema.optional(),
 });
 
 export const esAutoInsuranceTemplate = defineFormTemplate({
@@ -92,6 +98,7 @@ export const esAutoInsuranceTemplate = defineFormTemplate({
     const areaDisplayName = variables.areaName ?? variables.areaCode;
     const gtmContainerId = variables.gtmContainerId;
     const metaPixelId = variables.metaPixelId;
+    const metaTestEventCode = variables.metaTestEventCode;
 
     return defineFormFlow({
       name: variables.flowName,
@@ -144,6 +151,7 @@ export const esAutoInsuranceTemplate = defineFormTemplate({
                         meta: {
                           pixelId: metaPixelId,
                           eventName: "LeadProgress",
+                          ...(metaTestEventCode ? { testEventCode: metaTestEventCode } : {}),
                           eventId: ({ event }) => event.id,
                           userData: ({ context, answers }) => ({
                             ph: answers.phone_number,
@@ -181,6 +189,7 @@ export const esAutoInsuranceTemplate = defineFormTemplate({
                         meta: {
                           pixelId: metaPixelId,
                           eventName: "LeadProgress",
+                          ...(metaTestEventCode ? { testEventCode: metaTestEventCode } : {}),
                           eventId: ({ event }) => event.id,
                           userData: ({ context, answers }) => ({
                             ph: answers.phone_number,
@@ -219,6 +228,7 @@ export const esAutoInsuranceTemplate = defineFormTemplate({
                         meta: {
                           pixelId: metaPixelId,
                           eventName: "Lead",
+                          ...(metaTestEventCode ? { testEventCode: metaTestEventCode } : {}),
                           eventId: ({ submission }) => submission.id,
                           userData: ({ context, answers }) => ({
                             ph: answers.phone_number,
@@ -363,7 +373,7 @@ export const esAutoInsuranceTemplate = defineFormTemplate({
               },
             },
             trustedForm: trustedFormCertify({
-              delivery: "partytown",
+              delivery: "main_thread",
               allowSubmitWithoutCert: true,
             }),
           },

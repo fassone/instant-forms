@@ -318,6 +318,7 @@ function createMetaPayload(
     user_data: hashMetaUserData(rawUserData),
     custom_data: removeUndefinedValues(customData),
     ...removeUndefinedValues({
+      test_event_code: meta.testEventCode,
       fbp: options.browserIds?.fbp,
       fbc: options.browserIds?.fbc,
       fbclid: options.browserIds?.fbclid,

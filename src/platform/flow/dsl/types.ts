@@ -97,6 +97,7 @@ export type TrackingRuntimeStepContext = {
 export type TrackingMetaMapping<TContract extends FormContract = FormContract> = {
   pixelId: MetaPixelId;
   eventName: string;
+  testEventCode?: string;
   eventId?: (input: {
     context: ContractContext<TContract>;
     answers: ContractAnswers<TContract>;

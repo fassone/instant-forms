@@ -3,10 +3,15 @@ import { Hono } from "hono";
 import { existsSync, readdirSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
-import { googleTagManager, gtmContainerIdSchema } from "../../src/authoring/integrations/google-tag-manager";
+import {
+  googleTagManager,
+  gtmContainerIdSchema,
+  metaTestEventCodeSchema,
+} from "../../src/authoring/integrations/google-tag-manager";
 import { trustedFormCertify } from "../../src/authoring/integrations/trusted-form";
 import { requestProxies } from "../../src/authoring/proxies/registry";
 import { selectedScripts } from "../../src/authoring/scripts/registry";
+import { esAutoInsuranceTemplate } from "../../src/authoring/templates/es-auto-insurance";
 import { formRoutes } from "../../src/authoring/routes/registry";
 import { createFetchHandler } from "../../src/platform/app/server";
 import { registerFormRoutes } from "../../src/platform/app/routes/forms";
@@ -591,6 +596,10 @@ describe("form registry", () => {
   it("centralizes GTM settings in an authoring preset", () => {
     expect(gtmContainerIdSchema.safeParse("GTM-ABC123").success).toBe(true);
     expect(gtmContainerIdSchema.safeParse("bad-ABC123").success).toBe(false);
+    expect(metaTestEventCodeSchema.safeParse("TEST79368").success).toBe(true);
+    expect(metaTestEventCodeSchema.safeParse("TEST-LOCAL_1").success).toBe(true);
+    expect(metaTestEventCodeSchema.safeParse("").success).toBe(false);
+    expect(metaTestEventCodeSchema.safeParse("LOCAL79368").success).toBe(false);
 
     expect(
       googleTagManager({
@@ -1121,6 +1130,106 @@ describe("form registry", () => {
     expect(JSON.stringify(trackingEvent)).not.toContain("Lopez");
     expect(JSON.stringify(trackingEvent)).not.toContain("6155551234");
     expect(html).toContain("pushInitialClientTrackingEvents();");
+  });
+
+  it("adds optional Meta test event codes to template-authored Meta events", () => {
+    const flow = createAutoInsuranceTemplateTestFlow("TEST79368");
+    const residenceStep = flow.steps.find((stepDefinition) => stepDefinition.key === "residence_state");
+    if (!residenceStep) {
+      throw new Error("Expected auto insurance flow to include residence_state.");
+    }
+
+    const progressPayload = createLifecycleTrackingPayload({
+      form: flow,
+      routeKey: "template_test",
+      kind: "stepAnswer",
+      step: residenceStep,
+      stepIndex: 1,
+      extra: { answer_key: "residence_state" },
+      answers: {
+        belongs_to_state: "no",
+        residence_state: "TX",
+        first_name: "Ana",
+        last_name: "Lopez",
+        phone_number: "+16155551234",
+      },
+      eventId: "progress-event-1",
+      eventSourceUrl: "https://example.test/state",
+      requireMeta: true,
+    });
+
+    expect(progressPayload?.meta).toMatchObject({
+      pixel_id: "1234567890",
+      event_name: "LeadProgress",
+      test_event_code: "TEST79368",
+    });
+
+    const validation = validateSubmission(
+      flow,
+      "template_test",
+      {
+        answers: {
+          belongs_to_state: "yes",
+          matching_offer: "seen",
+          has_license: "yes",
+          has_insurance: "yes",
+          is_clean_title: "yes",
+          number_of_registered_cars: "1",
+          first_name: "Ana",
+          last_name: "Lopez",
+          phone_number: "+16155551234",
+          trustedform_consent: "accepted",
+        },
+        trustedFormCertUrl,
+      },
+      "2026-05-23T00:00:00.000Z",
+      "22222222-2222-4222-8222-222222222222",
+    );
+    expect(validation.ok).toBe(true);
+    if (!validation.ok) {
+      return;
+    }
+
+    const leadPayload = createLifecycleTrackingPayload({
+      form: flow,
+      routeKey: "template_test",
+      kind: "submitSuccess",
+      submission: validation.payload,
+      eventSourceUrl: "https://example.test/thanks",
+      requireMeta: true,
+    });
+
+    expect(leadPayload?.meta).toMatchObject({
+      pixel_id: "1234567890",
+      event_name: "Lead",
+      test_event_code: "TEST79368",
+    });
+    expect(JSON.stringify(leadPayload)).not.toContain("Ana");
+    expect(JSON.stringify(leadPayload)).not.toContain("Lopez");
+  });
+
+  it("omits Meta test event codes when the template variable is unset and rejects malformed codes", () => {
+    const flow = createAutoInsuranceTemplateTestFlow();
+    const residenceStep = flow.steps.find((stepDefinition) => stepDefinition.key === "residence_state");
+    if (!residenceStep) {
+      throw new Error("Expected auto insurance flow to include residence_state.");
+    }
+
+    const payload = createLifecycleTrackingPayload({
+      form: flow,
+      routeKey: "template_test",
+      kind: "stepAnswer",
+      step: residenceStep,
+      answers: {
+        belongs_to_state: "no",
+        residence_state: "TX",
+      },
+      requireMeta: true,
+    });
+
+    expect(payload?.meta).not.toHaveProperty("test_event_code");
+    expect(() => createAutoInsuranceTemplateTestFlow("LOCAL79368")).toThrow("Expected a Meta test event code");
+    expect(() => createAutoInsuranceTemplateTestFlow("")).toThrow("Expected a Meta test event code");
   });
 
   it("honors step-level disables for server-built partial remarketing events", () => {
@@ -5051,6 +5160,20 @@ function createTennesseeStepUrlOverrides(form = getRequiredTennesseeForm()): Rec
       `/tn/custom/${getStepSlug(stepDefinition)}`,
     ]),
   );
+}
+
+function createAutoInsuranceTemplateTestFlow(metaTestEventCode?: string) {
+  return esAutoInsuranceTemplate.create({
+    flowName: "ES - Template Test",
+    pageName: "Template Test",
+    areaCode: "TN",
+    areaName: "Tennessee",
+    product: "auto_insurance",
+    advertiserName: "Liderna Inc",
+    gtmContainerId: "GTM-ABC123",
+    metaPixelId: "1234567890",
+    ...(metaTestEventCode !== undefined ? { metaTestEventCode } : {}),
+  });
 }
 
 function extractRenderedFormConfig(html: string): any {

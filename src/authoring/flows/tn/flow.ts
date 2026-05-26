@@ -9,4 +9,5 @@ export const tnFlow = esAutoInsuranceTemplate.create({
   advertiserName: "Liderna Inc y a sus socios, agentes y proveedores de seguros",
   gtmContainerId: "GTM-MVJNX5DZ",
   metaPixelId: "1465068051587670",
+  metaTestEventCode: process.env.META_TEST_EVENT_CODE,
 });
