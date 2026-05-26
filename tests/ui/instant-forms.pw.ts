@@ -46,6 +46,10 @@ test.describe("instant routed form UI", () => {
 
     await waitForTransitionAsset(page, transitionAssetUrl);
 
+    const firstStep = page.locator('[data-step="0"]');
+    await firstStep.locator('input[type="radio"]').first().focus();
+    await expect.poll(() => firstStep.evaluate((element: any) => element.contains((globalThis as any).document.activeElement))).toBe(true);
+
     const documentRequests: string[] = [];
     page.on("request", (request) => {
       if (request.resourceType() === "document") {
@@ -55,6 +59,8 @@ test.describe("instant routed form UI", () => {
 
     await clickActiveOption(page, "Si");
     await expect(page).toHaveURL(/\/tn\/custom\/tiene-licencia$/u);
+    await expectPanelHiddenAndUnfocused(page, '[data-step="0"]');
+    await expectPanelVisibleAndInteractive(page, '[data-step="2"]');
     expect(documentRequests.filter((url) => url.includes("/tn/custom/tiene-licencia"))).toHaveLength(0);
   });
 
@@ -427,6 +433,32 @@ test.describe("instant routed form UI", () => {
     }
   });
 
+  test("TrustedForm substeps clear focus before hiding panels", async ({ page }) => {
+    await mockTrustedFormCertify(page);
+    await seedCheckpoint(page, {
+      ...seenMatchingAnswers,
+      first_name: "Ana",
+      last_name: "Lopez",
+      phone_number: "+16155551234",
+    });
+    await page.goto("/tn/custom/consentimiento");
+    await continueTrustedFormReview(page);
+
+    const consentPanel = activeStep(page).locator('[data-trusted-form-substep="consent"]');
+    await consentPanel.locator("[data-trusted-form-consent]").focus();
+    await expect.poll(() =>
+      consentPanel.evaluate((element: any) => element.contains((globalThis as any).document.activeElement)),
+    ).toBe(true);
+
+    await page.getByRole("button", { name: "Atrás" }).evaluate((backButton) => {
+      backButton.dispatchEvent(new (globalThis as any).MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+
+    await expectPanelHiddenAndUnfocused(page, '[data-trusted-form-substep="consent"]');
+    await expectPanelVisibleAndInteractive(page, '[data-trusted-form-substep="review"]');
+    await expect(page.getByRole("button", { name: "Continuar" })).toBeEnabled();
+  });
+
   test("TrustedForm consent accepts submit while the certificate is still preparing", async ({ page }) => {
     await mockTrustedFormCertify(page, { delayMs: 1000 });
     await seedCheckpoint(page, {
@@ -743,6 +775,19 @@ async function clickActiveOption(page: Page, label: string): Promise<void> {
   await activeStep(page).locator("[data-option]", { hasText: label }).first().click();
 }
 
+async function expectPanelHiddenAndUnfocused(page: Page, selector: string): Promise<void> {
+  const panel = page.locator(selector);
+  await expect(panel).toHaveAttribute("aria-hidden", "true");
+  await expect.poll(() => panel.evaluate((element: any) => Boolean(element.inert))).toBe(true);
+  await expect.poll(() => panel.evaluate((element: any) => element.contains((globalThis as any).document.activeElement))).toBe(false);
+}
+
+async function expectPanelVisibleAndInteractive(page: Page, selector: string): Promise<void> {
+  const panel = page.locator(selector);
+  await expect(panel).toHaveAttribute("aria-hidden", "false");
+  await expect.poll(() => panel.evaluate((element: any) => Boolean(element.inert))).toBe(false);
+}
+
 async function continueTrustedFormReview(page: Page): Promise<void> {
   await expect(activeStep(page).getByRole("heading", { name: trustedFormReviewTitle })).toBeVisible();
   await expect(activeStep(page).getByText(trustedFormReviewDescription)).toBeVisible();
@@ -752,6 +797,8 @@ async function continueTrustedFormReview(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Continuar" }).click();
   await expect(activeStep(page).getByRole("heading", { name: trustedFormReviewTitle })).toBeVisible({ timeout: 7000 });
   await expect(activeStep(page).locator("[data-trusted-form-consent]")).toBeVisible({ timeout: 7000 });
+  await expectPanelHiddenAndUnfocused(page, '[data-trusted-form-substep="review"]');
+  await expectPanelVisibleAndInteractive(page, '[data-trusted-form-substep="consent"]');
   await expect(page.getByRole("button", { name: trustedFormSubmitLabel })).toBeEnabled({ timeout: 7000 });
   const isMobileChromeHidden = (page.viewportSize()?.width ?? Number.POSITIVE_INFINITY) <= 560;
   if (isMobileChromeHidden) {

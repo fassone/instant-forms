@@ -4747,6 +4747,12 @@ describe("form rendering", () => {
     expect(html).toContain('stepCount.setAttribute("aria-hidden", String(!question.countsAsStep));');
     expect(html).toContain('.step-count[aria-hidden="true"]');
     expect(html).toContain("visibility: hidden;");
+    expect(html).toContain("function setPanelHidden(panel, isHidden)");
+    expect(html).toContain("function blurFocusedDescendant(panel)");
+    expect(html).toContain("setPanelHidden(step, index !== currentStep)");
+    expect(html).toContain("panel.inert = true;");
+    expect(html).toContain("panel.inert = false;");
+    expect(html).toContain("activeElement.blur();");
     expect(html).toContain('#steps:has(.step[data-step-kind="interstitial"][aria-hidden="false"])');
     expect(html).toContain('.step[data-step-kind="interstitial"][aria-hidden="false"]');
     expect(html).toContain("grid-template-rows: auto minmax(0, 1fr);");
@@ -5096,6 +5102,7 @@ describe("form rendering", () => {
     expect(html).toContain('data-trusted-form-review-scroll-fade-top');
     expect(html).toContain('data-trusted-form-review-scroll-fade-bottom');
     expect(html).toContain('data-trusted-form-substep="consent" aria-hidden="true"');
+    expect(html).toContain('data-trusted-form-substep="consent" aria-hidden="true" inert');
     expect(html).toContain('data-trusted-form-field-bank');
     expect(html).toContain('name="trusted_form_grantor_name"');
     expect(html).toContain('name="trusted_form_grantor_phone"');
@@ -5154,6 +5161,7 @@ describe("form rendering", () => {
     expect(html).toContain("function updateTrustedFormConsentScrollHints(consentScroll)");
     expect(html).toContain("function setFormChrome(chrome)");
     expect(html).toContain("ctx.setFormChrome(getTrustedFormSubstepChrome(question, activeSubstep))");
+    expect(html).toContain("ctx.setPanelHidden(panel, panel.dataset.trustedFormSubstep !== activeSubstep)");
     expect(html).toContain("function getTrustedFormCertUrl(trustedForm = window.__FORM_CONFIG__.currentStep.trustedForm)");
     expect(html).not.toContain('ctx.updateNextButton("Preparando...", true)');
     expect(html).toContain("const accessibleLoadingLabel = config.ui.actions.loading");

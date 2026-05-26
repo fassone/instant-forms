@@ -1645,7 +1645,7 @@ function renderQuestion(
   const countsAsStep = isCountedStep(stepDefinition);
   const renderTemplate = stepTemplateRegistry[stepDefinition.template] as StepTemplateRenderer<FormStep>;
 
-  return `<article class="step" data-step="${index}" data-step-kind="${escapeHtml(stepDefinition.kind)}" data-step-counted="${String(countsAsStep)}" aria-hidden="${String(!isCurrent)}">
+  return `<article class="step" data-step="${index}" data-step-kind="${escapeHtml(stepDefinition.kind)}" data-step-counted="${String(countsAsStep)}" aria-hidden="${String(!isCurrent)}"${isCurrent ? "" : " inert"}>
     <h1 class="question-title" data-question-title>${getQuestionTitleHtml(stepDefinition)}</h1>
     ${renderQuestionDescription(stepDefinition)}
     ${renderTemplate(stepDefinition, answers, { form, index })}
@@ -1731,7 +1731,7 @@ function renderTrustedFormConsent(
     <div class="trusted-form-panel trusted-form-review" data-trusted-form-substep="review" aria-hidden="false">
       ${renderTrustedFormReviewList(stepDefinition)}
     </div>
-    <div class="trusted-form-panel" data-trusted-form-substep="consent" aria-hidden="true">
+    <div class="trusted-form-panel" data-trusted-form-substep="consent" aria-hidden="true" inert>
       <div class="consent-card">
         <label class="consent-check" data-tf-element-role="consent-language">
           <input

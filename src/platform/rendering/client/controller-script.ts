@@ -158,6 +158,7 @@ function getCoreRuntimeScript(): string {
       advanceOptimistically,
       setSubmitting,
       setFormChrome,
+      setPanelHidden,
       setNextButtonLoading,
       getQuestion,
       getStepElement,
@@ -368,7 +369,7 @@ function getCoreRuntimeScript(): string {
     config.currentStep = question;
 
     steps.forEach((step, index) => {
-      step.setAttribute("aria-hidden", String(index !== currentStep));
+      setPanelHidden(step, index !== currentStep);
     });
 
     form.dataset.activeKind = question.kind;
@@ -386,6 +387,29 @@ function getCoreRuntimeScript(): string {
     requestCurrentResolvedStepPayloadIfNeeded();
     preloadTrustedFormAssets();
     trackStepView(question, currentStep);
+  }
+
+  function setPanelHidden(panel, isHidden) {
+    if (!(panel instanceof HTMLElement)) {
+      return;
+    }
+
+    if (isHidden) {
+      blurFocusedDescendant(panel);
+      panel.setAttribute("aria-hidden", "true");
+      panel.inert = true;
+      return;
+    }
+
+    panel.inert = false;
+    panel.setAttribute("aria-hidden", "false");
+  }
+
+  function blurFocusedDescendant(panel) {
+    const activeElement = document.activeElement;
+    if (activeElement instanceof HTMLElement && panel.contains(activeElement)) {
+      activeElement.blur();
+    }
   }
 
   function mountCurrentBehavior() {
@@ -1218,7 +1242,7 @@ function getCoreRuntimeScript(): string {
       const activeTrustedFormSubstep = getActiveTrustedFormSubstep(existingStep);
       existingStep.outerHTML = stepPayload.html;
       steps = Array.from(document.querySelectorAll("[data-step]"));
-      steps[stepIndex]?.setAttribute("aria-hidden", String(stepIndex !== currentStep));
+      setPanelHidden(steps[stepIndex], stepIndex !== currentStep);
       if (stepIndex === currentStep) {
         if (activeTrustedFormSubstep === "consent" && config.steps[stepIndex]?.kind === "trusted_form_consent") {
           setTrustedFormSubstepDom(steps[stepIndex], activeTrustedFormSubstep);
@@ -1250,7 +1274,7 @@ function getCoreRuntimeScript(): string {
 
     Array.from(step?.querySelectorAll("[data-trusted-form-substep]") ?? []).forEach((panel) => {
       if (panel instanceof HTMLElement) {
-        panel.setAttribute("aria-hidden", String(panel.dataset.trustedFormSubstep !== activeSubstep));
+        setPanelHidden(panel, panel.dataset.trustedFormSubstep !== activeSubstep);
       }
     });
   }
@@ -2528,7 +2552,7 @@ ${requestProxyRuntimeScript}
       }
       Array.from(step.querySelectorAll("[data-trusted-form-substep]")).forEach((panel) => {
         if (panel instanceof HTMLElement) {
-          panel.setAttribute("aria-hidden", String(panel.dataset.trustedFormSubstep !== activeSubstep));
+          ctx.setPanelHidden(panel, panel.dataset.trustedFormSubstep !== activeSubstep);
         }
       });
       updateTrustedFormDisplayCopy(step, question);
