@@ -9,27 +9,38 @@ import {
   isRequestProxyMethodAllowed,
   proxySelectedScript,
 } from "../../scripts";
+import { getRequestId, logInstantFormEvent, type InstantFormLogger } from "../../logging";
 
 export function registerScriptRoutes(
   app: Hono,
   registry: ScriptProxyRegistry,
   requestProxyRegistry: RequestProxyRegistry,
+  eventLogger?: InstantFormLogger,
 ): void {
   for (const definition of getRequestProxyDefinitions(requestProxyRegistry)) {
-    app.all(definition.route, (c) => proxyRequestProxyRequest(c.req.raw, definition));
+    app.all(definition.route, (c) => proxyRequestProxyRequest(c.req.raw, definition, eventLogger));
     for (const specialRoute of definition.specialRoutes ?? []) {
-      app.all(specialRoute.route, (c) => proxyRequestProxySpecialRoute(c.req.raw, definition, specialRoute));
-      app.all(`${specialRoute.route}/*`, (c) => proxyRequestProxySpecialRoute(c.req.raw, definition, specialRoute));
+      app.all(specialRoute.route, (c) => proxyRequestProxySpecialRoute(c.req.raw, definition, specialRoute, eventLogger));
+      app.all(`${specialRoute.route}/*`, (c) => proxyRequestProxySpecialRoute(c.req.raw, definition, specialRoute, eventLogger));
     }
   }
 
-  app.get("/_instant/scripts/*", (c) => {
+  app.get("/_instant/scripts/*", async (c) => {
     const scriptFile = getScriptFileFromPath(new URL(c.req.url).pathname);
     if (!scriptFile?.endsWith(".js")) {
       return new Response("Not found", { status: 404 });
     }
 
-    return proxySelectedScript(c.req.raw, registry, scriptFile.slice(0, -3));
+    const response = await proxySelectedScript(c.req.raw, registry, scriptFile.slice(0, -3));
+    if (response.status >= 400) {
+      logScriptProxyEvent(eventLogger, c.req.raw, {
+        event: "proxy.selected_script_failed",
+        status: response.status,
+        data: { scriptFile, path: new URL(c.req.url).pathname },
+      });
+    }
+
+    return response;
   });
 
   app.get("/~partytown/*", async (c) => {
@@ -53,13 +64,27 @@ export function registerScriptRoutes(
   });
 }
 
-async function proxyRequestProxyRequest(request: Request, definition: RequestProxyDefinition): Promise<Response> {
+async function proxyRequestProxyRequest(
+  request: Request,
+  definition: RequestProxyDefinition,
+  eventLogger?: InstantFormLogger,
+): Promise<Response> {
   const requestUrl = new URL(request.url);
   const upstreamUrlResult = buildRequestProxyUpstreamUrl(definition, requestUrl);
   if (!upstreamUrlResult.ok) {
+    logScriptProxyEvent(eventLogger, request, {
+      event: "proxy.request_rejected",
+      status: upstreamUrlResult.status,
+      data: { proxyKey: definition.key, reason: upstreamUrlResult.message, path: requestUrl.pathname },
+    });
     return new Response(upstreamUrlResult.message, { status: upstreamUrlResult.status });
   }
   if (!isRequestProxyMethodAllowed(definition, request.method)) {
+    logScriptProxyEvent(eventLogger, request, {
+      event: "proxy.request_rejected",
+      status: 405,
+      data: { proxyKey: definition.key, reason: "method_not_allowed", method: request.method, path: requestUrl.pathname },
+    });
     return new Response("Method not allowed.", { status: 405 });
   }
 
@@ -69,6 +94,8 @@ async function proxyRequestProxyRequest(request: Request, definition: RequestPro
     definition.timeoutMs,
     `Unable to proxy ${getRequestProxyFailureName(definition)} request.`,
     getRequestProxyTransform(definition),
+    eventLogger,
+    definition.key,
   );
 }
 
@@ -76,13 +103,24 @@ async function proxyRequestProxySpecialRoute(
   request: Request,
   definition: RequestProxyDefinition,
   specialRoute: RequestProxySpecialRoute,
+  eventLogger?: InstantFormLogger,
 ): Promise<Response> {
   const requestUrl = new URL(request.url);
   const upstreamUrlResult = buildRequestProxySpecialRouteUpstreamUrl(definition, specialRoute, requestUrl);
   if (!upstreamUrlResult.ok) {
+    logScriptProxyEvent(eventLogger, request, {
+      event: "proxy.request_rejected",
+      status: upstreamUrlResult.status,
+      data: { proxyKey: definition.key, reason: upstreamUrlResult.message, path: requestUrl.pathname },
+    });
     return new Response(upstreamUrlResult.message, { status: upstreamUrlResult.status });
   }
   if (!isRequestProxyMethodAllowed(definition, request.method)) {
+    logScriptProxyEvent(eventLogger, request, {
+      event: "proxy.request_rejected",
+      status: 405,
+      data: { proxyKey: definition.key, reason: "method_not_allowed", method: request.method, path: requestUrl.pathname },
+    });
     return new Response("Method not allowed.", { status: 405 });
   }
 
@@ -92,6 +130,8 @@ async function proxyRequestProxySpecialRoute(
     definition.timeoutMs,
     `Unable to proxy ${getRequestProxyFailureName(definition)} request.`,
     getRequestProxyTransform(definition),
+    eventLogger,
+    definition.key,
   );
 }
 
@@ -101,6 +141,8 @@ async function proxyAllowlistedRequest(
   timeoutMs: number,
   failureMessage: string,
   transformResponse?: (body: ArrayBuffer, upstreamUrl: URL, headers: Headers) => { body: ArrayBuffer; contentType?: string },
+  eventLogger?: InstantFormLogger,
+  proxyKey?: string,
 ): Promise<Response> {
   const abortController = new AbortController();
   const timeout = setTimeout(() => {
@@ -130,7 +172,17 @@ async function proxyAllowlistedRequest(
       status: upstreamResponse.status,
       headers,
     });
-  } catch {
+  } catch (error) {
+    logScriptProxyEvent(eventLogger, request, {
+      event: "proxy.request_failed",
+      status: 502,
+      data: {
+        proxyKey,
+        upstreamUrl: upstreamUrl.toString(),
+        method: request.method,
+        message: error instanceof Error ? error.message : String(error),
+      },
+    });
     return new Response(failureMessage, {
       status: 502,
       headers: {
@@ -206,6 +258,24 @@ function getRequestProxyTransform(
   definition: RequestProxyDefinition,
 ): ((body: ArrayBuffer, upstreamUrl: URL, headers: Headers) => { body: ArrayBuffer; contentType?: string }) | undefined {
   return definition.key === "metaPixel" ? rewriteMetaPixelScriptResponse : undefined;
+}
+
+function logScriptProxyEvent(
+  logger: InstantFormLogger | undefined,
+  request: Request,
+  input: {
+    event: string;
+    status: number;
+    data?: unknown;
+  },
+): void {
+  logInstantFormEvent(logger, {
+    level: input.status >= 500 ? "error" : "warn",
+    event: input.event,
+    requestId: getRequestId(request),
+    status: input.status,
+    data: input.data,
+  });
 }
 
 function getScriptFileFromPath(pathname: string): string | undefined {

@@ -29,7 +29,7 @@ import {
   type SubmissionMappingContext,
   type SubmissionPayload,
 } from "../../submissions/validation";
-import { deliverPayload, type DeliveryOptions } from "../../submissions/delivery";
+import { deliverPayload, type DeliveryLogContext, type DeliveryOptions } from "../../submissions/delivery";
 import {
   createLifecycleTrackingEvent,
   createLifecycleTrackingPayload,
@@ -46,6 +46,7 @@ import {
 } from "../http/cookies";
 import { htmlResponse, jsonResponse, redirectNoStore } from "../http/responses";
 import { scheduleTrackingServerCallback } from "../tracking/server-effects";
+import { getRequestId, logInstantFormEvent, type InstantFormLogger, type InstantFormLogLevel } from "../../logging";
 
 export type SubmissionLogger = (payload: SubmissionPayload) => void;
 
@@ -59,6 +60,7 @@ export function registerFormRoutes(
   routes: FormRoutes,
   logger: SubmissionLogger,
   deliveryOptions: DeliveryOptions = {},
+  eventLogger?: InstantFormLogger,
 ): void {
   app.post("/api/forms/:routeKey/checkpoints", async (c) => {
     const routeKey = c.req.param("routeKey");
@@ -73,9 +75,23 @@ export function registerFormRoutes(
     }
 
     const { form } = routeEntry;
+    logFormEvent(c, eventLogger, {
+      level: "info",
+      event: "checkpoint.received",
+      routeKey: routeEntry.routeKey,
+      form,
+    });
     const body = await parseJsonBody(c.req.raw);
 
     if (!body.ok || !isRecord(body.value)) {
+      logFormEvent(c, eventLogger, {
+        level: "warn",
+        event: "checkpoint.rejected",
+        routeKey: routeEntry.routeKey,
+        form,
+        status: 400,
+        data: { reason: "invalid_body" },
+      });
       return jsonResponse(c, { ok: false, errors: [{ field: "body", message: form.ui.errors.checkpointSaveFailed }] }, 400);
     }
 
@@ -83,6 +99,14 @@ export function registerFormRoutes(
     const stepDefinition = getStepByKey(form, questionKey);
 
     if (!stepDefinition) {
+      logFormEvent(c, eventLogger, {
+        level: "warn",
+        event: "checkpoint.rejected",
+        routeKey: routeEntry.routeKey,
+        form,
+        status: 404,
+        data: { questionKey, reason: "unknown_step" },
+      });
       return jsonResponse(c, { ok: false, errors: [{ field: "questionKey", message: form.ui.errors.unavailableQuestion }] }, 404);
     }
 
@@ -90,6 +114,15 @@ export function registerFormRoutes(
     const stepIndex = form.steps.findIndex((candidate) => candidate.key === stepDefinition.key);
 
     if (stepDefinition.kind === "interstitial" && (stepIndex === -1 || !canAccessStep(form, stepIndex, answers))) {
+      logFormEvent(c, eventLogger, {
+        level: "warn",
+        event: "checkpoint.rejected",
+        routeKey: routeEntry.routeKey,
+        form,
+        stepKey: stepDefinition.key,
+        status: 400,
+        data: { answer: body.value.answer, reason: "step_not_accessible" },
+      });
       return jsonResponse(c, { ok: false, errors: [{ field: stepDefinition.key, message: form.ui.errors.unavailableQuestion }] }, 400);
     }
 
@@ -101,16 +134,43 @@ export function registerFormRoutes(
       answers[stepDefinition.key] !== stepDefinition.completionAnswer &&
       answers[stepDefinition.key] !== stepDefinition.seenAnswer
     ) {
+      logFormEvent(c, eventLogger, {
+        level: "warn",
+        event: "checkpoint.rejected",
+        routeKey: routeEntry.routeKey,
+        form,
+        stepKey: stepDefinition.key,
+        status: 400,
+        data: { answer: body.value.answer, reason: "incomplete_interstitial" },
+      });
       return jsonResponse(c, { ok: false, errors: [{ field: stepDefinition.key, message: form.ui.errors.incompleteStep }] }, 400);
     }
 
     if (!isStepVisible(stepDefinition, answers)) {
+      logFormEvent(c, eventLogger, {
+        level: "warn",
+        event: "checkpoint.rejected",
+        routeKey: routeEntry.routeKey,
+        form,
+        stepKey: stepDefinition.key,
+        status: 400,
+        data: { answer: body.value.answer, reason: "hidden_step" },
+      });
       return jsonResponse(c, { ok: false, errors: [{ field: stepDefinition.key, message: form.ui.errors.unavailableQuestion }] }, 400);
     }
 
     const validation = validateCheckpointAnswer(form, stepDefinition, body.value.answer);
 
     if (!validation.ok) {
+      logFormEvent(c, eventLogger, {
+        level: "warn",
+        event: "checkpoint.rejected",
+        routeKey: routeEntry.routeKey,
+        form,
+        stepKey: stepDefinition.key,
+        status: 400,
+        data: { answer: body.value.answer, reason: "invalid_answer", message: validation.message },
+      });
       return jsonResponse(c, { ok: false, errors: [{ field: stepDefinition.key, message: validation.message }] }, 400);
     }
 
@@ -140,7 +200,21 @@ export function registerFormRoutes(
       stepIndex,
       sanitizedAnswers,
       getJsonMetaBrowserIds(body.value),
+      eventLogger,
     );
+    logFormEvent(c, eventLogger, {
+      level: "info",
+      event: "checkpoint.accepted",
+      routeKey: routeEntry.routeKey,
+      form,
+      stepKey: stepDefinition.key,
+      status: 200,
+      data: {
+        answer: validation.answer,
+        nextUrl: getFormRouteStepUrl(routeEntry.routeSegments, nextStep),
+        trackingEventCount: trackingEvents.length,
+      },
+    });
 
     return jsonResponse(
       c,
@@ -168,8 +242,22 @@ export function registerFormRoutes(
     }
 
     const body = await parseJsonBody(c.req.raw);
+    logFormEvent(c, eventLogger, {
+      level: "info",
+      event: "resolution.received",
+      routeKey: routeEntry.routeKey,
+      form: routeEntry.form,
+    });
 
     if (!body.ok || !isRecord(body.value)) {
+      logFormEvent(c, eventLogger, {
+        level: "warn",
+        event: "resolution.rejected",
+        routeKey: routeEntry.routeKey,
+        form: routeEntry.form,
+        status: 400,
+        data: { reason: "invalid_body" },
+      });
       return jsonResponse(
         c,
         { ok: false, errors: [{ field: "body", message: routeEntry.form.ui.errors.stepResolutionFailed }] },
@@ -181,6 +269,14 @@ export function registerFormRoutes(
     const stepDefinition = getStepByKey(routeEntry.form, stepKey);
 
     if (!stepDefinition) {
+      logFormEvent(c, eventLogger, {
+        level: "warn",
+        event: "resolution.rejected",
+        routeKey: routeEntry.routeKey,
+        form: routeEntry.form,
+        status: 404,
+        data: { stepKey, reason: "unknown_step" },
+      });
       return jsonResponse(c, { ok: false, errors: [{ field: "stepKey", message: routeEntry.form.ui.errors.unavailableQuestion }] }, 404);
     }
 
@@ -189,25 +285,64 @@ export function registerFormRoutes(
     const stepIndex = routeEntry.form.steps.findIndex((candidate) => candidate.key === stepDefinition.key);
 
     if (stepIndex === -1 || !canAccessStep(routeEntry.form, stepIndex, sanitizedAnswers)) {
+      logFormEvent(c, eventLogger, {
+        level: "info",
+        event: "resolution.pending",
+        routeKey: routeEntry.routeKey,
+        form: routeEntry.form,
+        stepKey: stepDefinition.key,
+        status: 202,
+        data: { reason: "step_not_ready" },
+      });
       return jsonResponse(c, { ok: false, reason: "step_not_ready" }, 202);
     }
 
     if (hasStepDynamicResolvers(stepDefinition) && !canResolveStepDynamicValues(routeEntry.form, stepDefinition, sanitizedAnswers)) {
+      logFormEvent(c, eventLogger, {
+        level: "info",
+        event: "resolution.pending",
+        routeKey: routeEntry.routeKey,
+        form: routeEntry.form,
+        stepKey: stepDefinition.key,
+        status: 202,
+        data: { reason: "dependencies_not_ready" },
+      });
       return jsonResponse(c, { ok: false, reason: "dependencies_not_ready" }, 202);
     }
 
     try {
+      const stepPayload = createResolvedStepPayload(routeEntry.form, stepIndex, sanitizedAnswers, (step) =>
+        getFormRouteStepUrl(routeEntry.routeSegments, step),
+      );
+      logFormEvent(c, eventLogger, {
+        level: "info",
+        event: "resolution.accepted",
+        routeKey: routeEntry.routeKey,
+        form: routeEntry.form,
+        stepKey: stepDefinition.key,
+        status: 200,
+      });
       return jsonResponse(
         c,
         {
           ok: true,
-          step: createResolvedStepPayload(routeEntry.form, stepIndex, sanitizedAnswers, (step) =>
-            getFormRouteStepUrl(routeEntry.routeSegments, step),
-          ),
+          step: stepPayload,
         },
         200,
       );
     } catch (error) {
+      logFormEvent(c, eventLogger, {
+        level: "warn",
+        event: "resolution.rejected",
+        routeKey: routeEntry.routeKey,
+        form: routeEntry.form,
+        stepKey: stepDefinition.key,
+        status: 400,
+        data: {
+          reason: "resolution_failed",
+          message: error instanceof Error ? error.message : routeEntry.form.ui.errors.stepResolutionFailed,
+        },
+      });
       return jsonResponse(
         c,
         {
@@ -237,19 +372,49 @@ export function registerFormRoutes(
     }
 
     const body = await parseJsonBody(c.req.raw);
+    logFormEvent(c, eventLogger, {
+      level: "info",
+      event: "tracking_event.received",
+      routeKey: routeEntry.routeKey,
+      form: routeEntry.form,
+    });
 
     if (!body.ok || !isRecord(body.value)) {
+      logFormEvent(c, eventLogger, {
+        level: "warn",
+        event: "tracking_event.rejected",
+        routeKey: routeEntry.routeKey,
+        form: routeEntry.form,
+        status: 400,
+        data: { reason: "invalid_body" },
+      });
       return jsonResponse(c, { ok: false, errors: [{ field: "body", message: routeEntry.form.ui.errors.submissionFailed }] }, 400);
     }
 
     const eventKind = typeof body.value.eventKind === "string" ? body.value.eventKind : "";
     if (eventKind !== "trustedFormSubstepView") {
+      logFormEvent(c, eventLogger, {
+        level: "warn",
+        event: "tracking_event.rejected",
+        routeKey: routeEntry.routeKey,
+        form: routeEntry.form,
+        status: 400,
+        data: { eventKind, reason: "unsupported_event" },
+      });
       return jsonResponse(c, { ok: false, errors: [{ field: "eventKind", message: "Tracking event is not available." }] }, 400);
     }
 
     const stepKey = typeof body.value.stepKey === "string" ? body.value.stepKey : "";
     const stepDefinition = getStepByKey(routeEntry.form, stepKey);
     if (!stepDefinition || stepDefinition.kind !== "trusted_form_consent") {
+      logFormEvent(c, eventLogger, {
+        level: "warn",
+        event: "tracking_event.rejected",
+        routeKey: routeEntry.routeKey,
+        form: routeEntry.form,
+        status: 404,
+        data: { stepKey, reason: "unavailable_step" },
+      });
       return jsonResponse(c, { ok: false, errors: [{ field: "stepKey", message: routeEntry.form.ui.errors.unavailableQuestion }] }, 404);
     }
 
@@ -259,6 +424,15 @@ export function registerFormRoutes(
     const sanitizedAnswers = sanitizeCheckpointAnswers(routeEntry.form, { ...checkpointAnswers, ...answerSnapshot });
 
     if (stepIndex === -1 || !canAccessStep(routeEntry.form, stepIndex, sanitizedAnswers)) {
+      logFormEvent(c, eventLogger, {
+        level: "warn",
+        event: "tracking_event.rejected",
+        routeKey: routeEntry.routeKey,
+        form: routeEntry.form,
+        stepKey: stepDefinition.key,
+        status: 400,
+        data: { eventKind, reason: "step_not_accessible" },
+      });
       return jsonResponse(c, { ok: false, errors: [{ field: "stepKey", message: routeEntry.form.ui.errors.unavailableQuestion }] }, 400);
     }
 
@@ -273,7 +447,17 @@ export function registerFormRoutes(
       trustedFormSubstep,
       sanitizedAnswers,
       getJsonMetaBrowserIds(body.value),
+      eventLogger,
     );
+    logFormEvent(c, eventLogger, {
+      level: "info",
+      event: "tracking_event.accepted",
+      routeKey: routeEntry.routeKey,
+      form: routeEntry.form,
+      stepKey: stepDefinition.key,
+      status: 200,
+      data: { eventKind, trustedFormSubstep, trackingEventCount: trackingEvents.length },
+    });
 
     return jsonResponse(c, { ok: true, trackingEvents }, 200);
   });
@@ -291,8 +475,23 @@ export function registerFormRoutes(
     }
 
     const body = await parseJsonBody(c.req.raw);
+    logFormEvent(c, eventLogger, {
+      level: "info",
+      event: "submission.received",
+      routeKey: routeEntry.routeKey,
+      form: routeEntry.form,
+      data: { mode: "json" },
+    });
 
     if (!body.ok) {
+      logFormEvent(c, eventLogger, {
+        level: "warn",
+        event: "submission.validation_failed",
+        routeKey: routeEntry.routeKey,
+        form: routeEntry.form,
+        status: 400,
+        data: { mode: "json", reason: "invalid_body" },
+      });
       return jsonResponse(c, { ok: false, errors: [{ field: "body", message: routeEntry.form.ui.errors.submissionFailed }] }, 400);
     }
 
@@ -307,11 +506,42 @@ export function registerFormRoutes(
     );
 
     if (validation.ok === false) {
+      logFormEvent(c, eventLogger, {
+        level: "warn",
+        event: "submission.validation_failed",
+        routeKey: routeEntry.routeKey,
+        form: routeEntry.form,
+        status: 400,
+        data: { mode: "json", errors: validation.errors },
+      });
       return jsonResponse(c, { ok: false, errors: validation.errors }, 400);
     }
 
-    const delivery = await deliverPayload(validation.payload.delivery, deliveryOptions);
+    const deliveryLogContext = createDeliveryLogContext(c, routeEntry.form, routeEntry.routeKey, validation.payload);
+    logFormEvent(c, eventLogger, {
+      level: "info",
+      event: "lead.delivery_started",
+      routeKey: routeEntry.routeKey,
+      form: routeEntry.form,
+      submissionId: validation.payload.submissionId,
+      data: deliveryLogContext.data,
+    });
+    const delivery = await deliverPayload(validation.payload.delivery, {
+      ...deliveryOptions,
+      logger: eventLogger,
+      logContext: deliveryLogContext,
+    });
     if (!delivery.ok) {
+      logFormEvent(c, eventLogger, {
+        level: "error",
+        event: "submission.rejected",
+        routeKey: routeEntry.routeKey,
+        form: routeEntry.form,
+        submissionId: validation.payload.submissionId,
+        status: 502,
+        critical: true,
+        data: { mode: "json", reason: "delivery_failed", deliveryResult: delivery, payload: validation.payload },
+      });
       return jsonResponse(
         c,
         { ok: false, errors: [{ field: "delivery", message: routeEntry.form.ui.errors.submissionFailed }] },
@@ -328,7 +558,17 @@ export function registerFormRoutes(
       routeEntry.routeKey,
       validation.payload,
       browserIds,
+      eventLogger,
     );
+    logFormEvent(c, eventLogger, {
+      level: "info",
+      event: "submission.accepted",
+      routeKey: routeEntry.routeKey,
+      form: routeEntry.form,
+      submissionId: validation.payload.submissionId,
+      status: 201,
+      data: { mode: "json", payload: validation.payload, trackingEventCount: trackingEvents.length },
+    });
 
     return jsonResponse(
       c,
@@ -349,8 +589,23 @@ export function registerFormRoutes(
       return htmlResponse(renderNativeSubmissionErrorPage(["Form route is not available."]), 404, "no-store");
     }
 
+    logFormEvent(c, eventLogger, {
+      level: "info",
+      event: "submission.received",
+      routeKey: routeEntry.routeKey,
+      form: routeEntry.form,
+      data: { mode: "native" },
+    });
     const formDataResult = await parseFormData(c.req.raw);
     if (!formDataResult.ok) {
+      logFormEvent(c, eventLogger, {
+        level: "warn",
+        event: "submission.validation_failed",
+        routeKey: routeEntry.routeKey,
+        form: routeEntry.form,
+        status: 400,
+        data: { mode: "native", reason: "invalid_form_data" },
+      });
       return htmlResponse(
         renderNativeSubmissionErrorPage(routeEntry.form, routeEntry.routeKey, [routeEntry.form.ui.errors.submissionFailed]),
         400,
@@ -371,6 +626,14 @@ export function registerFormRoutes(
     }, undefined, undefined, createSubmissionMappingContext(c, browserIds));
 
     if (validation.ok === false) {
+      logFormEvent(c, eventLogger, {
+        level: "warn",
+        event: "submission.validation_failed",
+        routeKey: routeEntry.routeKey,
+        form: routeEntry.form,
+        status: 400,
+        data: { mode: "native", errors: validation.errors },
+      });
       return htmlResponse(
         renderNativeSubmissionErrorPage(routeEntry.form, routeEntry.routeKey, validation.errors.map((error) => error.message)),
         400,
@@ -378,8 +641,31 @@ export function registerFormRoutes(
       );
     }
 
-    const delivery = await deliverPayload(validation.payload.delivery, deliveryOptions);
+    const deliveryLogContext = createDeliveryLogContext(c, routeEntry.form, routeEntry.routeKey, validation.payload);
+    logFormEvent(c, eventLogger, {
+      level: "info",
+      event: "lead.delivery_started",
+      routeKey: routeEntry.routeKey,
+      form: routeEntry.form,
+      submissionId: validation.payload.submissionId,
+      data: deliveryLogContext.data,
+    });
+    const delivery = await deliverPayload(validation.payload.delivery, {
+      ...deliveryOptions,
+      logger: eventLogger,
+      logContext: deliveryLogContext,
+    });
     if (!delivery.ok) {
+      logFormEvent(c, eventLogger, {
+        level: "error",
+        event: "submission.rejected",
+        routeKey: routeEntry.routeKey,
+        form: routeEntry.form,
+        submissionId: validation.payload.submissionId,
+        status: 502,
+        critical: true,
+        data: { mode: "native", reason: "delivery_failed", deliveryResult: delivery, payload: validation.payload },
+      });
       return htmlResponse(
         renderNativeSubmissionErrorPage(routeEntry.form, routeEntry.routeKey, [routeEntry.form.ui.errors.submissionFailed]),
         502,
@@ -395,10 +681,25 @@ export function registerFormRoutes(
       routeEntry.routeKey,
       validation.payload,
       browserIds,
+      eventLogger,
     );
     setPostSubmitState(c, routeEntry.routeKey, {
       trackingEvents,
       stepCountLabel: getPostSubmitStepCountLabel(routeEntry.form, getStringAnswers(validation.payload.answers)),
+    });
+    logFormEvent(c, eventLogger, {
+      level: "info",
+      event: "submission.accepted",
+      routeKey: routeEntry.routeKey,
+      form: routeEntry.form,
+      submissionId: validation.payload.submissionId,
+      status: 303,
+      data: {
+        mode: "native",
+        payload: validation.payload,
+        trackingEventCount: trackingEvents.length,
+        postSubmitUrl: getFormRoutePostSubmitUrl(routeEntry.routeSegments, routeEntry.form),
+      },
     });
 
     return redirectNoStore(c, getFormRoutePostSubmitUrl(routeEntry.routeSegments, routeEntry.form), 303);
@@ -433,6 +734,59 @@ function getStepAt(form: InstantForm, index: number): FormStep {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function logFormEvent(
+  c: Context,
+  logger: InstantFormLogger | undefined,
+  input: {
+    level: InstantFormLogLevel;
+    event: string;
+    routeKey?: string;
+    form?: InstantForm;
+    stepKey?: string;
+    submissionId?: string;
+    status?: number;
+    durationMs?: number;
+    critical?: boolean;
+    data?: unknown;
+  },
+): void {
+  logInstantFormEvent(logger, {
+    level: input.level,
+    event: input.event,
+    requestId: getRequestId(c.req.raw),
+    routeKey: input.routeKey,
+    formName: input.form?.name,
+    pageName: input.form?.page.name,
+    stepKey: input.stepKey,
+    submissionId: input.submissionId,
+    status: input.status,
+    durationMs: input.durationMs,
+    critical: input.critical,
+    data: input.data,
+  });
+}
+
+function createDeliveryLogContext(
+  c: Context,
+  form: InstantForm,
+  routeKey: string,
+  payload: SubmissionPayload,
+): DeliveryLogContext {
+  return {
+    requestId: getRequestId(c.req.raw),
+    routeKey,
+    formName: form.name,
+    pageName: form.page.name,
+    submissionId: payload.submissionId,
+    data: {
+      submittedAt: payload.submittedAt,
+      trustedFormCertUrl: payload.trustedFormCertUrl,
+      answers: payload.answers,
+      delivery: payload.delivery,
+    },
+  };
 }
 
 function getNativeSubmissionAnswers(formData: NativeFormData): Record<string, JsonPayloadValue> {
@@ -493,6 +847,7 @@ function createNativeSubmissionTrackingEvents(
   routeKey: string,
   payload: SubmissionPayload,
   browserIds: MetaBrowserIds = {},
+  eventLogger?: InstantFormLogger,
 ) {
   const eventSourceUrl = getRequestPageUrl(c.req.raw.url);
   const lifecycleEvent = createLifecycleTrackingEvent({
@@ -506,6 +861,7 @@ function createNativeSubmissionTrackingEvents(
   scheduleTrackingServerCallback(c, form, routeKey, lifecycleEvent, {
     answers: payload.answers,
     submission: payload,
+    logger: eventLogger,
   });
 
   return lifecycleEvent ? [lifecycleEvent.payload] : [];
@@ -520,6 +876,7 @@ function createCheckpointTrackingEvents(
   stepIndex: number,
   answers: Record<string, string>,
   browserIds: MetaBrowserIds = {},
+  eventLogger?: InstantFormLogger,
 ) {
   const eventSourceUrl = browserIds.eventSourceUrl ?? getRequestAbsoluteUrl(c.req.raw.url, stepUrl);
   const lifecycleEvent = createLifecycleTrackingEvent({
@@ -539,6 +896,7 @@ function createCheckpointTrackingEvents(
     answers,
     step,
     stepIndex: stepIndex === -1 ? undefined : stepIndex,
+    logger: eventLogger,
   });
 
   return lifecycleEvent ? [lifecycleEvent.payload] : [];
@@ -554,6 +912,7 @@ function createTrustedFormSubstepTrackingEvents(
   trustedFormSubstep: "review" | "consent",
   answers: Record<string, string>,
   browserIds: MetaBrowserIds = {},
+  eventLogger?: InstantFormLogger,
 ) {
   const eventSourceUrl = browserIds.eventSourceUrl ?? getRequestAbsoluteUrl(c.req.raw.url, stepUrl);
   const lifecycleEvent = createLifecycleTrackingEvent({
@@ -573,6 +932,7 @@ function createTrustedFormSubstepTrackingEvents(
     answers,
     step,
     stepIndex: stepIndex === -1 ? undefined : stepIndex,
+    logger: eventLogger,
   });
 
   return lifecycleEvent ? [lifecycleEvent.payload] : [];

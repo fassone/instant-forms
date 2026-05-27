@@ -32,6 +32,7 @@ import {
   type LifecycleTrackingEvent,
 } from "../rendering";
 import { scheduleTrackingServerCallback } from "../app/tracking/server-effects";
+import { getRequestId, logInstantFormEvent, type InstantFormLogger, type InstantFormLogLevel } from "../logging";
 
 const RESERVED_PREVIEW_FOLDER = "__preview";
 const FORM_ROUTE_FOLDER_PATTERN = /^[a-z0-9][a-z0-9-]*$/u;
@@ -111,11 +112,11 @@ export function defineFormRoutes(input: FormRoutesInput): FormRoutes {
   };
 }
 
-export function registerFormRoutePages(app: Hono, routes: FormRoutes): void {
+export function registerFormRoutePages(app: Hono, routes: FormRoutes, eventLogger?: InstantFormLogger): void {
   app.get("/", (c) => executeRouteAction(c, routes.index));
 
   for (const [folder, node] of Object.entries(routes.folders)) {
-    registerPublicRouteNode(app, [folder], node, routes.notFound);
+    registerPublicRouteNode(app, [folder], node, routes.notFound, eventLogger);
     registerPreviewRouteNode(app, [folder], node, routes.notFound);
   }
 }
@@ -163,14 +164,41 @@ function getFormRouteNodeBuildEntries(routeSegments: readonly string[], node: Fo
   );
 }
 
+function logRouteEvent(
+  c: Context,
+  logger: InstantFormLogger | undefined,
+  input: {
+    level: InstantFormLogLevel;
+    event: string;
+    routeKey?: string;
+    form?: InstantForm;
+    stepKey?: string;
+    status?: number;
+    data?: unknown;
+  },
+): void {
+  logInstantFormEvent(logger, {
+    level: input.level,
+    event: input.event,
+    requestId: getRequestId(c.req.raw),
+    routeKey: input.routeKey,
+    formName: input.form?.name,
+    pageName: input.form?.page.name,
+    stepKey: input.stepKey,
+    status: input.status,
+    data: input.data,
+  });
+}
+
 function registerPublicRouteNode(
   app: Hono,
   routeSegments: readonly string[],
   node: FormRouteNode,
   inheritedFallback: FormRouteAction,
+  eventLogger?: InstantFormLogger,
 ): void {
   if (node.type === "flow") {
-    registerPublicFormFolder(app, routeSegments, node.form);
+    registerPublicFormFolder(app, routeSegments, node.form, eventLogger);
     return;
   }
 
@@ -180,13 +208,18 @@ function registerPublicRouteNode(
   app.get(folderRoot, (c) => executeRouteAction(c, fallback));
 
   for (const [childSegment, childNode] of Object.entries(node.children)) {
-    registerPublicRouteNode(app, [...routeSegments, childSegment], childNode, fallback);
+    registerPublicRouteNode(app, [...routeSegments, childSegment], childNode, fallback, eventLogger);
   }
 
   app.get(`${folderRoot}/*`, (c) => executeRouteAction(c, fallback));
 }
 
-function registerPublicFormFolder(app: Hono, routeSegments: readonly string[], form: InstantForm): void {
+function registerPublicFormFolder(
+  app: Hono,
+  routeSegments: readonly string[],
+  form: InstantForm,
+  eventLogger?: InstantFormLogger,
+): void {
   const folderRoot = getFolderRoot(routeSegments);
   const routeKey = getFormRouteKey(routeSegments);
 
@@ -194,8 +227,18 @@ function registerPublicFormFolder(app: Hono, routeSegments: readonly string[], f
     const attribution = captureFlowAttribution(c, form);
     const answers = readCheckpointAnswers(c, form, routeKey);
     const resumeStep = getStepAt(form, getResumeStepIndex(form, answers));
+    const target = getPublicStepUrl(routeSegments, resumeStep);
 
-    return redirectToFlowUrl(c, form, getPublicStepUrl(routeSegments, resumeStep), attribution);
+    logRouteEvent(c, eventLogger, {
+      level: "info",
+      event: "form.redirect",
+      routeKey,
+      form,
+      status: 302,
+      data: { from: folderRoot, to: target, reason: "resume_step" },
+    });
+
+    return redirectToFlowUrl(c, form, target, attribution);
   });
 
   app.get(getFormRoutePostSubmitUrl(routeSegments, form), async (c) => {
@@ -203,11 +246,27 @@ function registerPublicFormFolder(app: Hono, routeSegments: readonly string[], f
     const postSubmitState = readPostSubmitState(c, routeKey);
 
     if (!postSubmitState) {
+      logRouteEvent(c, eventLogger, {
+        level: "info",
+        event: "post_submit.redirect",
+        routeKey,
+        form,
+        status: 302,
+        data: { from: getFormRoutePostSubmitUrl(routeSegments, form), to: folderRoot, reason: "missing_state" },
+      });
       return redirectToFlowUrl(c, form, folderRoot, attribution);
     }
 
     clearPostSubmitState(c, routeKey);
     c.header("Cache-Control", "no-store");
+    logRouteEvent(c, eventLogger, {
+      level: "info",
+      event: "post_submit.rendered",
+      routeKey,
+      form,
+      status: 200,
+      data: { trackingEventCount: postSubmitState.trackingEvents.length },
+    });
 
     return attribution.applyTo(
       c.html(
@@ -238,22 +297,56 @@ function registerPublicFormFolder(app: Hono, routeSegments: readonly string[], f
         }
 
         const legacyStep = getStepAt(form, legacyStepIndex);
+        logRouteEvent(c, eventLogger, {
+          level: "info",
+          event: "form.redirect",
+          routeKey,
+          form,
+          stepKey: legacyStep.key,
+          status: 302,
+          data: {
+            from: c.req.path,
+            to: getPublicStepUrl(routeSegments, legacyStep),
+            reason: "legacy_step_slug",
+          },
+        });
 
         return redirectToFlowUrl(c, form, getPublicStepUrl(routeSegments, legacyStep), attribution);
       }
 
+      logRouteEvent(c, eventLogger, {
+        level: "info",
+        event: "form.redirect",
+        routeKey,
+        form,
+        status: 302,
+        data: { from: c.req.path, to: folderRoot, reason: "unknown_step_slug" },
+      });
       return redirectToFlowUrl(c, form, folderRoot, attribution);
     }
 
     const answers = readCheckpointAnswers(c, form, routeKey);
+    const requestedStep = getStepAt(form, stepIndex);
 
     if (!canAccessStep(form, stepIndex, answers)) {
       const resumeStep = getStepAt(form, getResumeStepIndex(form, answers));
+      logRouteEvent(c, eventLogger, {
+        level: "info",
+        event: "form.redirect",
+        routeKey,
+        form,
+        stepKey: requestedStep.key,
+        status: 302,
+        data: {
+          from: c.req.path,
+          to: getPublicStepUrl(routeSegments, resumeStep),
+          reason: "guarded_step",
+        },
+      });
 
       return redirectToFlowUrl(c, form, getPublicStepUrl(routeSegments, resumeStep), attribution);
     }
 
-    const requestedStep = getStepAt(form, stepIndex);
     const initialTrackingEvents = createInitialRouteTrackingEvents(
       c,
       form,
@@ -261,10 +354,24 @@ function registerPublicFormFolder(app: Hono, routeSegments: readonly string[], f
       requestedStep,
       stepIndex,
       answers,
+      eventLogger,
     );
 
     if (requestedStep.kind === "interstitial" && answers[requestedStep.key] === requestedStep.seenAnswer) {
       const nextStep = getStepAt(form, getNextStepIndex(form, stepIndex, answers));
+      logRouteEvent(c, eventLogger, {
+        level: "info",
+        event: "form.redirect",
+        routeKey,
+        form,
+        stepKey: requestedStep.key,
+        status: 302,
+        data: {
+          from: c.req.path,
+          to: getPublicStepUrl(routeSegments, nextStep),
+          reason: "seen_interstitial",
+        },
+      });
 
       return redirectToFlowUrl(c, form, getPublicStepUrl(routeSegments, nextStep), attribution);
     }
@@ -279,6 +386,15 @@ function registerPublicFormFolder(app: Hono, routeSegments: readonly string[], f
     const prebuiltHtml = await readPrebuiltFormPage(form, {
       ...renderOptions,
       routeSegments,
+    });
+    logRouteEvent(c, eventLogger, {
+      level: "info",
+      event: "form.rendered",
+      routeKey,
+      form,
+      stepKey: requestedStep.key,
+      status: 200,
+      data: { stepIndex, prebuilt: Boolean(prebuiltHtml), trackingEventCount: initialTrackingEvents.length },
     });
 
     return attribution.applyTo(
@@ -373,6 +489,7 @@ function createInitialRouteTrackingEvents(
   step: FormStep,
   stepIndex: number,
   answers: Record<string, string>,
+  eventLogger?: InstantFormLogger,
 ): LifecycleTrackingEvent[] {
   if (step.kind !== "trusted_form_consent") {
     return [];
@@ -396,6 +513,7 @@ function createInitialRouteTrackingEvents(
     answers,
     step,
     stepIndex,
+    logger: eventLogger,
   });
 
   return lifecycleEvent ? [lifecycleEvent] : [];

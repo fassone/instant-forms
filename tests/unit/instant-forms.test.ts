@@ -49,6 +49,11 @@ import {
 } from "../../src/platform/rendering/inline-assets";
 import { renderConsentMarkdownToHtml, renderMarkdownToHtml } from "../../src/platform/rendering/markdown";
 import {
+  createJsonStdoutLogger,
+  logInstantFormEvent,
+  type InstantFormLogRecord,
+} from "../../src/platform/logging";
+import {
   defineFormRoutes,
   getFormRouteByRouteKey,
   redirectTo,
@@ -1220,6 +1225,7 @@ describe("form registry", () => {
 
   it("runs server callbacks for checkpoint tracking events without blocking the response", async () => {
     const calls: Array<Record<string, unknown>> = [];
+    const logRecords: InstantFormLogRecord[] = [];
     const flow = defineFormFlow({
       name: "Server Callback Checkpoint Test",
       status: "ACTIVE",
@@ -1288,34 +1294,24 @@ describe("form registry", () => {
     registerFormRoutes(app, routes, () => undefined, {
       fetch: createSuccessfulDeliveryFetch(),
       delay: immediateDeliveryDelay,
-    });
+    }, (record) => logRecords.push(record));
 
-    const warnings: unknown[][] = [];
-    const originalWarn = console.warn;
-    console.warn = (...args: unknown[]) => {
-      warnings.push(args);
-    };
-    let response: Response;
-    try {
-      response = await app.fetch(
-        new Request("http://localhost/api/forms/callback/checkpoints", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Cookie: "_fbc=fb.1.123.CLICK",
-            "CF-Connecting-IP": "203.0.113.10",
-            "User-Agent": "Callback Test Browser",
-          },
-          body: JSON.stringify({
-            questionKey: "wants_quote",
-            answer: "yes",
-          }),
+    const response = await app.fetch(
+      new Request("http://localhost/api/forms/callback/checkpoints", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: "_fbc=fb.1.123.CLICK",
+          "CF-Connecting-IP": "203.0.113.10",
+          "User-Agent": "Callback Test Browser",
+        },
+        body: JSON.stringify({
+          questionKey: "wants_quote",
+          answer: "yes",
         }),
-      );
-      await Promise.resolve();
-    } finally {
-      console.warn = originalWarn;
-    }
+      }),
+    );
+    await Promise.resolve();
     const body = await response.json();
     const trackingEvent = (body as { trackingEvents?: Array<{ id?: string }> }).trackingEvents?.[0];
 
@@ -1343,13 +1339,26 @@ describe("form registry", () => {
         stepKey: "wants_quote",
       },
     ]);
-    expect(warnings[0]?.[0]).toBe("[instant-forms] tracking server callback failed");
-    expect(warnings[0]?.[1]).toMatchObject({
+    expect(logRecords).toContainEqual(expect.objectContaining({
+      event: "tracking.server_callback_scheduled",
       routeKey: "callback",
-      event: "server_step_answer",
-      eventId: trackingEvent?.id,
-      message: "server callback failed",
-    });
+      stepKey: "wants_quote",
+      data: {
+        trackingEvent: "server_step_answer",
+        trackingEventId: trackingEvent?.id,
+      },
+    }));
+    expect(logRecords).toContainEqual(expect.objectContaining({
+      level: "warn",
+      event: "tracking.server_callback_failed",
+      routeKey: "callback",
+      stepKey: "wants_quote",
+      data: {
+        trackingEvent: "server_step_answer",
+        trackingEventId: trackingEvent?.id,
+        message: "server callback failed",
+      },
+    }));
   });
 
   it("runs server callbacks for TrustedForm substep tracking events", async () => {
@@ -3274,6 +3283,63 @@ describe("form templates", () => {
   });
 });
 
+describe("production logging", () => {
+  it("emits JSON-line log records with level, event, and timestamp", () => {
+    const lines: string[] = [];
+    const logger = createJsonStdoutLogger((line) => lines.push(line));
+
+    logger({
+      level: "error",
+      event: "lead.delivery_failed",
+      requestId: "req_123",
+      critical: true,
+      data: { leadId: "lead-1" },
+    });
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).not.toContain("\n");
+    expect(JSON.parse(lines[0] ?? "")).toMatchObject({
+      level: "error",
+      event: "lead.delivery_failed",
+      requestId: "req_123",
+      critical: true,
+      data: { leadId: "lead-1" },
+    });
+    expect(typeof (JSON.parse(lines[0] ?? "") as { timestamp?: unknown }).timestamp).toBe("string");
+  });
+
+  it("catches logger failures without throwing", () => {
+    const warnings: unknown[][] = [];
+    const originalWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args);
+    };
+    try {
+      expect(() =>
+        logInstantFormEvent(
+          () => {
+            throw new Error("logger unavailable");
+          },
+          {
+            level: "info",
+            event: "checkpoint.accepted",
+            requestId: "req_123",
+          },
+        ),
+      ).not.toThrow();
+    } finally {
+      console.warn = originalWarn;
+    }
+
+    expect(warnings[0]?.[0]).toBe("[instant-forms] event logger failed");
+    expect(warnings[0]?.[1]).toMatchObject({
+      event: "checkpoint.accepted",
+      requestId: "req_123",
+      message: "logger unavailable",
+    });
+  });
+});
+
 describe("submission delivery", () => {
   it("sends JSON delivery payloads with the correct body and content type", async () => {
     const requests: RecordedDeliveryRequest[] = [];
@@ -3341,6 +3407,7 @@ describe("submission delivery", () => {
 
   it("retries network errors and non-2xx responses before succeeding on the fourth attempt", async () => {
     const delays: number[] = [];
+    const logRecords: InstantFormLogRecord[] = [];
     let attempts = 0;
     const result = await deliverPayload(
       {
@@ -3360,16 +3427,50 @@ describe("submission delivery", () => {
         delay: (milliseconds) => {
           delays.push(milliseconds);
         },
+        logger: (record) => logRecords.push(record),
+        logContext: {
+          requestId: "req_delivery",
+          routeKey: "tn_custom",
+          formName: "Delivery Test",
+          pageName: "Delivery Page",
+          submissionId: "lead-1",
+          data: { answers: { first_name: "Ana" } },
+        },
       },
     );
 
     expect(result).toEqual({ ok: true, attempts: 4, status: 201 });
     expect(attempts).toBe(4);
     expect(delays).toEqual([2000, 2000, 2000]);
+    expect(logRecords.map((record) => record.event)).toEqual([
+      "lead.delivery_attempt_failed",
+      "lead.delivery_attempt_failed",
+      "lead.delivery_attempt_failed",
+      "lead.delivery_attempt_succeeded",
+      "lead.delivery_succeeded",
+    ]);
+    expect(logRecords.at(-1)).toMatchObject({
+      level: "info",
+      event: "lead.delivery_succeeded",
+      requestId: "req_delivery",
+      routeKey: "tn_custom",
+      formName: "Delivery Test",
+      pageName: "Delivery Page",
+      submissionId: "lead-1",
+      status: 201,
+      data: {
+        answers: { first_name: "Ana" },
+        attempts: 4,
+        delivery: {
+          payload: { id: "lead-1" },
+        },
+      },
+    });
   });
 
   it("fails after four total failed delivery attempts", async () => {
     const delays: number[] = [];
+    const logRecords: InstantFormLogRecord[] = [];
     let attempts = 0;
     const result = await deliverPayload(
       {
@@ -3386,6 +3487,13 @@ describe("submission delivery", () => {
         delay: (milliseconds) => {
           delays.push(milliseconds);
         },
+        logger: (record) => logRecords.push(record),
+        logContext: {
+          requestId: "req_delivery",
+          routeKey: "tn_custom",
+          submissionId: "lead-1",
+          data: { answers: { first_name: "Ana" } },
+        },
       },
     );
 
@@ -3397,6 +3505,26 @@ describe("submission delivery", () => {
     });
     expect(attempts).toBe(4);
     expect(delays).toEqual([2000, 2000, 2000]);
+    expect(logRecords.filter((record) => record.event === "lead.delivery_attempt_failed")).toHaveLength(4);
+    expect(logRecords.at(-1)).toMatchObject({
+      level: "error",
+      event: "lead.delivery_failed",
+      requestId: "req_delivery",
+      routeKey: "tn_custom",
+      submissionId: "lead-1",
+      status: 500,
+      critical: true,
+      data: {
+        answers: { first_name: "Ana" },
+        attempts: 4,
+        status: 500,
+        error: "Downstream delivery returned HTTP 500.",
+        delivery: {
+          url: "https://example.test/lead-submissions",
+          payload: { id: "lead-1" },
+        },
+      },
+    });
   });
 });
 
@@ -4194,7 +4322,10 @@ describe("server routing", () => {
   });
 
   it("serves checkpoint-dependent form pages without browser caching", async () => {
-    const handler = createFetchHandler();
+    const logRecords: InstantFormLogRecord[] = [];
+    const handler = createFetchHandler({
+      eventLogger: (record) => logRecords.push(record),
+    });
     const response = await handler(
       new Request("http://localhost/tn/custom/buscando-oferta", {
         headers: {
@@ -4205,6 +4336,16 @@ describe("server routing", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(response.headers.get("X-Request-Id")).toBeTruthy();
+    expect(logRecords).toContainEqual(expect.objectContaining({
+      event: "form.rendered",
+      routeKey,
+      stepKey: "matching_offer",
+      status: 200,
+      data: expect.objectContaining({
+        prebuilt: expect.any(Boolean),
+      }),
+    }));
   });
 
   it("sanitizes invalid checkpoint cookie answers before resuming", async () => {
@@ -4731,13 +4872,24 @@ describe("server routing", () => {
   });
 
   it("rejects unknown or unsafe selected script proxy requests", async () => {
-    const handler = createFetchHandler();
+    const logRecords: InstantFormLogRecord[] = [];
+    const handler = createFetchHandler({
+      eventLogger: (record) => logRecords.push(record),
+    });
 
     const unknownResponse = await handler(new Request("http://localhost/_instant/scripts/not-real.js"));
     const unsafeQueryResponse = await handler(new Request("http://localhost/_instant/scripts/tfc.js?source=https://evil.test/x.js"));
 
     expect(unknownResponse.status).toBe(404);
     expect(unsafeQueryResponse.status).toBe(400);
+    expect(logRecords).toContainEqual(expect.objectContaining({
+      event: "proxy.selected_script_failed",
+      status: 404,
+    }));
+    expect(logRecords).toContainEqual(expect.objectContaining({
+      event: "proxy.selected_script_failed",
+      status: 400,
+    }));
   });
 
   it("serves Partytown runtime assets", async () => {
@@ -4780,7 +4932,10 @@ describe("server routing", () => {
   });
 
   it("sets a checkpoint cookie for valid partial answers", async () => {
-    const handler = createFetchHandler();
+    const logRecords: InstantFormLogRecord[] = [];
+    const handler = createFetchHandler({
+      eventLogger: (record) => logRecords.push(record),
+    });
     const response = await handler(
       new Request("http://localhost/api/forms/tn_custom/checkpoints", {
         method: "POST",
@@ -4798,6 +4953,21 @@ describe("server routing", () => {
     expect(setCookie).toContain("SameSite=Lax");
     expect(setCookie).toContain("Path=/");
     expect(setCookie).toContain("Max-Age=604800");
+    expect(response.headers.get("X-Request-Id")).toBeTruthy();
+    expect(logRecords).toContainEqual(expect.objectContaining({
+      event: "checkpoint.received",
+      routeKey,
+    }));
+    expect(logRecords).toContainEqual(expect.objectContaining({
+      event: "checkpoint.accepted",
+      routeKey,
+      stepKey: "belongs_to_state",
+      status: 200,
+      data: expect.objectContaining({
+        answer: "yes",
+        nextUrl: "/tn/custom/tiene-licencia",
+      }),
+    }));
   });
 
   it("routes completed pre-contact answers through the matching checkpoint", async () => {
@@ -5146,9 +5316,11 @@ describe("server routing", () => {
 
   it("accepts valid local submissions and logs the payload", async () => {
     const loggedPayloads: unknown[] = [];
+    const logRecords: InstantFormLogRecord[] = [];
     const deliveryRequests: RecordedDeliveryRequest[] = [];
     const handler = createFetchHandler({
       logger: (payload) => loggedPayloads.push(payload),
+      eventLogger: (record) => logRecords.push(record),
       delivery: {
         fetch: createSuccessfulDeliveryFetch(deliveryRequests),
         delay: immediateDeliveryDelay,
@@ -5163,6 +5335,7 @@ describe("server routing", () => {
     );
 
     expect(response.status).toBe(201);
+    expect(response.headers.get("X-Request-Id")).toBeTruthy();
     expect(deliveryRequests).toHaveLength(1);
     expect(deliveryRequests[0]?.url).toBe(getRequiredTennesseeForm().payload.url);
     expect(deliveryRequests[0]?.init.method).toBe("POST");
@@ -5228,6 +5401,41 @@ describe("server routing", () => {
     expect(loggedPayloads[0]).not.toHaveProperty("pageId");
     expect((loggedPayloads[0] as { answers?: Record<string, string> }).answers?.matching_offer).toBeUndefined();
     expectTrustedFormConsentAnswer((loggedPayloads[0] as { answers?: Record<string, unknown> }).answers?.trustedform_consent);
+    expect(logRecords).toContainEqual(expect.objectContaining({
+      event: "submission.received",
+      routeKey,
+      formName: "ES - TN - v6",
+      data: { mode: "json" },
+    }));
+    expect(logRecords).toContainEqual(expect.objectContaining({
+      event: "lead.delivery_succeeded",
+      routeKey,
+      submissionId: loggedPayload.submissionId,
+      data: expect.objectContaining({
+        attempts: 1,
+        delivery: expect.objectContaining({
+          payload: expect.objectContaining({
+            first_name: "Ana",
+            phone_number: "+16155551234",
+          }),
+        }),
+        answers: expect.objectContaining({
+          phone_number: "+16155551234",
+        }),
+      }),
+    }));
+    expect(logRecords).toContainEqual(expect.objectContaining({
+      event: "submission.accepted",
+      routeKey,
+      submissionId: loggedPayload.submissionId,
+      status: 201,
+      data: expect.objectContaining({
+        mode: "json",
+        payload: expect.objectContaining({
+          submissionId: loggedPayload.submissionId,
+        }),
+      }),
+    }));
   });
 
   it("clears the checkpoint cookie after a successful final submission", async () => {
@@ -5279,10 +5487,12 @@ describe("server routing", () => {
 
   it("keeps checkpoint state and does not log when downstream JSON delivery fails", async () => {
     const loggedPayloads: unknown[] = [];
+    const logRecords: InstantFormLogRecord[] = [];
     const delays: number[] = [];
     let deliveryAttempts = 0;
     const handler = createFetchHandler({
       logger: (payload) => loggedPayloads.push(payload),
+      eventLogger: (record) => logRecords.push(record),
       delivery: {
         fetch: async () => {
           deliveryAttempts += 1;
@@ -5313,13 +5523,45 @@ describe("server routing", () => {
     expect(loggedPayloads).toEqual([]);
     expect(deliveryAttempts).toBe(4);
     expect(delays).toEqual([2000, 2000, 2000]);
+    expect(logRecords).toContainEqual(expect.objectContaining({
+      level: "error",
+      event: "lead.delivery_failed",
+      routeKey,
+      critical: true,
+      data: expect.objectContaining({
+        attempts: 4,
+        status: 500,
+        delivery: expect.objectContaining({
+          payload: expect.objectContaining({
+            first_name: "Ana",
+            phone_number: "+16155551234",
+          }),
+        }),
+        answers: expect.objectContaining({
+          phone_number: "+16155551234",
+        }),
+      }),
+    }));
+    expect(logRecords).toContainEqual(expect.objectContaining({
+      level: "error",
+      event: "submission.rejected",
+      routeKey,
+      status: 502,
+      critical: true,
+      data: expect.objectContaining({
+        mode: "json",
+        reason: "delivery_failed",
+      }),
+    }));
   });
 
   it("accepts native TrustedForm form submissions and redirects to a one-time post-submit page", async () => {
     const logs: unknown[] = [];
+    const logRecords: InstantFormLogRecord[] = [];
     const deliveryRequests: RecordedDeliveryRequest[] = [];
     const handler = createFetchHandler({
       logger: (payload) => logs.push(payload),
+      eventLogger: (record) => logRecords.push(record),
       delivery: {
         fetch: createSuccessfulDeliveryFetch(deliveryRequests),
         delay: immediateDeliveryDelay,
@@ -5352,6 +5594,7 @@ describe("server routing", () => {
     const postSubmitCookie = getPostSubmitCookie(setCookie);
 
     expect(response.status).toBe(303);
+    expect(response.headers.get("X-Request-Id")).toBeTruthy();
     expect(deliveryRequests).toHaveLength(1);
     expect(deliveryRequests[0]?.url).toBe(getRequiredTennesseeForm().payload.url);
     const deliveredPayload = JSON.parse(String(deliveryRequests[0]?.init.body)) as Record<string, unknown>;
@@ -5444,14 +5687,29 @@ describe("server routing", () => {
     };
     expect(loggedPayload.delivery?.payload?.id).toBe(loggedPayload.submissionId);
     expect(loggedPayload.delivery?.payload?.meta_conversion?.event_id).toBe(loggedPayload.submissionId);
+    expect(logRecords).toContainEqual(expect.objectContaining({
+      event: "submission.accepted",
+      routeKey,
+      submissionId: loggedPayload.submissionId,
+      status: 303,
+      data: expect.objectContaining({
+        mode: "native",
+        postSubmitUrl: "/tn/custom/gracias",
+        payload: expect.objectContaining({
+          submissionId: loggedPayload.submissionId,
+        }),
+      }),
+    }));
   });
 
   it("renders a native submission error page when downstream delivery fails", async () => {
     const logs: unknown[] = [];
+    const logRecords: InstantFormLogRecord[] = [];
     const delays: number[] = [];
     let deliveryAttempts = 0;
     const handler = createFetchHandler({
       logger: (payload) => logs.push(payload),
+      eventLogger: (record) => logRecords.push(record),
       delivery: {
         fetch: async () => {
           deliveryAttempts += 1;
@@ -5494,6 +5752,23 @@ describe("server routing", () => {
     expect(logs).toEqual([]);
     expect(deliveryAttempts).toBe(4);
     expect(delays).toEqual([2000, 2000, 2000]);
+    expect(logRecords).toContainEqual(expect.objectContaining({
+      level: "error",
+      event: "lead.delivery_failed",
+      routeKey,
+      critical: true,
+    }));
+    expect(logRecords).toContainEqual(expect.objectContaining({
+      level: "error",
+      event: "submission.rejected",
+      routeKey,
+      status: 502,
+      critical: true,
+      data: expect.objectContaining({
+        mode: "native",
+        reason: "delivery_failed",
+      }),
+    }));
   });
 });
 

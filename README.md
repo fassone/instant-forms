@@ -219,6 +219,12 @@ Example logged delivery block:
 }
 ```
 
+## Production Logging
+
+The app emits structured JSON-line logs to stdout through the platform `eventLogger`. Every request receives an `X-Request-Id` response header, and the same `requestId` is included in related route, checkpoint, resolution, tracking callback, submission, and delivery logs.
+
+Lead delivery is the critical production path. Each downstream attempt logs its status or network error, successful delivery logs `lead.delivery_succeeded`, and exhausted retries log `lead.delivery_failed` with `level: "error"` and `critical: true`. Because this project intentionally favors production diagnosis for costly lost-lead failures, successful and failed delivery logs include the normalized answers and full downstream delivery payload. Logs still avoid environment secrets, access tokens, authorization headers, and raw request cookies.
+
 ## Contributor Guidance
 
 See `AGENTS.md` for coding-agent and contributor instructions, including instruction precedence, quality gates, and repository conventions.

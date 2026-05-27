@@ -10,6 +10,7 @@ import type {
 } from "../../flow";
 import type { LifecycleTrackingEvent, TrackingAnswerMap } from "../../rendering";
 import type { SubmissionPayload } from "../../submissions/validation";
+import { getRequestId, logInstantFormEvent, type InstantFormLogger } from "../../logging";
 
 const TRACKING_SERVER_CALLBACK_TIMEOUT_MS = 5000;
 
@@ -23,6 +24,7 @@ export function scheduleTrackingServerCallback(
     step?: FormStep;
     stepIndex?: number;
     submission?: SubmissionPayload;
+    logger?: InstantFormLogger;
   },
 ): void {
   const server = lifecycleEvent?.config.server;
@@ -31,27 +33,56 @@ export function scheduleTrackingServerCallback(
   }
 
   const input = createTrackingServerEventInput(c, form, lifecycleEvent.payload, options);
+  logInstantFormEvent(options.logger, {
+    level: "info",
+    event: "tracking.server_callback_scheduled",
+    requestId: getRequestId(c.req.raw),
+    routeKey,
+    formName: form.name,
+    pageName: form.page.name,
+    stepKey: options.step?.key,
+    submissionId: options.submission?.submissionId,
+    data: {
+      trackingEvent: lifecycleEvent.payload.event,
+      trackingEventId: lifecycleEvent.payload.id,
+    },
+  });
 
   queueMicrotask(() => {
-    runTrackingServerCallback(server, input, routeKey, lifecycleEvent.payload);
+    runTrackingServerCallback(server, input, {
+      logger: options.logger,
+      requestId: getRequestId(c.req.raw),
+      routeKey,
+      form,
+      step: options.step,
+      submission: options.submission,
+      event: lifecycleEvent.payload,
+    });
   });
 }
 
 function runTrackingServerCallback(
   server: NonNullable<LifecycleTrackingEvent["config"]["server"]>,
   input: TrackingServerEventInput,
-  routeKey: string,
-  event: TrackingServerEventPayload,
+  options: {
+    logger?: InstantFormLogger;
+    requestId: string;
+    routeKey: string;
+    form: InstantForm;
+    step?: FormStep;
+    submission?: SubmissionPayload;
+    event: TrackingServerEventPayload;
+  },
 ): void {
   try {
     const result = server(input);
     if (isPromiseLike(result)) {
       void withTimeout(result, TRACKING_SERVER_CALLBACK_TIMEOUT_MS).catch((error) => {
-        logTrackingServerCallbackFailure(error, routeKey, event);
+        logTrackingServerCallbackFailure(error, options);
       });
     }
   } catch (error) {
-    logTrackingServerCallbackFailure(error, routeKey, event);
+    logTrackingServerCallbackFailure(error, options);
   }
 }
 
@@ -64,6 +95,7 @@ function createTrackingServerEventInput(
     step?: FormStep;
     stepIndex?: number;
     submission?: SubmissionPayload;
+    logger?: InstantFormLogger;
   },
 ): TrackingServerEventInput {
   const step = options.step ? createTrackingStepContext(options.step, options.stepIndex) : undefined;
@@ -130,15 +162,31 @@ async function withTimeout<T>(promise: PromiseLike<T>, timeoutMs: number): Promi
 
 function logTrackingServerCallbackFailure(
   error: unknown,
-  routeKey: string,
-  event: TrackingServerEventPayload,
+  options: {
+    logger?: InstantFormLogger;
+    requestId: string;
+    routeKey: string;
+    form: InstantForm;
+    step?: FormStep;
+    submission?: SubmissionPayload;
+    event: TrackingServerEventPayload;
+  },
 ): void {
   const message = error instanceof Error ? error.message : String(error);
 
-  console.warn("[instant-forms] tracking server callback failed", {
-    routeKey,
-    event: event.event,
-    eventId: event.id,
-    message,
+  logInstantFormEvent(options.logger, {
+    level: "warn",
+    event: "tracking.server_callback_failed",
+    requestId: options.requestId,
+    routeKey: options.routeKey,
+    formName: options.form.name,
+    pageName: options.form.page.name,
+    stepKey: options.step?.key,
+    submissionId: options.submission?.submissionId,
+    data: {
+      trackingEvent: options.event.event,
+      trackingEventId: options.event.id,
+      message,
+    },
   });
 }
