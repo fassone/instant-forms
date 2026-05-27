@@ -74,8 +74,8 @@ export function createAutoInsuranceSteps({ areaDisplayName }: CreateAutoInsuranc
           label: "Estamos buscando su seguro ideal",
           countsAsStep: false,
           successLines: [
-            { text: "Encontramos agentes listos para cotizarle.", color: "brand-navy" },
-            { text: "Descubra cuánto puede ahorrar.", color: "accent" },
+            { text: "¡Encontramos opciones para usted!", color: "brand-navy" },
+            { text: "Descubra cuánto puede ahorrar...", color: "accent" },
           ],
         },
         ["residence_state"],
@@ -151,9 +151,20 @@ export function createAutoInsuranceSteps({ areaDisplayName }: CreateAutoInsuranc
             nextLabel: "Continuar",
             fields: [
               {
-                name: "review_belongs_to_state",
-                label: `Vive en ${areaDisplayName}`,
-                value: text(answers.belongs_to_state === "yes" ? "Sí" : "No"),
+                name: "trusted_form_grantor_name",
+                label: "Nombre completo",
+                value: text(answers.first_name, " ", answers.last_name),
+                trustedForm: {
+                  role: "consent-grantor-name",
+                },
+              },
+              {
+                name: "trusted_form_grantor_phone",
+                label: "Teléfono",
+                value: phoneDisplay(answers.phone_number),
+                trustedForm: {
+                  role: "consent-grantor-phone",
+                },
               },
               {
                 name: "review_residence_state",
@@ -179,22 +190,6 @@ export function createAutoInsuranceSteps({ areaDisplayName }: CreateAutoInsuranc
                 name: "review_number_of_registered_cars",
                 label: "Autos a asegurar",
                 value: text(answers.number_of_registered_cars),
-              },
-              {
-                name: "trusted_form_grantor_name",
-                label: "Nombre completo",
-                value: text(answers.first_name, " ", answers.last_name),
-                trustedForm: {
-                  role: "consent-grantor-name",
-                },
-              },
-              {
-                name: "trusted_form_grantor_phone",
-                label: "Teléfono",
-                value: phoneDisplay(answers.phone_number),
-                trustedForm: {
-                  role: "consent-grantor-phone",
-                },
               },
             ],
           },

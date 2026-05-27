@@ -37,6 +37,10 @@ export const esUiCopy = {
 
 export const esAutoInsurancePostSubmit = {
   slug: "gracias",
-  title: "Gracias.",
+  title: "¡Estamos ansiosos por ayudarte a ahorrar $$$!",
   message: "Recibimos su información. Un agente se pondrá en contacto con usted pronto.",
+  cta: {
+    label: "¡Dele like a nuestra página!",
+    href: "https://www.facebook.com/seguros.aseguranza"
+  }
 } as const;
