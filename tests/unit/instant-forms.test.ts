@@ -5395,7 +5395,7 @@ describe("server routing", () => {
     expect(html).toContain("instant_form_submit_success");
     expect(html).not.toContain('"event_name":"Lead"');
     expect(html).not.toContain('"pixel_id":"1465068051587670"');
-    expect(html).toContain('document.addEventListener("pt0", pushInstantInitialTrackingEvents');
+    expect(html).toContain('document.addEventListener("pt0", window.__INSTANT_PUSH_INITIAL_TRACKING_EVENTS__');
     expect(html).not.toContain("Ana");
     expect(html).not.toContain("Lopez");
     expect(html).not.toContain("+16155551234");
@@ -5700,8 +5700,11 @@ describe("form rendering", () => {
     expect(html).toContain("window.dataLayer = window.dataLayer || []");
     expect(html).toContain("window.__INSTANT_INITIAL_TRACKING_EVENTS__");
     expect(html).toContain("function pushInstantInitialTrackingEvents()");
-    expect(html).toContain('document.addEventListener("pt0", pushInstantInitialTrackingEvents');
-    expect(html).toContain("window.setTimeout(pushInstantInitialTrackingEvents, 1500)");
+    expect(html).toContain('document.addEventListener("pt0", window.__INSTANT_PUSH_INITIAL_TRACKING_EVENTS__');
+    expect(html).toContain("window.setTimeout(window.__INSTANT_PUSH_INITIAL_TRACKING_EVENTS__, 1500)");
+    expect(html).toContain("window.__INSTANT_SCHEDULE_AFTER_FIRST_PAINT__");
+    expect(html).toContain("installInstantGoogleTagRuntime");
+    expect(html).toContain("window.requestAnimationFrame(() => window.requestAnimationFrame(run))");
     expect(html).toContain('["dataLayer.push", { preserveBehavior: true }]');
     expect(html).toContain("installGoogleTagRequestProxyShim();");
     expect(html).toContain("function installGoogleTagRequestProxyShim()");
@@ -5713,9 +5716,11 @@ describe("form rendering", () => {
     expect(html).toContain('"https://www.google-analytics.com/debug/bootstrap"');
     expect(html).toContain("\\/_instant\\/google-tags\\/proxy\\?u=https%3A%2F%2Fwww\\.googletagmanager\\.com%2Fdebug%2Fbootstrap");
     expect(html).toContain("\\/_instant\\/google-tags\\/proxy\\?u=https%3A%2F%2Fwww\\.google-analytics\\.com%2Fdebug%2Fbootstrap");
-    expect(html).toContain('<script data-partytown-runtime="true">/* Partytown');
+    expect(html).toContain('partytownRuntime.dataset.partytownRuntime = "true"');
+    expect(html).toContain("partytownRuntime.text =");
     expect(html).not.toContain('<script src="/~partytown/partytown.js" data-partytown-runtime="true"></script>');
-    expect(html).toContain('type="text/partytown" src="/_instant/scripts/gtm.js?id=GTM-ABC123&amp;l=dataLayer"');
+    expect(html).toContain('googleTagScript.type = "text/partytown"');
+    expect(html).toContain('googleTagScript.src = "/_instant/scripts/gtm.js?id=GTM-ABC123\\u0026l=dataLayer"');
     expect(html).toContain("/_instant/google-tags/proxy");
     expect(html).toContain('"param":"u"');
     expect(html).toContain("window.__INSTANT_READ_ORIGINAL_REQUEST_PROXY_URL__");
@@ -5726,7 +5731,13 @@ describe("form rendering", () => {
     expect(html).toContain('"trustedForm"');
     expect(html).toContain("/_instant/meta/tr");
     expect(html.indexOf("installGoogleTagRequestProxyShim();")).toBeLessThan(
-      html.indexOf('type="text/partytown" src="/_instant/scripts/gtm.js?id=GTM-ABC123&amp;l=dataLayer"'),
+      html.indexOf('googleTagScript.type = "text/partytown"'),
+    );
+    expect(html.indexOf("<style>")).toBeLessThan(html.indexOf("window.__INSTANT_INITIAL_TRACKING_EVENTS__"));
+    expect(html.indexOf("<body>")).toBeLessThan(html.indexOf("window.__INSTANT_INITIAL_TRACKING_EVENTS__"));
+    expect(html.indexOf("<h1")).toBeLessThan(html.indexOf("window.__INSTANT_INITIAL_TRACKING_EVENTS__"));
+    expect(html.indexOf("window.__INSTANT_INITIAL_TRACKING_EVENTS__")).toBeLessThan(
+      html.indexOf("window.__FORM_CONFIG__"),
     );
     expect(html).toContain("instant_form_view");
     expect(html).toContain("instant_form_step_view");
@@ -5756,14 +5767,15 @@ describe("form rendering", () => {
 
     expect(devHtml).toContain("--brand-navy: #073b8e");
     expect(devHtml).toContain("\n      :root");
+    expect(devHtml).toContain("aspect-ratio: 220 / 63");
     expect(productionHtml).toContain("<style>");
     expect(productionHtml).toContain("--a:#073b8e");
     expect(productionHtml).toContain("var(--a)");
     expect(productionHtml).not.toContain("--brand-navy:");
     expect(productionHtml).not.toContain("var(--brand-navy)");
-    expect(productionHtml).toContain("<script>window.__FORM_CONFIG__=");
+    expect(productionHtml).toContain('<script type="module">window.__FORM_CONFIG__=');
     expect(productionTemplateHtml).toContain('"__FORM_CONFIG_JSON__"');
-    expect(productionHtml).toContain("<script>");
+    expect(productionHtml).toContain('<script type="module">');
     expect(productionHtml).not.toContain('class="form-panel"');
     expect(productionHtml).not.toContain('id="lead-form"');
     expect(productionHtml).toContain('type="button"');

@@ -1522,6 +1522,11 @@ function getCoreRuntimeScript(): string {
   }
 
   function pushInitialClientTrackingEvents() {
+    if (typeof window.__INSTANT_PUSH_INITIAL_TRACKING_EVENTS__ === "function") {
+      window.__INSTANT_PUSH_INITIAL_TRACKING_EVENTS__();
+      return;
+    }
+
     pushTrackingEvents(config.initialTrackingEvents);
   }
 

@@ -102,7 +102,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
   );
   const formConfigExpression = options.formConfigExpression ?? serializeForScript(clientConfig);
   const googleTagManager = clientConfig.tracking?.googleTagManager;
-  const trackingHead = renderGoogleTagManagerHead(
+  const trackingScripts = renderGoogleTagManagerHead(
     googleTagManager,
     isPostSubmit
       ? options.postSubmit?.trackingEvents ?? []
@@ -125,7 +125,6 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>${escapeHtml(isPostSubmit ? form.postSubmit.title : form.page.name)} | ${escapeHtml(displayAreaCode.toUpperCase())}</title>
-${trackingHead}
     <style>
       :root {
         color-scheme: light;
@@ -215,6 +214,7 @@ ${trackingHead}
 
       .brand-logo {
         display: block;
+        aspect-ratio: 220 / 63;
         width: clamp(160px, 34vw, 220px);
         height: auto;
       }
@@ -1390,6 +1390,7 @@ ${trackingHead}
         </div>
       </div>
     </main>
+    ${trackingScripts}
     ${isPostSubmit ? "" : renderControllerScripts(formConfigExpression, activeStepKind)}
   </body>
 </html>`;
@@ -1448,11 +1449,28 @@ function renderHiddenThanks(form: InstantForm): string {
 }
 
 function renderControllerScripts(formConfigExpression: string, activeStepKind: FormStep["kind"]): string {
-  return `<script>
+  return `<script type="module">
       window.__FORM_CONFIG__ = ${formConfigExpression};
-    </script>
-    <script>
+      const startInstantFormController = () => {
 ${getFormControllerScript(activeStepKind)}
+      };
+      const scheduleInstantFormAfterFirstPaint = window.__INSTANT_SCHEDULE_AFTER_FIRST_PAINT__ || function(callback) {
+        let didRun = false;
+        const run = () => {
+          if (didRun) {
+            return;
+          }
+          didRun = true;
+          callback();
+        };
+        if (typeof window.requestAnimationFrame === "function") {
+          window.requestAnimationFrame(() => window.requestAnimationFrame(run));
+        } else {
+          window.setTimeout(run, 0);
+        }
+        window.setTimeout(run, 1500);
+      };
+      scheduleInstantFormAfterFirstPaint(startInstantFormController);
     </script>`;
 }
 

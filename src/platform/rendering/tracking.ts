@@ -92,17 +92,29 @@ export function renderGoogleTagManagerHead(
     getRequestProxyClientDefinitions(requestProxies, ["googleTags", "metaPixel", "trustedForm"]),
   );
   const partytownRequestProxyKeys = serializeForScript(["googleTags", "metaPixel", "trustedForm"]);
+  const partytownBootstrapSource = serializeForScript(getPartytownBootstrapSource());
 
-  return `    <script>
-${requestProxyRuntimeScript}
-      installGoogleTagRequestProxyShim();
-      if (${serializeForScript(googleTagManager.metaPixelProxy)}) {
-        installMetaPixelRequestProxyShim();
-      }
+  return `    <script type="module">
+      window.__INSTANT_SCHEDULE_AFTER_FIRST_PAINT__ = window.__INSTANT_SCHEDULE_AFTER_FIRST_PAINT__ || function(callback) {
+        let didRun = false;
+        const run = () => {
+          if (didRun) {
+            return;
+          }
+          didRun = true;
+          callback();
+        };
+        if (typeof window.requestAnimationFrame === "function") {
+          window.requestAnimationFrame(() => window.requestAnimationFrame(run));
+        } else {
+          window.setTimeout(run, 0);
+        }
+        window.setTimeout(run, 1500);
+      };
       window.dataLayer = window.dataLayer || [];
       window.__INSTANT_INITIAL_TRACKING_EVENTS__ = ${initialEventsJson};
-      window.__INSTANT_INITIAL_TRACKING_EVENTS_PUSHED__ = false;
-      function pushInstantInitialTrackingEvents() {
+      window.__INSTANT_INITIAL_TRACKING_EVENTS_PUSHED__ = Boolean(window.__INSTANT_INITIAL_TRACKING_EVENTS_PUSHED__);
+      window.__INSTANT_PUSH_INITIAL_TRACKING_EVENTS__ = function pushInstantInitialTrackingEvents() {
         if (window.__INSTANT_INITIAL_TRACKING_EVENTS_PUSHED__) {
           return;
         }
@@ -110,39 +122,57 @@ ${requestProxyRuntimeScript}
         (window.__INSTANT_INITIAL_TRACKING_EVENTS__ || []).forEach((eventPayload) => {
           window.dataLayer.push(eventPayload);
         });
-      }
-      document.addEventListener("pt0", pushInstantInitialTrackingEvents, { once: true });
-      window.setTimeout(pushInstantInitialTrackingEvents, 1500);
-      window.partytown = window.__INSTANT_COMPOSE_PARTYTOWN_CONFIG__(window.partytown || {}, {
-        lib: ${serializeForScript(googleTagManager.partytownLib)},
-        forward: [
-          ["dataLayer.push", { preserveBehavior: true }],
-        ],
-        loadScriptsOnMainThread: [
-          "https://www.googletagmanager.com/debug/bootstrap",
-          "https://www.google-analytics.com/debug/bootstrap",
-          /\\/_instant\\/google-tags\\/proxy\\?u=https%3A%2F%2Fwww\\.googletagmanager\\.com%2Fdebug%2Fbootstrap/,
-          /\\/_instant\\/google-tags\\/proxy\\?u=https%3A%2F%2Fwww\\.google-analytics\\.com%2Fdebug%2Fbootstrap/,
-        ],
-        requestProxyKeys: ${partytownRequestProxyKeys},
-      });
-      function installGoogleTagRequestProxyShim() {
-        if (window.__INSTANT_GOOGLE_TAG_PROXY_SHIM__) {
+      };
+      function installInstantGoogleTagRuntime() {
+        if (window.__INSTANT_GOOGLE_TAG_RUNTIME_INSTALLED__) {
           return;
         }
-        window.__INSTANT_GOOGLE_TAG_PROXY_SHIM__ = true;
-        window.__INSTANT_INSTALL_REQUEST_PROXY_SHIM__("googleTags", ["googleTags"]);
-      }
-      function installMetaPixelRequestProxyShim() {
-        if (window.__INSTANT_META_PIXEL_PROXY_SHIM__) {
-          return;
+        window.__INSTANT_GOOGLE_TAG_RUNTIME_INSTALLED__ = true;
+${requestProxyRuntimeScript}
+        installGoogleTagRequestProxyShim();
+        if (${serializeForScript(googleTagManager.metaPixelProxy)}) {
+          installMetaPixelRequestProxyShim();
         }
-        window.__INSTANT_META_PIXEL_PROXY_SHIM__ = true;
-        window.__INSTANT_INSTALL_REQUEST_PROXY_SHIM__("metaPixel", ["metaPixel"]);
+        document.addEventListener("pt0", window.__INSTANT_PUSH_INITIAL_TRACKING_EVENTS__, { once: true });
+        window.setTimeout(window.__INSTANT_PUSH_INITIAL_TRACKING_EVENTS__, 1500);
+        window.partytown = window.__INSTANT_COMPOSE_PARTYTOWN_CONFIG__(window.partytown || {}, {
+          lib: ${serializeForScript(googleTagManager.partytownLib)},
+          forward: [
+            ["dataLayer.push", { preserveBehavior: true }],
+          ],
+          loadScriptsOnMainThread: [
+            "https://www.googletagmanager.com/debug/bootstrap",
+            "https://www.google-analytics.com/debug/bootstrap",
+            /\\/_instant\\/google-tags\\/proxy\\?u=https%3A%2F%2Fwww\\.googletagmanager\\.com%2Fdebug%2Fbootstrap/,
+            /\\/_instant\\/google-tags\\/proxy\\?u=https%3A%2F%2Fwww\\.google-analytics\\.com%2Fdebug%2Fbootstrap/,
+          ],
+          requestProxyKeys: ${partytownRequestProxyKeys},
+        });
+        const partytownRuntime = document.createElement("script");
+        partytownRuntime.dataset.partytownRuntime = "true";
+        partytownRuntime.text = ${partytownBootstrapSource};
+        document.head.appendChild(partytownRuntime);
+        const googleTagScript = document.createElement("script");
+        googleTagScript.type = "text/partytown";
+        googleTagScript.src = ${serializeForScript(googleTagManager.scriptUrl)};
+        document.head.appendChild(googleTagScript);
+        function installGoogleTagRequestProxyShim() {
+          if (window.__INSTANT_GOOGLE_TAG_PROXY_SHIM__) {
+            return;
+          }
+          window.__INSTANT_GOOGLE_TAG_PROXY_SHIM__ = true;
+          window.__INSTANT_INSTALL_REQUEST_PROXY_SHIM__("googleTags", ["googleTags"]);
+        }
+        function installMetaPixelRequestProxyShim() {
+          if (window.__INSTANT_META_PIXEL_PROXY_SHIM__) {
+            return;
+          }
+          window.__INSTANT_META_PIXEL_PROXY_SHIM__ = true;
+          window.__INSTANT_INSTALL_REQUEST_PROXY_SHIM__("metaPixel", ["metaPixel"]);
+        }
       }
+      window.__INSTANT_SCHEDULE_AFTER_FIRST_PAINT__(installInstantGoogleTagRuntime);
     </script>
-    <script data-partytown-runtime="true">${escapeInlineScript(getPartytownBootstrapSource())}</script>
-    <script type="text/partytown" src="${escapeHtml(googleTagManager.scriptUrl)}"></script>
 `;
 }
 
@@ -432,17 +462,4 @@ function serializeForScript(value: unknown): string {
 
     return "\\u0026";
   });
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-function escapeInlineScript(value: string): string {
-  return value.replace(/<\/script/giu, "<\\/script");
 }
