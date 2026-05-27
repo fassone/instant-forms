@@ -8,7 +8,7 @@
 
 - Final all-answers validation against the visible step rules and `contract.answers`.
 - Normalized submission payload shape.
-- Typed delivery payload construction from each flow's Zod `contract.payload` and `payload.mapping({ context, answers })`.
+- Typed delivery payload construction from each flow's downstream `payload.url`, Zod `contract.payload`, and `payload.mapping({ context, answers, submission, request, cookies, browser })`.
 - Top-level submission metadata such as TrustedForm certificate URLs, including authored requirements for consent steps.
 - Submission-specific exported types.
 

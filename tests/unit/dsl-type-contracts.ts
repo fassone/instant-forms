@@ -25,6 +25,7 @@ const contract = {
 };
 
 const payload = {
+  url: "https://example.test/lead-submissions",
   method: "POST",
   encoding: "json",
   mapping: ({ answers }: { answers: { first_name: string } }) => ({
@@ -100,6 +101,7 @@ const typedTemplate = defineFormTemplate({
         areaName: variables.areaName,
       },
       payload: {
+        url: "https://example.test/lead-submissions",
         method: "POST",
         encoding: "json",
         mapping: ({ context }) => ({ marketState: context.areaCode }),
@@ -165,6 +167,7 @@ void defineFormFlow({
   },
   context: {},
   payload: {
+    url: "https://example.test/lead-submissions",
     method: "POST",
     encoding: "json",
     mapping: () => ({ ok: "yes" }),
@@ -189,6 +192,7 @@ void defineFormFlow({
   },
   context: {},
   payload: {
+    url: "https://example.test/lead-submissions",
     method: "POST",
     encoding: "json",
     mapping: () => ({ ok: "yes" }),
@@ -214,6 +218,7 @@ void defineFormFlow({
   },
   context: {},
   payload: {
+    url: "https://example.test/lead-submissions",
     method: "POST",
     encoding: "json",
     mapping: () => ({ ok: "yes" }),
@@ -251,6 +256,7 @@ void defineFormFlow({
   },
   context: {},
   payload: {
+    url: "https://example.test/lead-submissions",
     method: "POST",
     encoding: "json",
     mapping: () => ({ ok: "yes" }),
@@ -277,6 +283,7 @@ void defineFormFlow({
   },
   context: {},
   payload: {
+    url: "https://example.test/lead-submissions",
     method: "POST",
     encoding: "json",
     mapping: () => ({ ok: "yes" }),
@@ -303,6 +310,7 @@ void defineFormFlow({
   },
   context: { areaCode: "TN" },
   payload: {
+    url: "https://example.test/lead-submissions",
     method: "POST",
     encoding: "json",
     mapping: ({ answers }) => ({ firstName: answers.first_name }),
@@ -356,6 +364,7 @@ void defineFormFlow({
   },
   context: {},
   payload: {
+    url: "https://example.test/lead-submissions",
     method: "POST",
     encoding: "json",
     mapping: () => ({ ok: "yes" }),
@@ -400,6 +409,7 @@ void defineFormFlow({
   },
   context: {},
   payload: {
+    url: "https://example.test/lead-submissions",
     method: "POST",
     encoding: "json",
     mapping: () => ({ ok: "yes" }),
@@ -689,6 +699,7 @@ void defineFormFlow({
   contract: optionalContextContract,
   context: { areaCode: "TN" },
   payload: {
+    url: "https://example.test/lead-submissions",
     method: "POST",
     encoding: "json",
     mapping: ({ context }) => ({ areaCode: context.areaCode }),
@@ -969,6 +980,7 @@ void defineFormFlow({
   contract: optionalAnswerContract,
   context: {},
   payload: {
+    url: "https://example.test/lead-submissions",
     method: "POST",
     encoding: "json",
     mapping: ({ answers }) => ({ phone: answers.phone_number }),
@@ -1235,6 +1247,7 @@ const orderingContract = {
 };
 
 const orderingPayload = {
+  url: "https://example.test/lead-submissions",
   method: "POST",
   encoding: "json",
   mapping: ({ answers }: { answers: { has_license: string } }) => ({

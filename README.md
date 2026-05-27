@@ -114,7 +114,7 @@ Reusable flow shapes live in `src/authoring/templates/` and use `defineFormTempl
 
 Each flow declares a `locale`, an explicit `ui` copy block for platform-owned labels, progress text, modal copy, validation/failure messages, and native error pages, plus a neutral `postSubmit` page for the successful post-submission destination. There is no hidden Spanish fallback: a new language is authored by creating a flow whose step copy, `ui` copy, and `postSubmit` copy are in that language.
 
-Each flow also declares a Zod-backed `contract` with `context`, `answers`, and `payload` schemas. Authored business context such as `areaCode: "TN"`, `areaName: "Tennessee"`, and `product: "auto_insurance"` lives in `context`; answer-producing steps must use keys declared in `contract.answers`; and `payload.mapping` builds a typed delivery payload from `{ context, answers }`. V1 logs that delivery block but does not send it to an external endpoint. Supported step kinds are `choice`, `text`, `phone`, `autocomplete`, `interstitial`, and `trusted_form_consent`.
+Each flow also declares a Zod-backed `contract` with `context`, `answers`, and `payload` schemas. Authored business context such as `areaCode: "TN"`, `areaName: "Tennessee"`, and `product: "auto_insurance"` lives in `context`; answer-producing steps must use keys declared in `contract.answers`; and `payload` declares the downstream HTTPS URL, method, encoding, and a typed `mapping` built from `{ context, answers, submission, request, cookies, browser }`. JSON delivery payloads can contain structured objects, booleans, arrays, and nested data; `form_urlencoded` delivery stays string-only. V1 logs that delivery block but does not send it to the external endpoint yet. Supported step kinds are `choice`, `text`, `phone`, `autocomplete`, `interstitial`, and `trusted_form_consent`.
 
 Dynamic authoring is step-level: a step is either static, or it declares one dependency list and one resolver for its dynamic display/body props. Nested field-level `resolve(...)` calls are intentionally rejected so it is always clear which upstream answers a dynamic step needs. Page-level presentation can set a desktop-only form height with `page.presentation.desktopHeightPx`; mobile continues to use the fixed viewport-height layout. Static `presentation.chrome` can hide the form chrome with `"hidden"` or `"hidden_on_mobile"`; TrustedForm substep-specific chrome overrides live under `substeps.review.presentation` or `substeps.consent.presentation`, not inside the dynamic review/consent copy. TrustedForm review and consent prose can use safe Markdown through `md(...)` / `markdown(...)` in that resolver. Submitted values and native controls stay plain text: use `text(...)` for resolver-produced field values and ordinary strings for button labels, placeholders, keys, and slugs. Markdown is rendered on the server with raw HTML escaped, and the browser receives only sanitized HTML in its client config.
 
@@ -142,9 +142,9 @@ Flows can opt into Google Tag Manager through the typed `googleTagManager(...)` 
 
 For Meta Pixel testing, set the optional `META_TEST_EVENT_CODE` environment variable before starting the server or building forms. Tennessee passes it through the template as `meta.test_event_code` on authored Meta payloads, so GTM can forward it to Meta Test Events. Leave it unset for normal production traffic.
 
-For Tennessee Meta Conversions API testing or production server-side delivery, set the optional `META_CONVERSIONS_ACCESS_TOKEN` environment variable before starting the server. When present, the Tennessee template attaches authored server callbacks to its Meta-enabled tracking events and sends the same event IDs used by GTM to Meta CAPI. Leave it unset to use only the browser/GTM path.
+For Tennessee Meta Conversions API testing or production server-side delivery of progress events, set the optional `META_CONVERSIONS_ACCESS_TOKEN` environment variable before starting the server. When present, the Tennessee template attaches authored server callbacks to its Meta-enabled progress tracking events and sends the same event IDs used by GTM to Meta CAPI. Final `Lead` conversion responsibility is downstream: the submitted delivery payload includes an explicit `meta_conversion` object that the lead processor can use after the lead is processed.
 
-Flows can also declare `attribution` capture hooks for request query parameters that must survive route guards. Tennessee preserves `fbclid` through server redirects until a form page can run the authored capture callback, whose `cookies` helper stores Meta's `_fbc` cookie as `fb.1.<timestamp>.<fbclid>` only when the click id is new or missing. After capture, the client may clean the visible step URL as usual.
+Flows can also declare `attribution` capture hooks for request query parameters that must survive route guards. Tennessee preserves `fbclid`, `source_channel`, `acquisition_channel`, and `platform` through server redirects until a form page can run the authored capture callback. Its `cookies` helper stores Meta's `_fbc` cookie as `fb.1.<timestamp>.<fbclid>` only when the click id is new or missing, and stores bounded first-party attribution cookies for the authored lead payload. After capture, the client may clean the visible step URL as usual.
 
 ## Selected Scripts
 
@@ -183,13 +183,34 @@ Example logged delivery block:
 ```json
 {
   "delivery": {
+    "url": "https://api.liderna.net/webleads/v2",
     "method": "POST",
     "encoding": "json",
     "payload": {
-      "marketState": "TN",
-      "marketName": "Tennessee",
-      "product": "auto_insurance",
-      "phone": "+16155551234"
+      "id": "33333333-3333-4333-8333-333333333333",
+      "area": "TN",
+      "source_channel": "unknown",
+      "acquisition_channel": "organic",
+      "ingress_channel": "website",
+      "first_name": "Ana",
+      "type": "insurance_auto",
+      "last_name": "Lopez",
+      "phone_number": "+16155551234",
+      "created_time": "2026-05-27T12:00:00.000Z",
+      "state_code": "TN",
+      "is_clean_title": "yes",
+      "has_license": "yes",
+      "has_insurance": "no",
+      "number_of_registered_cars": "1",
+      "meta_conversion": {
+        "enabled": true,
+        "pixel_id": "1465068051587670",
+        "event_source_url": "https://dev3000.liderna.net/tn/custom/consentimiento",
+        "event_id": "33333333-3333-4333-8333-333333333333",
+        "event_name": "Lead",
+        "fbp": "fb.1.1779717727926.wqp6t469ygm",
+        "fbc": "fb.1.1779717727926.CLICK123"
+      }
     }
   }
 }

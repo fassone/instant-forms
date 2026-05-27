@@ -23,7 +23,7 @@ import {
   getFormRouteStepUrl,
   type FormRoutes,
 } from "../../routing";
-import { validateSubmission, type SubmissionPayload } from "../../submissions/validation";
+import { validateSubmission, type SubmissionMappingContext, type SubmissionPayload } from "../../submissions/validation";
 import {
   createLifecycleTrackingEvent,
   createLifecycleTrackingPayload,
@@ -285,7 +285,15 @@ export function registerFormRoutes(app: Hono, routes: FormRoutes, logger: Submis
       return jsonResponse(c, { ok: false, errors: [{ field: "body", message: routeEntry.form.ui.errors.submissionFailed }] }, 400);
     }
 
-    const validation = validateSubmission(routeEntry.form, routeEntry.routeKey, body.value);
+    const browserIds = getJsonMetaBrowserIds(body.value);
+    const validation = validateSubmission(
+      routeEntry.form,
+      routeEntry.routeKey,
+      body.value,
+      undefined,
+      undefined,
+      createSubmissionMappingContext(c, browserIds),
+    );
 
     if (validation.ok === false) {
       return jsonResponse(c, { ok: false, errors: validation.errors }, 400);
@@ -299,7 +307,7 @@ export function registerFormRoutes(app: Hono, routes: FormRoutes, logger: Submis
       routeEntry.form,
       routeEntry.routeKey,
       validation.payload,
-      getJsonMetaBrowserIds(body.value),
+      browserIds,
     );
 
     return jsonResponse(
@@ -333,13 +341,14 @@ export function registerFormRoutes(app: Hono, routes: FormRoutes, logger: Submis
     const checkpointAnswers = readCheckpointAnswers(c, routeEntry.form, routeEntry.routeKey);
     const postedAnswers = getNativeSubmissionAnswers(formDataResult.value);
     const trustedFormCertUrl = getNativeTrustedFormCertUrl(routeEntry.form, formDataResult.value);
+    const browserIds = createNativeSubmissionMetaBrowserIds(c, formDataResult.value);
     const validation = validateSubmission(routeEntry.form, routeEntry.routeKey, {
       answers: {
         ...checkpointAnswers,
         ...postedAnswers,
       },
       trustedFormCertUrl,
-    });
+    }, undefined, undefined, createSubmissionMappingContext(c, browserIds));
 
     if (validation.ok === false) {
       return htmlResponse(
@@ -356,7 +365,7 @@ export function registerFormRoutes(app: Hono, routes: FormRoutes, logger: Submis
       routeEntry.form,
       routeEntry.routeKey,
       validation.payload,
-      createNativeSubmissionMetaBrowserIds(c, formDataResult.value),
+      browserIds,
     );
     setPostSubmitState(c, routeEntry.routeKey, {
       trackingEvents,
@@ -537,6 +546,23 @@ function createNativeSubmissionMetaBrowserIds(c: Context, formData: NativeFormDa
   });
 }
 
+function createSubmissionMappingContext(c: Context, browser: MetaBrowserIds): SubmissionMappingContext {
+  const userAgent = c.req.raw.headers.get("user-agent")?.trim() || undefined;
+  const ip = getRequestIp(c.req.raw.headers);
+
+  return {
+    cookies: {
+      get: (name: string) => getCookie(c, name),
+    },
+    request: {
+      url: c.req.raw.url,
+      ...(ip ? { ip } : {}),
+      ...(userAgent ? { userAgent } : {}),
+    },
+    browser,
+  };
+}
+
 function getNativeTrackingFields(formData: NativeFormData): Record<string, string> {
   const values: Record<string, string> = {};
   const trackingFieldPattern = /^tracking\[([^\]]+)\]$/u;
@@ -581,6 +607,15 @@ function getRequestPageUrl(url: string): string {
   const requestUrl = new URL(url);
   requestUrl.pathname = requestUrl.pathname.replace(/\/api\/forms\/[^/]+\/native-submissions$/u, "");
   return requestUrl.toString();
+}
+
+function getRequestIp(headers: Headers): string | undefined {
+  return (
+    headers.get("cf-connecting-ip")?.trim() ||
+    headers.get("x-real-ip")?.trim() ||
+    headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    undefined
+  );
 }
 
 function getRequestAbsoluteUrl(requestUrl: string, path: string): string {

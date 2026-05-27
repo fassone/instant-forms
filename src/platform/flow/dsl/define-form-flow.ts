@@ -9,6 +9,7 @@ import type {
   FormPostSubmit,
   FormStep,
   FormTracking,
+  FormPayloadDelivery,
   InstantForm,
 } from "./types";
 import { getStepDynamicResolverDependencies } from "./dynamic-resolvers";
@@ -47,6 +48,7 @@ export function defineFormFlow<const TContract extends FormContract, const TStep
   const tracking =
     typeof input.tracking === "function" ? input.tracking(createTrackingAuthoringHelpers()) : input.tracking;
   assertAnswerStepContract(input.contract, steps);
+  assertPayloadDelivery(input.payload);
   assertPagePresentation(input.page);
   assertPostSubmit(input.postSubmit, steps);
   assertAttribution(input.attribution);
@@ -243,6 +245,12 @@ function assertPagePresentation(page: FormPage): void {
   }
 }
 
+function assertPayloadDelivery(payload: FormPayloadDelivery): void {
+  if (!isSafePayloadUrl(payload.url)) {
+    throw new Error('payload.url must be an absolute "https://" URL.');
+  }
+}
+
 function assertPostSubmit(postSubmit: FormPostSubmit, steps: readonly FormStep[]): void {
   if (!postSubmit.title.trim()) {
     throw new Error("postSubmit.title is required.");
@@ -308,6 +316,20 @@ function isSafePostSubmitCtaHref(href: string): boolean {
     (trimmedHref.startsWith("/") && !trimmedHref.startsWith("//")) ||
     trimmedHref.startsWith("https://")
   );
+}
+
+function isSafePayloadUrl(url: string): boolean {
+  if (typeof url !== "string" || !url.trim() || url !== url.trim()) {
+    return false;
+  }
+
+  try {
+    const parsedUrl = new URL(url);
+
+    return parsedUrl.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 function assertTrackingContract(contract: FormContract, tracking: FormTracking | undefined): void {

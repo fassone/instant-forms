@@ -4,11 +4,13 @@ import {
   metaPixelIdSchema,
   metaTestEventCodeSchema,
 } from "../../integrations/google-tag-manager";
+import { lidernaAreaCodeSchema } from "./contracts";
 
 export const esAutoInsuranceVariables = z.object({
   flowName: z.string(),
   pageName: z.string(),
-  areaCode: z.string(),
+  submissionUrl: z.string().url(),
+  areaCode: lidernaAreaCodeSchema,
   areaName: z.string().optional(),
   product: z.string(),
   advertiserName: z.string(),

@@ -128,30 +128,6 @@ export function createAutoInsuranceTracking({
       event.submitSuccess({
         name: "instant_form_submit_success",
         includeContext: ["areaCode", "product"],
-        ...(metaPixelId
-          ? {
-              meta: {
-                pixelId: metaPixelId,
-                eventName: "Lead",
-                ...(metaTestEventCode ? { testEventCode: metaTestEventCode } : {}),
-                eventId: ({ submission }) => submission.id,
-                userData: ({ context, answers }) => ({
-                  ph: answers.phone_number,
-                  fn: answers.first_name,
-                  ln: answers.last_name,
-                  st: answers.belongs_to_state === "yes" ? context.areaCode : answers.residence_state,
-                }),
-                customData: ({ context, answers }) => ({
-                  content_name: context.product,
-                  content_category: "insurance",
-                  market_state: context.areaCode,
-                  market_name: context.areaName ?? context.areaCode,
-                  residence_state: answers.belongs_to_state === "yes" ? context.areaCode : answers.residence_state,
-                }),
-              },
-            }
-          : {}),
-        ...(metaConversionsServer ? { server: metaConversionsServer } : {}),
       }),
       event.submitError({
         name: "instant_form_submit_error",

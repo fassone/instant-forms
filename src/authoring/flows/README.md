@@ -15,7 +15,7 @@ Concrete market files may directly call `defineFormFlow(...)` or instantiate a r
 - Zod-backed flow contracts for authored `context`, produced `answers`, and outbound payload fields.
 - Business context in `context`, such as `areaCode`, `areaName`, and `product`.
 - Answer-producing steps whose `key` values, choice options, and `showWhen` conditions match prior `contract.answers`.
-- Typed payload mappings that build the logged delivery payload from `{ context, answers }`.
+- Typed payload settings that declare the downstream HTTPS URL and build the logged delivery payload from `{ context, answers, submission, request, cookies, browser }`.
 
 ## Does Not Belong Here
 

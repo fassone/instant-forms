@@ -180,7 +180,12 @@ describe("form registry", () => {
       areaName: "Tennessee",
     });
     expect(routeEntry.form.page.name).toBe("Seguros Aseguranza");
-    expect(routeEntry.form.attribution?.preserveQueryParams).toEqual(["fbclid"]);
+    expect(routeEntry.form.attribution?.preserveQueryParams).toEqual([
+      "fbclid",
+      "source_channel",
+      "acquisition_channel",
+      "platform",
+    ]);
   });
 
   it("maps the public Tennessee route folder to the Tennessee flow", () => {
@@ -389,6 +394,7 @@ describe("form registry", () => {
         areaName: "Example Area",
       },
       payload: {
+        url: "https://example.test/lead-submissions",
         method: "POST",
         encoding: "json",
         mapping: ({ context, answers }) => ({
@@ -525,6 +531,7 @@ describe("form registry", () => {
       },
       context: {},
       payload: {
+        url: "https://example.test/lead-submissions",
         method: "POST",
         encoding: "json",
         mapping: () => ({}),
@@ -640,6 +647,7 @@ describe("form registry", () => {
         },
         context: { areaCode: "TN" },
         payload: {
+          url: "https://example.test/lead-submissions",
           method: "POST",
           encoding: "json",
           mapping: () => ({}),
@@ -673,6 +681,7 @@ describe("form registry", () => {
       },
       context: { areaCode: "TN", product: "auto_insurance" },
       payload: {
+        url: "https://example.test/lead-submissions",
         method: "POST",
         encoding: "json",
         mapping: ({ answers }: { answers: { wants_quote: string } }) => ({ wantsQuote: answers.wants_quote }),
@@ -756,6 +765,7 @@ describe("form registry", () => {
       },
       context: { areaCode: "TN", product: "auto_insurance" },
       payload: {
+        url: "https://example.test/lead-submissions",
         method: "POST",
         encoding: "json",
         mapping: ({ answers }) => ({ phone: answers.phone_number }),
@@ -865,6 +875,7 @@ describe("form registry", () => {
         },
         context: { areaCode: "TN" },
         payload: {
+          url: "https://example.test/lead-submissions",
           method: "POST",
           encoding: "json",
           mapping: ({ answers }) => ({ wantsQuote: answers.wants_quote }),
@@ -970,6 +981,7 @@ describe("form registry", () => {
         },
         context: {},
         payload: {
+          url: "https://example.test/lead-submissions",
           method: "POST",
           encoding: "json",
           mapping: ({ answers }) => ({ wantsQuote: answers.wants_quote }),
@@ -1009,6 +1021,7 @@ describe("form registry", () => {
       },
       context: {},
       payload: {
+        url: "https://example.test/lead-submissions",
         method: "POST",
         encoding: "json",
         mapping: ({ answers }) => ({ wantsQuote: answers.wants_quote }),
@@ -1120,6 +1133,7 @@ describe("form registry", () => {
       },
       context: { areaCode: "TN" },
       payload: {
+        url: "https://example.test/lead-submissions",
         method: "POST",
         encoding: "json",
         mapping: ({ answers }) => ({ wantsQuote: answers.wants_quote }),
@@ -1248,6 +1262,7 @@ describe("form registry", () => {
       },
       context: {},
       payload: {
+        url: "https://example.test/lead-submissions",
         method: "POST",
         encoding: "json",
         mapping: ({ answers }) => ({ wantsQuote: answers.wants_quote }),
@@ -1357,6 +1372,7 @@ describe("form registry", () => {
       },
       context: {},
       payload: {
+        url: "https://example.test/lead-submissions",
         method: "POST",
         encoding: "json",
         mapping: ({ answers }) => ({ wantsQuote: answers.wants_quote }),
@@ -1576,7 +1592,7 @@ describe("form registry", () => {
           belongs_to_state: "yes",
           matching_offer: "seen",
           has_license: "yes",
-          has_insurance: "yes",
+          has_insurance: "no",
           is_clean_title: "yes",
           number_of_registered_cars: "1",
           first_name: "Ana",
@@ -1594,22 +1610,16 @@ describe("form registry", () => {
       return;
     }
 
-    const leadPayload = createLifecycleTrackingPayload({
-      form: flow,
-      routeKey: "template_test",
-      kind: "submitSuccess",
-      submission: validation.payload,
-      eventSourceUrl: "https://example.test/thanks",
-      requireMeta: true,
+    expect(validation.payload.delivery.payload).toMatchObject({
+      id: "22222222-2222-4222-8222-222222222222",
+      meta_conversion: {
+        enabled: true,
+        pixel_id: "1234567890",
+        event_name: "Lead",
+        event_id: "22222222-2222-4222-8222-222222222222",
+        test_event_code: "TEST79368",
+      },
     });
-
-    expect(leadPayload?.meta).toMatchObject({
-      pixel_id: "1234567890",
-      event_name: "Lead",
-      test_event_code: "TEST79368",
-    });
-    expect(JSON.stringify(leadPayload)).not.toContain("Ana");
-    expect(JSON.stringify(leadPayload)).not.toContain("Lopez");
   });
 
   it("omits Meta test event codes when the template variable is unset and rejects malformed codes", () => {
@@ -1677,6 +1687,7 @@ describe("form registry", () => {
         product: "home_insurance",
       },
       payload: {
+        url: "https://example.test/lead-submissions",
         method: "POST",
         encoding: "form_urlencoded",
         mapping: ({ context, answers }) => ({
@@ -1701,6 +1712,7 @@ describe("form registry", () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.payload.delivery).toEqual({
+        url: "https://example.test/lead-submissions",
         method: "POST",
         encoding: "form_urlencoded",
         payload: {
@@ -1708,6 +1720,158 @@ describe("form registry", () => {
           product: "home_insurance",
           selectedChoice: "yes",
         },
+      });
+    }
+  });
+
+  it("preserves structured JSON delivery payloads with submission, request, cookie, and browser metadata", () => {
+    const flow = defineFormFlow({
+      name: "Structured Payload Test",
+      status: "ACTIVE",
+  ...testFlowCopy,
+      contract: {
+        context: z.object({
+          areaCode: z.string(),
+        }),
+        answers: z.object({
+          choice_key: z.enum(["yes"]),
+        }),
+        payload: z.object({
+          id: z.string(),
+          area: z.string(),
+          nested: z.object({
+            submittedAt: z.string(),
+            ip: z.string().optional(),
+            userAgent: z.string().optional(),
+            fbp: z.string().optional(),
+            fbc: z.string().optional(),
+            eventSourceUrl: z.string(),
+            enabled: z.boolean(),
+          }),
+        }),
+      },
+      context: {
+        areaCode: "TX",
+      },
+      payload: {
+        url: "https://example.test/lead-submissions",
+        method: "POST",
+        encoding: "json",
+        mapping: ({ context, submission, request, cookies, browser }) => ({
+          id: submission.id,
+          area: context.areaCode,
+          nested: {
+            submittedAt: submission.submittedAt,
+            ip: request.ip,
+            userAgent: request.userAgent,
+            fbp: browser.fbp,
+            fbc: cookies.get("_fbc"),
+            eventSourceUrl: browser.eventSourceUrl ?? request.url,
+            enabled: true,
+          },
+        }),
+      },
+      page: { name: "Page" },
+      steps: [
+        step.choice({
+          key: "choice_key",
+          slug: "elige",
+          label: "Elige",
+          options: [{ key: "yes", label: "Si" }],
+        }),
+      ],
+    });
+
+    const result = validateSubmission(
+      flow,
+      "test_route",
+      { answers: { choice_key: "yes" } },
+      "2026-05-27T00:00:00.000Z",
+      "33333333-3333-4333-8333-333333333333",
+      {
+        cookies: {
+          get: (name) => (name === "_fbc" ? "fb.1.1.click" : undefined),
+        },
+        request: {
+          url: "https://example.test/api/forms/test_route/submissions",
+          ip: "203.0.113.10",
+          userAgent: "Payload Test Browser",
+        },
+        browser: {
+          fbp: "fb.1.1.browser",
+          eventSourceUrl: "https://example.test/form",
+        },
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.payload.delivery).toEqual({
+        url: "https://example.test/lead-submissions",
+        method: "POST",
+        encoding: "json",
+        payload: {
+          id: "33333333-3333-4333-8333-333333333333",
+          area: "TX",
+          nested: {
+            submittedAt: "2026-05-27T00:00:00.000Z",
+            ip: "203.0.113.10",
+            userAgent: "Payload Test Browser",
+            fbp: "fb.1.1.browser",
+            fbc: "fb.1.1.click",
+            eventSourceUrl: "https://example.test/form",
+            enabled: true,
+          },
+        },
+      });
+    }
+  });
+
+  it("keeps form-urlencoded delivery payloads string-only", () => {
+    const flow = defineFormFlow({
+      name: "Form Urlencoded Payload Test",
+      status: "ACTIVE",
+  ...testFlowCopy,
+      contract: {
+        context: z.object({}),
+        answers: z.object({
+          choice_key: z.enum(["yes"]),
+        }),
+        payload: z.object({
+          nested: z.object({
+            value: z.string(),
+          }),
+        }),
+      },
+      context: {},
+      payload: {
+        url: "https://example.test/lead-submissions",
+        method: "POST",
+        encoding: "form_urlencoded",
+        mapping: () => ({
+          nested: {
+            value: "nope",
+          },
+        }),
+      },
+      page: { name: "Page" },
+      steps: [
+        step.choice({
+          key: "choice_key",
+          slug: "elige",
+          label: "Elige",
+          options: [{ key: "yes", label: "Si" }],
+        }),
+      ],
+    });
+
+    const result = validateSubmission(flow, "test_route", { answers: { choice_key: "yes" } });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors).toContainEqual({
+        field: "delivery.payload",
+        message: "delivery.payload.nested must resolve to a string.",
       });
     }
   });
@@ -1732,6 +1896,7 @@ describe("form registry", () => {
         },
         context: { areaCode: "TX" },
         payload: {
+          url: "https://example.test/lead-submissions",
           method: "POST",
           encoding: "json",
           mapping: ({ context }: any) => ({ marketState: context.areaCode }),
@@ -1753,6 +1918,7 @@ describe("form registry", () => {
         },
         context: { areaCode: "T" },
         payload: {
+          url: "https://example.test/lead-submissions",
           method: "POST",
           encoding: "json",
           mapping: ({ context }: any) => ({ marketState: context.areaCode }),
@@ -1774,6 +1940,7 @@ describe("form registry", () => {
         },
         context: { areaCode: "TX", extraVariable: "nope" } as any,
         payload: {
+          url: "https://example.test/lead-submissions",
           method: "POST",
           encoding: "json",
           mapping: ({ context }: { context: { areaCode: string } }) => ({ marketState: context.areaCode }),
@@ -1795,6 +1962,7 @@ describe("form registry", () => {
         },
         context: { areaCode: "TX" },
         payload: {
+          url: "https://example.test/lead-submissions",
           method: "POST",
           encoding: "json",
           mapping: ({ context }: { context: { areaCode: string } }) => ({ marketState: context.areaCode }),
@@ -1826,6 +1994,7 @@ describe("form registry", () => {
         },
         context: {},
         payload: {
+          url: "https://example.test/lead-submissions",
           method: "POST",
           encoding: "json",
           mapping: ({ answers }) => ({ choice: answers.choice_key }),
@@ -1858,6 +2027,51 @@ describe("form registry", () => {
     );
   });
 
+  it("accepts only absolute HTTPS payload submission URLs", () => {
+    const createFlowWithPayloadUrl = (url: string) =>
+      defineFormFlow({
+        name: "Payload URL",
+        status: "ACTIVE",
+        ...testFlowCopy,
+        contract: {
+          context: z.object({}),
+          answers: z.object({ choice_key: z.enum(["yes"]) }),
+          payload: z.object({ choice: z.string() }),
+        },
+        context: {},
+        payload: {
+          url,
+          method: "POST",
+          encoding: "json",
+          mapping: ({ answers }) => ({ choice: answers.choice_key }),
+        },
+        page: { name: "Page" },
+        steps: [
+          step.choice({
+            key: "choice_key",
+            slug: "elige",
+            label: "Elige",
+            options: [{ key: "yes", label: "Si" }],
+          }),
+        ],
+      });
+
+    expect(createFlowWithPayloadUrl("https://example.test/lead-submissions").payload.url).toBe(
+      "https://example.test/lead-submissions",
+    );
+    expect(() => createFlowWithPayloadUrl("")).toThrow('payload.url must be an absolute "https://" URL.');
+    expect(() => createFlowWithPayloadUrl("/lead-submissions")).toThrow(
+      'payload.url must be an absolute "https://" URL.',
+    );
+    expect(() => createFlowWithPayloadUrl("http://example.test/lead-submissions")).toThrow(
+      'payload.url must be an absolute "https://" URL.',
+    );
+    expect(() => createFlowWithPayloadUrl("javascript:alert(1)")).toThrow(
+      'payload.url must be an absolute "https://" URL.',
+    );
+    expect(() => createFlowWithPayloadUrl("not a url")).toThrow('payload.url must be an absolute "https://" URL.');
+  });
+
   it("rejects unsafe attribution query parameter names", () => {
     const createFlowWithAttributionParam = (queryParam: string) =>
       defineFormFlow({
@@ -1874,6 +2088,7 @@ describe("form registry", () => {
         },
         context: {},
         payload: {
+          url: "https://example.test/lead-submissions",
           method: "POST",
           encoding: "json",
           mapping: ({ answers }) => ({ choice: answers.choice_key }),
@@ -1913,6 +2128,7 @@ describe("form registry", () => {
         },
         context: {},
         payload: {
+          url: "https://example.test/lead-submissions",
           method: "POST",
           encoding: "json",
           mapping: ({ answers }) => ({ choice: answers.choice_key }),
@@ -1950,6 +2166,7 @@ describe("form registry", () => {
         },
         context: {},
         payload: {
+          url: "https://example.test/lead-submissions",
           method: "POST",
           encoding: "json",
           mapping: ({ answers }) => ({ choice: answers.choice_key }),
@@ -1997,6 +2214,7 @@ describe("form registry", () => {
         },
         context: {},
         payload: {
+          url: "https://example.test/lead-submissions",
           method: "POST",
           encoding: "json",
           mapping: ({ answers }) => ({ choice: answers.choice_key }),
@@ -2047,6 +2265,7 @@ describe("form registry", () => {
         },
         context: { areaCode: "TX" },
         payload: {
+          url: "https://example.test/lead-submissions",
           method: "POST",
           encoding: "json",
           mapping: ({ context }: { context: { areaCode: string } }) => ({ marketState: context.areaCode }),
@@ -2075,6 +2294,7 @@ describe("form registry", () => {
         },
         context: { areaCode: "TX" },
         payload: {
+          url: "https://example.test/lead-submissions",
           method: "POST",
           encoding: "json",
           mapping: ({ context }: { context: { areaCode: string } }) => ({ marketState: context.areaCode }),
@@ -2104,6 +2324,7 @@ describe("form registry", () => {
         },
         context: { areaCode: "TX" },
         payload: {
+          url: "https://example.test/lead-submissions",
           method: "POST",
           encoding: "json",
           mapping: ({ context }) => ({ marketState: context.areaCode }),
@@ -2271,6 +2492,7 @@ describe("form registry", () => {
         },
         context: { areaCode: "TX" },
         payload: {
+          url: "https://example.test/lead-submissions",
           method: "POST",
           encoding: "json",
           mapping: ({ context }: { context: { areaCode: string } }) => ({ marketState: context.areaCode }),
@@ -2322,6 +2544,7 @@ describe("form registry", () => {
     };
     const context = { areaName: "Tennessee" };
     const payload = {
+      url: "https://example.test/lead-submissions",
       method: "POST" as const,
       encoding: "json" as const,
       mapping: ({ answers }: { answers: { first_answer: string; second_answer: string } }) => ({
@@ -2460,6 +2683,7 @@ describe("form registry", () => {
       },
       context: { areaCode: "TN", areaName: "Tennessee" },
       payload: {
+        url: "https://example.test/lead-submissions",
         method: "POST",
         encoding: "json",
         mapping: ({ answers }: { answers: { first_answer: string } }) => ({ first: answers.first_answer }),
@@ -2514,6 +2738,7 @@ describe("form registry", () => {
       },
       context: {},
       payload: {
+        url: "https://example.test/lead-submissions",
         method: "POST",
         encoding: "json",
         mapping: ({ answers }: { answers: { phone_number: string } }) => ({ phone: answers.phone_number }),
@@ -2617,6 +2842,7 @@ describe("form registry", () => {
       },
       context: {},
       payload: {
+        url: "https://example.test/lead-submissions",
         method: "POST",
         encoding: "json",
         mapping: ({ answers }: { answers: { first_answer: string } }) => ({ first: answers.first_answer }),
@@ -2657,6 +2883,7 @@ describe("form registry", () => {
       },
       context: {},
       payload: {
+        url: "https://example.test/lead-submissions",
         method: "POST",
         encoding: "json",
         mapping: ({ answers }: { answers: { first_answer: string } }) => ({ first: answers.first_answer }),
@@ -2699,6 +2926,7 @@ describe("form registry", () => {
       },
       context: {},
       payload: {
+        url: "https://example.test/lead-submissions",
         method: "POST",
         encoding: "json",
         mapping: ({ answers }: { answers: { first_answer: string } }) => ({ first: answers.first_answer }),
@@ -2745,6 +2973,7 @@ describe("form registry", () => {
       },
       context: { areaCode: "TX" },
       payload: {
+        url: "https://example.test/lead-submissions",
         method: "POST",
         encoding: "json",
         mapping: () =>
@@ -2860,6 +3089,7 @@ describe("form templates", () => {
             areaName: variables.areaName,
           },
           payload: {
+            url: "https://example.test/lead-submissions",
             method: "POST",
             encoding: "json",
             mapping: ({ context }) => ({
@@ -2908,6 +3138,16 @@ describe("form templates", () => {
     expect(() => template.create({ flowName: "Reusable T", areaCode: "T" })).toThrow(
       "template variables do not match the template contract",
     );
+    expect(() =>
+      esAutoInsuranceTemplate.create({
+        flowName: "ES - Missing URL",
+        pageName: "Missing URL",
+        areaCode: "TN",
+        areaName: "Tennessee",
+        product: "auto_insurance",
+        advertiserName: "Liderna Inc",
+      } as any),
+    ).toThrow("template variables do not match the template contract");
   });
 });
 
@@ -2966,15 +3206,36 @@ describe("submission validation", () => {
       expect(result.payload).not.toHaveProperty("formId");
       expect(result.payload).not.toHaveProperty("pageId");
       expect(result.payload.trustedFormCertUrl).toBe(trustedFormCertUrl);
-      expect(result.payload.delivery).toEqual({
+      expect(result.payload.delivery).toMatchObject({
+        url: "https://api.liderna.net/webleads/v2",
         method: "POST",
         encoding: "json",
         payload: {
-          marketState: "TN",
-          marketName: "Tennessee",
-          product: "auto_insurance",
-          phone: "+16155551234",
+          area: "TN",
+          source_channel: "unknown",
+          acquisition_channel: "organic",
+          ingress_channel: "website",
+          first_name: "Ana",
+          type: "insurance_auto",
+          last_name: "Lopez",
+          phone_number: "+16155551234",
+          created_time: "2026-05-13T00:00:00.000Z",
+          state_code: "TN",
+          is_clean_title: "yes",
+          has_license: "yes",
+          has_insurance: "no",
+          number_of_registered_cars: "1",
+          meta_conversion: {
+            enabled: true,
+            pixel_id: "1465068051587670",
+            event_name: "Lead",
+            event_source_url: "",
+          },
         },
+      });
+      expect(result.payload.delivery.payload.id).toBe(result.payload.submissionId);
+      expect(result.payload.delivery.payload.meta_conversion).toMatchObject({
+        event_id: result.payload.submissionId,
       });
       expect(result.payload.answers.trustedform_consent).toBeUndefined();
     }
@@ -3547,6 +3808,30 @@ describe("server routing", () => {
     expect(html).toContain("¿Usted vive en Tennessee?");
     expect(setCookie).toContain("_fbc=fb.1.");
     expect(setCookie).toContain(".CLICK123");
+    expect(setCookie).toContain("Path=/");
+    expect(setCookie).toContain("Max-Age=7776000");
+    expect(setCookie).toContain("SameSite=Lax");
+    expect(setCookie).toContain("Secure");
+    expect(setCookie).not.toContain("HttpOnly");
+  });
+
+  it("captures authored lead attribution query params without requiring fbclid", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(
+      new Request(
+        "https://example.test/tn/custom/apellido?source_channel=facebook&acquisition_channel=paid&platform=meta&utm_source=ignored",
+      ),
+    );
+    const setCookie = response.headers.get("Set-Cookie") ?? "";
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe(
+      "/tn/custom/vive-en-tennessee?source_channel=facebook&acquisition_channel=paid&platform=meta",
+    );
+    expect(setCookie).toContain("liderna_source_channel=facebook");
+    expect(setCookie).toContain("liderna_acquisition_channel=paid");
+    expect(setCookie).toContain("liderna_platform=meta");
+    expect(setCookie).not.toContain("_fbc=");
     expect(setCookie).toContain("Path=/");
     expect(setCookie).toContain("Max-Age=7776000");
     expect(setCookie).toContain("SameSite=Lax");
@@ -4690,21 +4975,48 @@ describe("server routing", () => {
 
     expect(response.status).toBe(201);
     expect(loggedPayloads).toHaveLength(1);
+    const loggedPayload = loggedPayloads[0] as {
+      submissionId?: string;
+      delivery?: {
+        payload?: {
+          id?: string;
+          meta_conversion?: { event_id?: string };
+        };
+      };
+    };
     expect(loggedPayloads[0]).toMatchObject({
       routeKey,
       pageName: "Seguros Aseguranza",
       trustedFormCertUrl,
       delivery: {
+        url: "https://api.liderna.net/webleads/v2",
         method: "POST",
         encoding: "json",
         payload: {
-          marketState: "TN",
-          marketName: "Tennessee",
-          product: "auto_insurance",
-          phone: "+16155551234",
+          area: "TN",
+          source_channel: "unknown",
+          acquisition_channel: "organic",
+          ingress_channel: "website",
+          first_name: "Ana",
+          type: "insurance_auto",
+          last_name: "Lopez",
+          phone_number: "+16155551234",
+          state_code: "TN",
+          is_clean_title: "yes",
+          has_license: "yes",
+          has_insurance: "no",
+          number_of_registered_cars: "1",
+          meta_conversion: {
+            enabled: true,
+            pixel_id: "1465068051587670",
+            event_name: "Lead",
+            event_source_url: "http://localhost/api/forms/tn_custom/submissions",
+          },
         },
       },
     });
+    expect(loggedPayload.delivery?.payload?.id).toBe(loggedPayload.submissionId);
+    expect(loggedPayload.delivery?.payload?.meta_conversion?.event_id).toBe(loggedPayload.submissionId);
     expect(loggedPayloads[0]).not.toHaveProperty("areaCode");
     expect(loggedPayloads[0]).not.toHaveProperty("formId");
     expect(loggedPayloads[0]).not.toHaveProperty("pageId");
@@ -4748,7 +5060,7 @@ describe("server routing", () => {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
-          Cookie: createCheckpointCookie(validAnswers),
+          Cookie: `${createCheckpointCookie(validAnswers)}; liderna_source_channel=facebook; liderna_acquisition_channel=paid; liderna_platform=meta`,
         },
         body,
       }),
@@ -4787,9 +5099,8 @@ describe("server routing", () => {
     expect(html).not.toContain('id="next-button"');
     expect(html).not.toContain('window.__FORM_CONFIG__');
     expect(html).toContain("instant_form_submit_success");
-    expect(html).toContain('"event_name":"Lead"');
-    expect(html).toContain('"pixel_id":"1465068051587670"');
-    expect(html).toContain('"fbp":"fb.1.1.abc"');
+    expect(html).not.toContain('"event_name":"Lead"');
+    expect(html).not.toContain('"pixel_id":"1465068051587670"');
     expect(html).toContain('document.addEventListener("pt0", pushInstantInitialTrackingEvents');
     expect(html).not.toContain("Ana");
     expect(html).not.toContain("Lopez");
@@ -4805,7 +5116,40 @@ describe("server routing", () => {
       answers: {
         phone_number: "+16155551234",
       },
+      delivery: {
+        url: "https://api.liderna.net/webleads/v2",
+        payload: {
+          area: "TN",
+          source_channel: "facebook",
+          acquisition_channel: "paid",
+          ingress_channel: "website",
+          first_name: "Ana",
+          type: "insurance_auto",
+          last_name: "Lopez",
+          phone_number: "+16155551234",
+          platform: "meta",
+          state_code: "TN",
+          meta_conversion: {
+            enabled: true,
+            pixel_id: "1465068051587670",
+            event_name: "Lead",
+            event_source_url: "https://example.test/tn/custom/consentimiento",
+            fbp: "fb.1.1.abc",
+          },
+        },
+      },
     });
+    const loggedPayload = logs[0] as {
+      submissionId?: string;
+      delivery?: {
+        payload?: {
+          id?: string;
+          meta_conversion?: { event_id?: string };
+        };
+      };
+    };
+    expect(loggedPayload.delivery?.payload?.id).toBe(loggedPayload.submissionId);
+    expect(loggedPayload.delivery?.payload?.meta_conversion?.event_id).toBe(loggedPayload.submissionId);
   });
 });
 
@@ -4826,6 +5170,7 @@ describe("form rendering", () => {
       },
       context: {},
       payload: {
+        url: "https://example.test/lead-submissions",
         method: "POST",
         encoding: "json",
         mapping: ({ answers }) => ({
@@ -4897,6 +5242,7 @@ describe("form rendering", () => {
       },
       context: {},
       payload: {
+        url: "https://example.test/lead-submissions",
         method: "POST",
         encoding: "json",
         mapping: ({ answers }) => ({
@@ -4961,6 +5307,7 @@ describe("form rendering", () => {
         advertiserName: "Should Not Be In Tracking Context",
       },
       payload: {
+        url: "https://example.test/lead-submissions",
         method: "POST",
         encoding: "json",
         mapping: ({ answers }) => ({
@@ -5237,6 +5584,7 @@ describe("form rendering", () => {
       },
       context: {},
       payload: {
+        url: "https://example.test/lead-submissions",
         method: "POST",
         encoding: "json",
         mapping: ({ answers }) => ({ choice: answers.choice_key }),
@@ -5278,6 +5626,7 @@ describe("form rendering", () => {
       },
       context: {},
       payload: {
+        url: "https://example.test/lead-submissions",
         method: "POST",
         encoding: "json",
         mapping: ({ answers }) => ({ choice: answers.choice_key }),
@@ -5780,6 +6129,7 @@ describe("form rendering", () => {
       },
       context: {},
       payload: {
+        url: "https://example.test/lead-submissions",
         method: "POST",
         encoding: "json",
         mapping: () => ({}),
@@ -5892,7 +6242,7 @@ describe("form rendering", () => {
     expect(html).toContain('"metaPixelProxy":true');
     expect(html).toContain('"pixelId":"1465068051587670"');
     expect(html).toContain('"eventName":"LeadProgress"');
-    expect(html).toContain('"eventName":"Lead"');
+    expect(html).not.toContain('"eventName":"Lead"');
     expect(html).not.toContain('"stateCode"');
     expect(html).toContain('"slug":"vive-en-tennessee"');
     expect(html).not.toContain('"slug":"estado-donde-vive"');
@@ -6013,6 +6363,7 @@ function createAutoInsuranceTemplateTestFlow(metaTestEventCode?: string) {
   return esAutoInsuranceTemplate.create({
     flowName: "ES - Template Test",
     pageName: "Template Test",
+    submissionUrl: "https://example.test/lead-submissions",
     areaCode: "TN",
     areaName: "Tennessee",
     product: "auto_insurance",
@@ -6061,6 +6412,7 @@ function createMetaRemarketingTestFlow(options: { disableResidenceStepAnswer?: b
       product: "auto_insurance",
     },
     payload: {
+      url: "https://example.test/lead-submissions",
       method: "POST",
       encoding: "json",
       mapping: ({ answers }) => ({

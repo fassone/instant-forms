@@ -652,12 +652,39 @@ export type ContractPayload<TContract extends FormContract> = z.output<TContract
 export type ContractPayloadInput<TContract extends FormContract> = z.input<TContract["payload"]>;
 export type ContractSchemaKeys<TSchema> = TSchema extends z.ZodObject<infer TShape> ? Extract<keyof TShape, string> : never;
 
+export type FormPayloadSubmissionContext = {
+  id: string;
+  submittedAt: string;
+};
+
+export type FormPayloadCookieHelpers = {
+  get: (name: string) => string | undefined;
+};
+
+export type FormPayloadRequestContext = {
+  url: string;
+  ip?: string;
+  userAgent?: string;
+};
+
+export type FormPayloadBrowserContext = {
+  fbp?: string;
+  fbc?: string;
+  fbclid?: string;
+  eventSourceUrl?: string;
+};
+
 export type FormPayloadDelivery<TContract extends FormContract = FormContract> = {
+  url: string;
   method: "POST";
   encoding: "json" | "form_urlencoded";
   mapping: (input: {
     context: ContractContext<TContract>;
     answers: ContractAnswers<TContract>;
+    submission: FormPayloadSubmissionContext;
+    cookies: FormPayloadCookieHelpers;
+    request: FormPayloadRequestContext;
+    browser: FormPayloadBrowserContext;
   }) => ContractPayloadInput<TContract>;
 };
 

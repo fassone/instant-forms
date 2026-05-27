@@ -1,7 +1,8 @@
 import { defineFormFlow, defineFormTemplate } from "../../../platform/flow";
-import { createFbclidAttribution } from "./attribution";
+import { createLeadAttribution } from "./attribution";
 import { autoInsuranceContract } from "./contracts";
 import { esAutoInsurancePostSubmit, esUiCopy } from "./copy";
+import { createLidernaWebleadsPayloadMapping } from "./payload";
 import { createAutoInsuranceSteps } from "./steps";
 import { createAutoInsuranceTracking } from "./tracking";
 import { esAutoInsuranceVariables } from "./variables";
@@ -32,20 +33,19 @@ export const esAutoInsuranceTemplate = defineFormTemplate({
         advertiserName: variables.advertiserName,
       },
       payload: {
+        url: variables.submissionUrl,
         method: "POST",
         encoding: "json",
-        mapping: ({ context, answers }) => ({
-          marketState: context.areaCode,
-          marketName: context.areaName ?? context.areaCode,
-          product: context.product,
-          phone: answers.phone_number,
+        mapping: createLidernaWebleadsPayloadMapping({
+          metaPixelId: variables.metaPixelId,
+          metaTestEventCode: variables.metaTestEventCode,
         }),
       },
       page: {
         name: variables.pageName,
       },
       postSubmit: esAutoInsurancePostSubmit,
-      attribution: createFbclidAttribution(),
+      attribution: createLeadAttribution(),
       ...(tracking ? { tracking } : {}),
       steps: createAutoInsuranceSteps({ areaDisplayName }),
     });

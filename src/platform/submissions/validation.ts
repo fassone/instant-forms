@@ -1,12 +1,75 @@
-import { isStepVisible, type FormContract, type InstantForm } from "../flow";
+import {
+  isStepVisible,
+  type FormContract,
+  type FormPayloadBrowserContext,
+  type FormPayloadCookieHelpers,
+  type FormPayloadRequestContext,
+  type InstantForm,
+} from "../flow";
 import { normalizeUsPhoneNumber } from "../steps/phone/us-phone";
 import { validateStepSubmissionAnswer } from "../steps/adapters";
 
 export type AnswerMap = Record<string, string>;
-export type DeliveryPayload = {
+export type JsonPayloadValue =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly JsonPayloadValue[]
+  | { readonly [key: string]: JsonPayloadValue };
+export type JsonPayloadObject = { readonly [key: string]: JsonPayloadValue };
+export type DeliveryPayload =
+  | {
+      url: string;
+      method: "POST";
+      encoding: "json";
+      payload: JsonPayloadObject;
+    }
+  | {
+      url: string;
+      method: "POST";
+      encoding: "form_urlencoded";
+      payload: Record<string, string>;
+    };
+export type SubmissionMappingContext = {
+  cookies?: FormPayloadCookieHelpers;
+  request?: FormPayloadRequestContext;
+  browser?: FormPayloadBrowserContext;
+};
+
+const EMPTY_SUBMISSION_MAPPING_CONTEXT: Required<SubmissionMappingContext> = {
+  cookies: {
+    get: () => undefined,
+  },
+  request: {
+    url: "",
+  },
+  browser: {},
+};
+
+type SubmissionContext = {
+  id: string;
+  submittedAt: string;
+};
+
+type DeliveryResolutionInput = {
+  answers: AnswerMap;
+  submission: SubmissionContext;
+  mappingContext: Required<SubmissionMappingContext>;
+};
+
+type FormUrlencodedDeliveryPayload = {
+  url: string;
   method: "POST";
-  encoding: "json" | "form_urlencoded";
+  encoding: "form_urlencoded";
   payload: Record<string, string>;
+};
+
+type JsonDeliveryPayload = {
+  url: string;
+  method: "POST";
+  encoding: "json";
+  payload: JsonPayloadObject;
 };
 
 export type SubmissionPayload = {
@@ -43,6 +106,7 @@ export function validateSubmission(
   input: unknown,
   submittedAt = new Date().toISOString(),
   submissionId = crypto.randomUUID(),
+  mappingContext: SubmissionMappingContext = {},
 ): SubmissionValidationResult {
   if (!isRecord(input) || !isRecord(input.answers)) {
     return {
@@ -108,7 +172,14 @@ export function validateSubmission(
     return { ok: false, errors: answerContractValidation.errors };
   }
 
-  const deliveryResolution = resolveDeliveryPayload(form, answerContractValidation.answers);
+  const deliveryResolution = resolveDeliveryPayload(form, {
+    answers: answerContractValidation.answers,
+    submission: {
+      id: submissionId,
+      submittedAt,
+    },
+    mappingContext: normalizeSubmissionMappingContext(mappingContext),
+  });
 
   if (!deliveryResolution.ok) {
     return { ok: false, errors: deliveryResolution.errors };
@@ -147,14 +218,18 @@ function validateContractAnswers(
 
 function resolveDeliveryPayload(
   form: InstantForm,
-  answers: AnswerMap,
+  input: DeliveryResolutionInput,
 ): { ok: true; delivery: DeliveryPayload } | { ok: false; errors: SubmissionValidationError[] } {
   let mappedPayload: unknown;
 
   try {
     mappedPayload = form.payload.mapping({
       context: form.context,
-      answers,
+      answers: input.answers,
+      submission: input.submission,
+      cookies: input.mappingContext.cookies,
+      request: input.mappingContext.request,
+      browser: input.mappingContext.browser,
     });
   } catch (error) {
     return {
@@ -193,14 +268,22 @@ function resolveDeliveryPayload(
     };
   }
 
-  return {
-    ok: true,
-    delivery: {
-      method: form.payload.method,
-      encoding: form.payload.encoding,
-      payload: stringifyPayloadMap(validation.data, "delivery.payload"),
-    },
-  };
+  try {
+    return {
+      ok: true,
+      delivery: createDeliveryPayload(form, validation.data),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      errors: [
+        {
+          field: "delivery.payload",
+          message: error instanceof Error ? error.message : "Delivery payload does not match the flow contract.",
+        },
+      ],
+    };
+  }
 }
 
 function getTrustedFormCertUrl(input: unknown): string | null {
@@ -236,6 +319,32 @@ function getUnknownSchemaKeys(schema: FormContract["payload"], input: Record<str
   return Object.keys(input).filter((key) => !knownKeys.has(key));
 }
 
+function normalizeSubmissionMappingContext(input: SubmissionMappingContext): Required<SubmissionMappingContext> {
+  return {
+    cookies: input.cookies ?? EMPTY_SUBMISSION_MAPPING_CONTEXT.cookies,
+    request: input.request ?? EMPTY_SUBMISSION_MAPPING_CONTEXT.request,
+    browser: input.browser ?? EMPTY_SUBMISSION_MAPPING_CONTEXT.browser,
+  };
+}
+
+function createDeliveryPayload(form: InstantForm, input: Readonly<Record<string, unknown>>): DeliveryPayload {
+  if (form.payload.encoding === "form_urlencoded") {
+    return {
+      url: form.payload.url,
+      method: form.payload.method,
+      encoding: form.payload.encoding,
+      payload: stringifyPayloadMap(input, "delivery.payload"),
+    } satisfies FormUrlencodedDeliveryPayload;
+  }
+
+  return {
+    url: form.payload.url,
+    method: form.payload.method,
+    encoding: form.payload.encoding,
+    payload: normalizeJsonPayloadObject(input, "delivery.payload"),
+  } satisfies JsonDeliveryPayload;
+}
+
 function stringifyPayloadMap(input: Readonly<Record<string, unknown>>, context: string): Record<string, string> {
   return Object.fromEntries(
     Object.entries(input)
@@ -248,4 +357,49 @@ function stringifyPayloadMap(input: Readonly<Record<string, unknown>>, context: 
         return [key, value];
       }),
   );
+}
+
+function normalizeJsonPayloadObject(input: Readonly<Record<string, unknown>>, context: string): JsonPayloadObject {
+  return Object.fromEntries(
+    Object.entries(input).flatMap(([key, value]) => {
+      const normalizedValue = normalizeJsonPayloadValue(value, `${context}.${key}`);
+
+      return normalizedValue === undefined ? [] : [[key, normalizedValue]];
+    }),
+  );
+}
+
+function normalizeJsonPayloadValue(value: unknown, context: string): JsonPayloadValue | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === null || typeof value === "string" || typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) {
+      throw new Error(`${context} must be a finite number.`);
+    }
+
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item, index) => {
+      const normalizedItem = normalizeJsonPayloadValue(item, `${context}[${index}]`);
+      if (normalizedItem === undefined) {
+        throw new Error(`${context}[${index}] must not be undefined.`);
+      }
+
+      return normalizedItem;
+    });
+  }
+
+  if (isRecord(value)) {
+    return normalizeJsonPayloadObject(value, context);
+  }
+
+  throw new Error(`${context} must be JSON-serializable.`);
 }

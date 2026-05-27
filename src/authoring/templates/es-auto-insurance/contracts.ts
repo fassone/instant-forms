@@ -12,15 +12,64 @@ export const autoInsuranceAnswersContract = z.object({
   phone_number: z.string(),
 });
 
+export const lidernaAreaCodeSchema = z.enum([
+  "FL",
+  "MD",
+  "TX",
+  "CA",
+  "AZ",
+  "WA",
+  "LA",
+  "OR",
+  "GA",
+  "TN",
+  "NC",
+]);
+
+export const lidernaAcquisitionChannelSchema = z.enum(["paid", "organic"]);
+
+export const metaConversionPayloadContract = z.union([
+  z.object({
+    enabled: z.literal(false),
+  }),
+  z.object({
+    enabled: z.literal(true),
+    pixel_id: z.string(),
+    event_source_url: z.string(),
+    event_id: z.string().optional(),
+    event_name: z.literal("Lead").optional(),
+    client_ip_address: z.string().optional(),
+    client_user_agent: z.string().optional(),
+    fbp: z.string().optional(),
+    fbc: z.string().optional(),
+    test_event_code: z.string().optional(),
+  }),
+]);
+
 export const autoInsurancePayloadContract = z.object({
-  marketState: z.string(),
-  marketName: z.string(),
-  product: z.string(),
-  phone: z.string(),
+  id: z.string(),
+  area: lidernaAreaCodeSchema,
+  source_channel: z.string(),
+  acquisition_channel: lidernaAcquisitionChannelSchema,
+  ingress_channel: z.literal("website"),
+  first_name: z.string(),
+  type: z.literal("insurance_auto"),
+  last_name: z.string().optional(),
+  email: z.string().optional(),
+  phone_number: z.string().optional(),
+  created_time: z.string().optional(),
+  platform: z.string().optional(),
+  state_code: z.string().optional(),
+  zip_code: z.string().optional(),
+  is_clean_title: z.enum(["yes", "no", "n/a"]).optional(),
+  has_license: z.enum(["yes", "no"]).optional(),
+  has_insurance: z.enum(["yes", "no"]).optional(),
+  number_of_registered_cars: z.enum(["0", "1", "2+"]).optional(),
+  meta_conversion: metaConversionPayloadContract.optional(),
 });
 
 export const autoInsuranceContextContract = z.object({
-  areaCode: z.string(),
+  areaCode: lidernaAreaCodeSchema,
   areaName: z.string().optional(),
   product: z.string(),
   advertiserName: z.string(),
