@@ -79,6 +79,10 @@ export function validateCheckpointAnswer(
     return validation;
   }
 
+  if (typeof validation.answer !== "string") {
+    return { ok: false, message: form.ui.errors.incompleteStep };
+  }
+
   return { ok: true, answer: validation.answer };
 }
 

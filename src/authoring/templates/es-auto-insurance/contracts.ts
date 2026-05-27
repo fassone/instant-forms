@@ -10,6 +10,10 @@ export const autoInsuranceAnswersContract = z.object({
   first_name: z.string(),
   last_name: z.string(),
   phone_number: z.string(),
+  trustedform_consent: z.object({
+    consent: z.string().min(1),
+    trustedform_certificate_url: z.string().nullable(),
+  }),
 });
 
 export const lidernaAreaCodeSchema = z.enum([

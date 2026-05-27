@@ -1,15 +1,17 @@
 import {
   isStepVisible,
+  resolveStepDynamicValues,
   type FormContract,
   type FormPayloadBrowserContext,
   type FormPayloadCookieHelpers,
   type FormPayloadRequestContext,
   type InstantForm,
+  type TrustedFormConsentStep,
 } from "../flow";
+import { renderConsentMarkdown } from "../rendering/markdown";
 import { normalizeUsPhoneNumber } from "../steps/phone/us-phone";
-import { validateStepSubmissionAnswer } from "../steps/adapters";
+import { validateStepSubmissionAnswer, type StepAnswerValue } from "../steps/adapters";
 
-export type AnswerMap = Record<string, string>;
 export type JsonPayloadValue =
   | string
   | number
@@ -18,6 +20,7 @@ export type JsonPayloadValue =
   | readonly JsonPayloadValue[]
   | { readonly [key: string]: JsonPayloadValue };
 export type JsonPayloadObject = { readonly [key: string]: JsonPayloadValue };
+export type AnswerMap = Record<string, JsonPayloadValue>;
 export type DeliveryPayload =
   | {
       url: string;
@@ -116,13 +119,13 @@ export function validateSubmission(
   }
 
   const errors: SubmissionValidationError[] = [];
-  const answers: AnswerMap = {};
-  const trustedFormCertUrl = getTrustedFormCertUrl(input.trustedFormCertUrl);
-  let trustedFormCertUrlError = false;
+  const answers: Record<string, JsonPayloadValue> = {};
+  const visibilityAnswers: Record<string, string> = {};
+  const trustedFormCertUrlCandidate = getTrustedFormCertUrlCandidate(form, input);
+  const trustedFormCertUrl = trustedFormCertUrlCandidate.value;
   let requiresTrustedFormCertUrl = false;
 
-  if (input.trustedFormCertUrl !== undefined && input.trustedFormCertUrl !== null && !trustedFormCertUrl) {
-    trustedFormCertUrlError = true;
+  if (trustedFormCertUrlCandidate.invalid) {
     errors.push({
       field: "trustedFormCertUrl",
       message: form.ui.errors.trustedFormCertFailed,
@@ -130,7 +133,7 @@ export function validateSubmission(
   }
 
   for (const stepDefinition of form.steps) {
-    if (!isStepVisible(stepDefinition, answers)) {
+    if (!isStepVisible(stepDefinition, visibilityAnswers)) {
       continue;
     }
 
@@ -138,7 +141,19 @@ export function validateSubmission(
       requiresTrustedFormCertUrl = true;
     }
 
-    const validation = validateStepSubmissionAnswer(stepDefinition, input.answers[stepDefinition.key], form.ui.errors);
+    const submissionStepDefinition =
+      stepDefinition.kind === "trusted_form_consent"
+        ? getTrustedFormSubmissionStep(form, stepDefinition, visibilityAnswers)
+        : stepDefinition;
+    const validationInput =
+      submissionStepDefinition.kind === "trusted_form_consent"
+        ? getTrustedFormConsentSubmissionInput(
+            input.answers[submissionStepDefinition.key],
+            trustedFormCertUrl,
+            getTrustedFormConsentDisclosureText(submissionStepDefinition),
+          )
+        : input.answers[stepDefinition.key];
+    const validation = validateStepSubmissionAnswer(submissionStepDefinition, validationInput, form.ui.errors);
 
     if (!validation.ok) {
       errors.push({
@@ -152,10 +167,11 @@ export function validateSubmission(
       continue;
     }
 
-    answers[stepDefinition.key] = validation.answer;
+    answers[stepDefinition.key] = normalizeStepAnswerValue(validation.answer, stepDefinition.key);
+    visibilityAnswers[stepDefinition.key] = validation.visibilityAnswer ?? getVisibilityAnswer(validation.answer);
   }
 
-  if (requiresTrustedFormCertUrl && !trustedFormCertUrl && !trustedFormCertUrlError) {
+  if (requiresTrustedFormCertUrl && !trustedFormCertUrl && !trustedFormCertUrlCandidate.invalid) {
     errors.push({
       field: "trustedFormCertUrl",
       message: form.ui.errors.trustedFormCertFailed,
@@ -202,7 +218,7 @@ export function validateSubmission(
 
 function validateContractAnswers(
   form: InstantForm,
-  answers: AnswerMap,
+  answers: Readonly<Record<string, JsonPayloadValue>>,
 ): { ok: true; answers: AnswerMap } | { ok: false; errors: SubmissionValidationError[] } {
   const validation = form.contract.answers.safeParse(answers);
 
@@ -213,7 +229,7 @@ function validateContractAnswers(
     };
   }
 
-  return { ok: true, answers: stringifyPayloadMap(validation.data, "answers") };
+  return { ok: true, answers: normalizeJsonPayloadObject(validation.data, "answers") };
 }
 
 function resolveDeliveryPayload(
@@ -307,6 +323,95 @@ function getTrustedFormCertUrl(input: unknown): string | null {
   } catch {
     return null;
   }
+}
+
+function getTrustedFormCertUrlCandidate(
+  form: InstantForm,
+  input: Record<string, unknown>,
+): { value: string | null; invalid: boolean } {
+  const candidates = [
+    input.trustedFormCertUrl,
+    ...form.steps.flatMap((stepDefinition) => {
+      if (stepDefinition.kind !== "trusted_form_consent") {
+        return [];
+      }
+
+      const answer = isRecord(input.answers) ? input.answers[stepDefinition.key] : undefined;
+      return isRecord(answer) ? [answer.trustedform_certificate_url] : [];
+    }),
+  ];
+
+  for (const candidate of candidates) {
+    if (candidate === undefined || candidate === null || candidate === "") {
+      continue;
+    }
+
+    const trustedFormCertUrl = getTrustedFormCertUrl(candidate);
+    if (trustedFormCertUrl) {
+      return { value: trustedFormCertUrl, invalid: false };
+    }
+
+    return { value: null, invalid: true };
+  }
+
+  return { value: null, invalid: false };
+}
+
+function getTrustedFormSubmissionStep(
+  form: InstantForm,
+  stepDefinition: TrustedFormConsentStep,
+  answers: Record<string, string>,
+): TrustedFormConsentStep {
+  const resolvedStepDefinition = resolveStepDynamicValues(form, stepDefinition, answers);
+  return resolvedStepDefinition.kind === "trusted_form_consent" ? resolvedStepDefinition : stepDefinition;
+}
+
+function getTrustedFormConsentDisclosureText(stepDefinition: TrustedFormConsentStep): string {
+  return renderConsentMarkdown(stepDefinition.consent.disclosure).text;
+}
+
+function getTrustedFormConsentSubmissionInput(
+  input: unknown,
+  trustedFormCertUrl: string | null,
+  consentDisclosureText: string,
+): unknown {
+  if (isRecord(input)) {
+    const accepted = getTrustedFormAcceptedAnswer(input);
+
+    return {
+      ...input,
+      ...(accepted ? { accepted } : {}),
+      consent: consentDisclosureText,
+      ...(trustedFormCertUrl ? { trustedform_certificate_url: trustedFormCertUrl } : {}),
+    };
+  }
+
+  return {
+    accepted: input,
+    consent: consentDisclosureText,
+    ...(trustedFormCertUrl ? { trustedform_certificate_url: trustedFormCertUrl } : {}),
+  };
+}
+
+function getTrustedFormAcceptedAnswer(input: Record<string, unknown>): string {
+  return typeof input.accepted === "string"
+    ? input.accepted.trim()
+    : typeof input.consent === "string" && input.consent.trim() === "accepted"
+      ? input.consent.trim()
+      : "";
+}
+
+function normalizeStepAnswerValue(answer: StepAnswerValue, context: string): JsonPayloadValue {
+  const normalizedAnswer = normalizeJsonPayloadValue(answer, `answers.${context}`);
+  if (normalizedAnswer === undefined) {
+    throw new Error(`answers.${context} must not be undefined.`);
+  }
+
+  return normalizedAnswer;
+}
+
+function getVisibilityAnswer(answer: StepAnswerValue): string {
+  return typeof answer === "string" ? answer : "";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

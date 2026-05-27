@@ -540,6 +540,7 @@ function isAnswerStep(stepDefinition: FormStep): stepDefinition is AnswerStep {
     stepDefinition.kind === "choice" ||
     stepDefinition.kind === "text" ||
     stepDefinition.kind === "phone" ||
-    stepDefinition.kind === "autocomplete"
+    stepDefinition.kind === "autocomplete" ||
+    stepDefinition.kind === "trusted_form_consent"
   );
 }

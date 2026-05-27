@@ -6,7 +6,7 @@ import type {
   TrackingEventConfig,
   TrackingEventKind,
 } from "../flow";
-import type { SubmissionPayload } from "../submissions/validation";
+import type { JsonPayloadValue, SubmissionPayload } from "../submissions/validation";
 import { requestProxies } from "../../authoring/proxies/registry";
 import { getPartytownBootstrapSource } from "../scripts/partytown-bootstrap";
 import { getRequestProxyClientDefinitions } from "../scripts/request-proxy-registry";
@@ -76,6 +76,8 @@ export type MetaBrowserIds = {
   fbclid?: string;
   eventSourceUrl?: string;
 };
+
+export type TrackingAnswerMap = Record<string, JsonPayloadValue | undefined>;
 
 export function renderGoogleTagManagerHead(
   googleTagManager: ClientGoogleTagManagerConfig | undefined,
@@ -160,7 +162,7 @@ export function createLifecycleTrackingPayload(input: {
   step?: FormStep;
   stepIndex?: number;
   extra?: Record<string, unknown>;
-  answers?: Record<string, string | undefined>;
+  answers?: TrackingAnswerMap;
   submission?: SubmissionPayload;
   browserIds?: MetaBrowserIds;
   eventId?: string;
@@ -178,7 +180,7 @@ export function createLifecycleTrackingEvent(input: {
   step?: FormStep;
   stepIndex?: number;
   extra?: Record<string, unknown>;
-  answers?: Record<string, string | undefined>;
+  answers?: TrackingAnswerMap;
   submission?: SubmissionPayload;
   browserIds?: MetaBrowserIds;
   eventId?: string;
@@ -251,7 +253,7 @@ function buildTrackingPayload(
     step?: FormStep;
     stepIndex?: number;
     extra?: Record<string, unknown>;
-    answers?: Record<string, string | undefined>;
+    answers?: TrackingAnswerMap;
     submission?: SubmissionPayload;
     browserIds?: MetaBrowserIds;
     eventId?: string;
@@ -326,7 +328,7 @@ function createMetaPayload(
   options: {
     step?: FormStep;
     stepIndex?: number;
-    answers?: Record<string, string | undefined>;
+    answers?: TrackingAnswerMap;
     submission?: SubmissionPayload;
     browserIds?: MetaBrowserIds;
     eventId?: string;

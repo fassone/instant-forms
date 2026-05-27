@@ -171,12 +171,13 @@ The client posts:
     "number_of_registered_cars": "1",
     "first_name": "Ana",
     "last_name": "Lopez",
-    "phone_number": "+16155551234"
+    "phone_number": "+16155551234",
+    "trustedform_consent": "accepted"
   }
 }
 ```
 
-Valid submissions are logged with `routeKey`, form/page names, `submittedAt`, the top-level `trustedFormCertUrl`, the typed delivery payload, and normalized answers. The Tennessee flow can submit without a TrustedForm certificate when `allowSubmitWithoutCert` is true. `matching_offer` and `trustedform_consent` are checkpoint-only and omitted from final `answers`.
+Valid submissions are logged with `routeKey`, form/page names, `submittedAt`, the top-level `trustedFormCertUrl`, the typed delivery payload, and normalized answers. The Tennessee flow can submit without a TrustedForm certificate when `allowSubmitWithoutCert` is true. `matching_offer` is checkpoint-only and omitted from final `answers`; `trustedform_consent` checkpoints as `"accepted"` during the funnel but is stored on final submission as `{ consent: string, trustedform_certificate_url: string | null }`, where `consent` is the server-resolved plain text of the accepted disclosure.
 
 Example logged delivery block:
 

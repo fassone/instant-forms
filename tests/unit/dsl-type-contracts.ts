@@ -33,6 +33,21 @@ const payload = {
   }),
 } as const;
 
+const trustedFormConsentAnswerSchema = z.object({
+  consent: z.string().min(1),
+  trustedform_certificate_url: z.string().nullable(),
+});
+
+const trustedFormContract = {
+  context: z.object({}),
+  answers: z.object({
+    belongs_to_state: z.enum(["yes", "no"]),
+    first_name: z.string(),
+    trustedform_consent: trustedFormConsentAnswerSchema,
+  }),
+  payload: z.object({ firstName: z.string() }),
+};
+
 const testFlowCopy = {
   locale: "en",
   ui: {
@@ -456,7 +471,7 @@ void defineFormFlow({
   name: "Valid Resolver Fixture",
   status: "ACTIVE",
   ...testFlowCopy,
-  contract,
+  contract: trustedFormContract,
   context: {},
   payload,
   page: { name: "Page" },
@@ -738,7 +753,7 @@ void defineFormFlow({
   name: "Dynamic Markdown Fixture",
   status: "ACTIVE",
   ...testFlowCopy,
-  contract,
+  contract: trustedFormContract,
   context: {},
   payload,
   page: { name: "Page" },
@@ -811,7 +826,7 @@ void defineFormFlow({
   name: "Invalid Dynamic Resolver Body",
   status: "ACTIVE",
   ...testFlowCopy,
-  contract,
+  contract: trustedFormContract,
   context: {},
   payload,
   page: { name: "Page" },
@@ -969,6 +984,8 @@ const optionalAnswerContract = {
     last_name: z.string(),
     phone_number: z.string(),
     residence_state: z.string().optional(),
+    trustedform_consent: trustedFormConsentAnswerSchema,
+    trustedform_consent_with_fallback: trustedFormConsentAnswerSchema,
   }),
   payload: z.object({ phone: z.string() }),
 };

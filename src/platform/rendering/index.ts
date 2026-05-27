@@ -33,4 +33,5 @@ export {
   type LifecycleTrackingEvent,
   type TrackingEventPayload,
   type MetaBrowserIds,
+  type TrackingAnswerMap,
 } from "./tracking";

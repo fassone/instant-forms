@@ -6,11 +6,14 @@ import { textAdapter } from "./text";
 import { trustedFormConsentAdapter } from "./trusted-form-consent";
 import type { FormStep, FormUiErrorCopy } from "../../flow";
 
+export type StepAnswerValue = string | { readonly [key: string]: StepAnswerValue } | null;
+
 export type StepValidationResult =
   | {
       ok: true;
-      answer: string;
+      answer: StepAnswerValue;
       includeInSubmission: boolean;
+      visibilityAnswer?: string;
     }
   | {
       ok: false;

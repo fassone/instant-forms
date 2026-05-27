@@ -2746,9 +2746,15 @@ ${requestProxyRuntimeScript}
     function syncNativeSubmissionFields(ctx, question, step, trustedFormCertUrl) {
       const container = getNativeSubmissionFieldContainer(ctx.form);
       container.replaceChildren();
-      const postedAnswers = { ...ctx.answers, [question.key]: question.acceptedAnswer };
+      const postedAnswers = {
+        ...ctx.answers,
+        [question.key]: {
+          accepted: question.acceptedAnswer,
+          trustedform_certificate_url: trustedFormCertUrl || "",
+        },
+      };
       Object.keys(postedAnswers).forEach((answerKey) => {
-        appendHiddenInput(container, "answers[" + answerKey + "]", postedAnswers[answerKey]);
+        appendHiddenAnswer(container, answerKey, postedAnswers[answerKey]);
       });
       if (trustedFormCertUrl) {
         appendHiddenInput(container, "trustedFormCertUrl", trustedFormCertUrl);
@@ -2777,6 +2783,17 @@ ${requestProxyRuntimeScript}
         form.appendChild(container);
       }
       return container;
+    }
+
+    function appendHiddenAnswer(container, answerKey, value) {
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        Object.keys(value).forEach((fieldKey) => {
+          appendHiddenInput(container, "answers[" + answerKey + "][" + fieldKey + "]", value[fieldKey]);
+        });
+        return;
+      }
+
+      appendHiddenInput(container, "answers[" + answerKey + "]", value);
     }
 
     function appendHiddenInput(container, name, value) {

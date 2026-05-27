@@ -113,6 +113,25 @@ const validAnswers = {
 const trustedFormCertUrl = "https://cert.trustedform.com/454a35b802f3e7b63ffabb4efedb7c6ebe67886c";
 const routeKey = "tn_custom";
 
+function expectTrustedFormConsentAnswer(value: unknown, expectedCertUrl: string | null = trustedFormCertUrl): void {
+  expect(value).toEqual({
+    consent: expect.stringContaining("Al marcar esta casilla"),
+    trustedform_certificate_url: expectedCertUrl,
+  });
+
+  const consent = (value as { consent?: unknown }).consent;
+  expect(consent).toEqual(expect.stringContaining("Ana Lopez"));
+  expect(consent).toEqual(expect.stringContaining("(615) 555-1234"));
+  expect(consent).toEqual(expect.stringContaining("Liderna Inc"));
+  expect(consent).not.toBe("accepted");
+  expect(consent).not.toEqual(expect.stringContaining("**"));
+}
+
+const trustedFormConsentAnswerSchema = z.object({
+  consent: z.string().min(1),
+  trustedform_certificate_url: z.string().nullable(),
+});
+
 const testFlowCopy = {
   locale: "en",
   ui: {
@@ -383,6 +402,7 @@ describe("form registry", () => {
           first_name: z.string(),
           phone_number: z.string(),
           residence_state: z.string(),
+          trustedform_consent: trustedFormConsentAnswerSchema,
         }),
         payload: z.object({
           marketState: z.string(),
@@ -526,7 +546,9 @@ describe("form registry", () => {
   ...testFlowCopy,
       contract: {
         context: z.object({}),
-        answers: z.object({}),
+        answers: z.object({
+          trustedform_consent: trustedFormConsentAnswerSchema,
+        }),
         payload: z.object({}),
       },
       context: {},
@@ -676,7 +698,9 @@ describe("form registry", () => {
       ...testFlowCopy,
       contract: {
         context: z.object({ areaCode: z.string(), product: z.string() }),
-        answers: z.object({ wants_quote: z.enum(["yes", "no"]) }),
+        answers: z.object({
+          wants_quote: z.enum(["yes", "no"]),
+        }),
         payload: z.object({ wantsQuote: z.string() }),
       },
       context: { areaCode: "TN", product: "auto_insurance" },
@@ -1016,7 +1040,9 @@ describe("form registry", () => {
       ...testFlowCopy,
       contract: {
         context: z.object({}),
-        answers: z.object({ wants_quote: z.enum(["yes", "no"]) }),
+        answers: z.object({
+          wants_quote: z.enum(["yes", "no"]),
+        }),
         payload: z.object({ wantsQuote: z.string() }),
       },
       context: {},
@@ -1128,7 +1154,9 @@ describe("form registry", () => {
       ...testFlowCopy,
       contract: {
         context: z.object({ areaCode: z.string() }),
-        answers: z.object({ wants_quote: z.enum(["yes", "no"]) }),
+        answers: z.object({
+          wants_quote: z.enum(["yes", "no"]),
+        }),
         payload: z.object({ wantsQuote: z.string() }),
       },
       context: { areaCode: "TN" },
@@ -1257,7 +1285,10 @@ describe("form registry", () => {
       ...testFlowCopy,
       contract: {
         context: z.object({}),
-        answers: z.object({ wants_quote: z.enum(["yes", "no"]) }),
+        answers: z.object({
+          wants_quote: z.enum(["yes", "no"]),
+          trustedform_consent: trustedFormConsentAnswerSchema,
+        }),
         payload: z.object({ wantsQuote: z.string() }),
       },
       context: {},
@@ -2733,6 +2764,7 @@ describe("form registry", () => {
           first_name: z.string(),
           last_name: z.string(),
           phone_number: z.string(),
+          trustedform_consent: trustedFormConsentAnswerSchema,
         }),
         payload: z.object({ phone: z.string() }),
       },
@@ -2741,7 +2773,7 @@ describe("form registry", () => {
         url: "https://example.test/lead-submissions",
         method: "POST",
         encoding: "json",
-        mapping: ({ answers }: { answers: { phone_number: string } }) => ({ phone: answers.phone_number }),
+        mapping: ({ answers }) => ({ phone: answers.phone_number }),
       },
       page: { name: "Page" },
       steps: ({ step, text, md, consentMd }) => [
@@ -3237,7 +3269,7 @@ describe("submission validation", () => {
       expect(result.payload.delivery.payload.meta_conversion).toMatchObject({
         event_id: result.payload.submissionId,
       });
-      expect(result.payload.answers.trustedform_consent).toBeUndefined();
+      expectTrustedFormConsentAnswer(result.payload.answers.trustedform_consent);
     }
   });
 
@@ -3301,7 +3333,32 @@ describe("submission validation", () => {
     expect(validResult.ok).toBe(true);
     if (validResult.ok) {
       expect(validResult.payload.trustedFormCertUrl).toBe(trustedFormCertUrl);
-      expect(validResult.payload.answers.trustedform_consent).toBeUndefined();
+      expectTrustedFormConsentAnswer(validResult.payload.answers.trustedform_consent);
+    }
+
+    const forgedConsentResult = validateSubmission(
+      form,
+      routeKey,
+      {
+        answers: {
+          ...validAnswers,
+          trustedform_consent: {
+            accepted: "accepted",
+            consent: "client supplied wrong text",
+            trustedform_certificate_url: trustedFormCertUrl,
+          },
+        },
+        trustedFormCertUrl,
+      },
+      "2026-05-13T00:00:00.000Z",
+    );
+
+    expect(forgedConsentResult.ok).toBe(true);
+    if (forgedConsentResult.ok) {
+      expectTrustedFormConsentAnswer(forgedConsentResult.payload.answers.trustedform_consent);
+      expect(forgedConsentResult.payload.answers.trustedform_consent).not.toEqual(
+        expect.objectContaining({ consent: "client supplied wrong text" }),
+      );
     }
 
     expect(invalidResult.ok).toBe(false);
@@ -5021,7 +5078,7 @@ describe("server routing", () => {
     expect(loggedPayloads[0]).not.toHaveProperty("formId");
     expect(loggedPayloads[0]).not.toHaveProperty("pageId");
     expect((loggedPayloads[0] as { answers?: Record<string, string> }).answers?.matching_offer).toBeUndefined();
-    expect((loggedPayloads[0] as { answers?: Record<string, string> }).answers?.trustedform_consent).toBeUndefined();
+    expectTrustedFormConsentAnswer((loggedPayloads[0] as { answers?: Record<string, unknown> }).answers?.trustedform_consent);
   });
 
   it("clears the checkpoint cookie after a successful final submission", async () => {
@@ -5048,9 +5105,13 @@ describe("server routing", () => {
     const handler = createFetchHandler({ logger: (payload) => logs.push(payload) });
     const body = new URLSearchParams();
     Object.entries(validAnswers).forEach(([key, value]) => {
+      if (key === "trustedform_consent") {
+        body.set("answers[trustedform_consent][accepted]", value);
+        body.set("answers[trustedform_consent][trustedform_certificate_url]", trustedFormCertUrl);
+        return;
+      }
       body.set(`answers[${key}]`, value);
     });
-    body.set("trustedFormCertUrl", trustedFormCertUrl);
     body.set("xxTrustedFormCertUrl", trustedFormCertUrl);
     body.set("tracking[fbp]", "fb.1.1.abc");
     body.set("tracking[eventSourceUrl]", "https://example.test/tn/custom/consentimiento");
@@ -5074,6 +5135,7 @@ describe("server routing", () => {
     expect(setCookie).toContain("Max-Age=0");
     expect(setCookie).toContain("instant_forms_tn_custom_post_submit=");
     expect(postSubmitCookie).toStartWith("instant_forms_tn_custom_post_submit=");
+    expectTrustedFormConsentAnswer((logs[0] as { answers?: Record<string, unknown> }).answers?.trustedform_consent);
     const postSubmitResponse = await handler(
       new Request("http://localhost/tn/custom/gracias", {
         headers: {
@@ -6105,6 +6167,11 @@ describe("form rendering", () => {
     expect(html).not.toContain("@media (prefers-reduced-motion: reduce)");
     expect(html).toContain("No pudimos preparar el certificado de consentimiento");
     expect(html).toContain("trustedFormCertUrl");
+    expect(html).toContain("function appendHiddenAnswer(container, answerKey, value)");
+    expect(html).toContain('"answers[" + answerKey + "][" + fieldKey + "]"');
+    expect(html).toContain("accepted: question.acceptedAnswer");
+    expect(html).not.toContain("consent: question.acceptedAnswer");
+    expect(html).toContain("trustedform_certificate_url");
     expect(html).toContain('tfRole: "submit"');
     expect(html).toContain('form.addEventListener("submit"');
     expect(html).toContain('function installTrustedFormRequestProxyShim()');
@@ -6124,6 +6191,7 @@ describe("form rendering", () => {
         context: z.object({}),
         answers: z.object({
           start: z.enum(["yes"]),
+          trustedform_consent: trustedFormConsentAnswerSchema,
         }),
         payload: z.object({}),
       },

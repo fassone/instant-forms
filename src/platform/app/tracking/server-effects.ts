@@ -8,7 +8,7 @@ import type {
   TrackingServerEventPayload,
   TrackingRuntimeStepContext,
 } from "../../flow";
-import type { LifecycleTrackingEvent } from "../../rendering";
+import type { LifecycleTrackingEvent, TrackingAnswerMap } from "../../rendering";
 import type { SubmissionPayload } from "../../submissions/validation";
 
 const TRACKING_SERVER_CALLBACK_TIMEOUT_MS = 5000;
@@ -19,7 +19,7 @@ export function scheduleTrackingServerCallback(
   routeKey: string,
   lifecycleEvent: LifecycleTrackingEvent | undefined,
   options: {
-    answers: Record<string, string | undefined>;
+    answers: TrackingAnswerMap;
     step?: FormStep;
     stepIndex?: number;
     submission?: SubmissionPayload;
@@ -60,7 +60,7 @@ function createTrackingServerEventInput(
   form: InstantForm,
   event: TrackingServerEventPayload,
   options: {
-    answers: Record<string, string | undefined>;
+    answers: TrackingAnswerMap;
     step?: FormStep;
     stepIndex?: number;
     submission?: SubmissionPayload;

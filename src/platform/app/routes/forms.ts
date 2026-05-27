@@ -23,7 +23,12 @@ import {
   getFormRouteStepUrl,
   type FormRoutes,
 } from "../../routing";
-import { validateSubmission, type SubmissionMappingContext, type SubmissionPayload } from "../../submissions/validation";
+import {
+  validateSubmission,
+  type JsonPayloadValue,
+  type SubmissionMappingContext,
+  type SubmissionPayload,
+} from "../../submissions/validation";
 import {
   createLifecycleTrackingEvent,
   createLifecycleTrackingPayload,
@@ -369,7 +374,7 @@ export function registerFormRoutes(app: Hono, routes: FormRoutes, logger: Submis
     );
     setPostSubmitState(c, routeEntry.routeKey, {
       trackingEvents,
-      stepCountLabel: getPostSubmitStepCountLabel(routeEntry.form, validation.payload.answers),
+      stepCountLabel: getPostSubmitStepCountLabel(routeEntry.form, getStringAnswers(validation.payload.answers)),
     });
 
     return redirectNoStore(c, getFormRoutePostSubmitUrl(routeEntry.routeSegments, routeEntry.form), 303);
@@ -406,12 +411,24 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function getNativeSubmissionAnswers(formData: NativeFormData): Record<string, string> {
-  const answers: Record<string, string> = {};
+function getNativeSubmissionAnswers(formData: NativeFormData): Record<string, JsonPayloadValue> {
+  const answers: Record<string, JsonPayloadValue> = {};
   const answerFieldPattern = /^answers\[([^\]]+)\]$/u;
+  const nestedAnswerFieldPattern = /^answers\[([^\]]+)\]\[([^\]]+)\]$/u;
 
   for (const [fieldName, fieldValue] of formData.entries()) {
     if (typeof fieldValue !== "string") {
+      continue;
+    }
+
+    const nestedMatch = nestedAnswerFieldPattern.exec(fieldName);
+    const nestedAnswerKey = nestedMatch?.[1];
+    const nestedFieldKey = nestedMatch?.[2];
+    if (nestedAnswerKey && nestedFieldKey) {
+      const currentAnswer = answers[nestedAnswerKey];
+      const answerObject = isRecord(currentAnswer) ? { ...currentAnswer } : {};
+      answerObject[nestedFieldKey] = fieldValue.trim();
+      answers[nestedAnswerKey] = answerObject;
       continue;
     }
 
@@ -423,6 +440,12 @@ function getNativeSubmissionAnswers(formData: NativeFormData): Record<string, st
   }
 
   return answers;
+}
+
+function getStringAnswers(answers: Record<string, JsonPayloadValue>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(answers).flatMap(([key, value]) => (typeof value === "string" ? [[key, value]] : [])),
+  );
 }
 
 function getNativeTrustedFormCertUrl(form: InstantForm, formData: NativeFormData): string | undefined {

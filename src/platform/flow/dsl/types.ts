@@ -574,7 +574,17 @@ export type AnswerStep<TKey extends string = string> =
   | ChoiceStep<TKey, string, StepCondition | undefined>
   | TextStep<TKey, StepCondition | undefined>
   | PhoneStep<TKey, StepCondition | undefined>
-  | AutocompleteStep<TKey, StepCondition | undefined>;
+  | AutocompleteStep<TKey, StepCondition | undefined>
+  | TrustedFormConsentStep<
+      TKey,
+      StepCondition | undefined,
+      PlainTextValue,
+      DisplayCopy | undefined,
+      readonly TrustedFormReviewField[],
+      PlainTextValue,
+      DisplayCopy | undefined,
+      ConsentDisclosureCopy
+    >;
 
 export type FormUiActionCopy = {
   back: string;
