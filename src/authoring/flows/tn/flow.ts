@@ -3,7 +3,7 @@ import { esAutoInsuranceTemplate } from "../../templates/es-auto-insurance";
 export const tnFlow = esAutoInsuranceTemplate.create({
   flowName: "ES - TN - v6",
   pageName: "Seguros Aseguranza",
-  submissionUrl: "https://api.liderna.net/webleads/v2",
+  submissionUrl: "https://gertrude-submental-sarita.ngrok-free.dev/automations-v2/liderna-webleads",
   areaCode: "TN",
   areaName: "Tennessee",
   product: "auto_insurance",
