@@ -1,0 +1,162 @@
+import type {
+  FormTracking,
+  GoogleTagManagerContainerId,
+  MetaPixelId,
+  TrackingAuthoringHelpers,
+} from "../../../platform/flow";
+import { googleTagManager } from "../../integrations/google-tag-manager";
+import type { AutoInsuranceContract } from "./contracts";
+import { createMetaConversionsServerCallback } from "./meta-conversions";
+
+type CreateAutoInsuranceTrackingInput = {
+  gtmContainerId?: GoogleTagManagerContainerId;
+  metaPixelId?: MetaPixelId;
+  metaTestEventCode?: string;
+  metaConversionsAccessToken?: string;
+};
+
+export function createAutoInsuranceTracking({
+  gtmContainerId,
+  metaPixelId,
+  metaTestEventCode,
+  metaConversionsAccessToken,
+}: CreateAutoInsuranceTrackingInput):
+  | ((helpers: TrackingAuthoringHelpers<AutoInsuranceContract>) => FormTracking<AutoInsuranceContract>)
+  | undefined {
+  if (!gtmContainerId) {
+    return undefined;
+  }
+
+  const metaConversionsServer =
+    metaPixelId && metaConversionsAccessToken
+      ? createMetaConversionsServerCallback(metaConversionsAccessToken)
+      : undefined;
+
+  return ({ event }: TrackingAuthoringHelpers<AutoInsuranceContract>) => ({
+    googleTagManager: googleTagManager({
+      containerId: gtmContainerId,
+      delivery: "partytown",
+      proxy: "first_party",
+    }),
+    events: [
+      event.formView({
+        name: "instant_form_view",
+        includeContext: ["areaCode", "product"],
+      }),
+      event.stepView({
+        name: "instant_form_step_view",
+        includeContext: ["areaCode", "product"],
+        includeStep: true,
+      }),
+      event.stepAnswer({
+        name: "instant_form_step_answer",
+        includeStep: true,
+        ...(metaPixelId
+          ? {
+              meta: {
+                pixelId: metaPixelId,
+                eventName: "LeadProgress",
+                ...(metaTestEventCode ? { testEventCode: metaTestEventCode } : {}),
+                eventId: ({ event }) => event.id,
+                userData: ({ context, answers }) => ({
+                  ph: answers.phone_number,
+                  fn: answers.first_name,
+                  ln: answers.last_name,
+                  st: answers.belongs_to_state === "yes" ? context.areaCode : answers.residence_state,
+                }),
+                customData: ({ context, answers, step }) => ({
+                  content_name: context.product,
+                  content_category: "insurance",
+                  market_state: context.areaCode,
+                  market_name: context.areaName ?? context.areaCode,
+                  residence_state: answers.belongs_to_state === "yes" ? context.areaCode : answers.residence_state,
+                  belongs_to_state: answers.belongs_to_state,
+                  has_license: answers.has_license,
+                  has_insurance: answers.has_insurance,
+                  is_clean_title: answers.is_clean_title,
+                  number_of_registered_cars: answers.number_of_registered_cars,
+                  funnel_step: step?.key,
+                }),
+              },
+            }
+          : {}),
+        ...(metaConversionsServer ? { server: metaConversionsServer } : {}),
+      }),
+      event.validationError({
+        name: "instant_form_validation_error",
+        includeStep: true,
+      }),
+      event.trustedFormSubstepView({
+        name: "instant_form_trusted_form_substep_view",
+        includeStep: true,
+        ...(metaPixelId
+          ? {
+              meta: {
+                pixelId: metaPixelId,
+                eventName: "LeadProgress",
+                ...(metaTestEventCode ? { testEventCode: metaTestEventCode } : {}),
+                eventId: ({ event }) => event.id,
+                userData: ({ context, answers }) => ({
+                  ph: answers.phone_number,
+                  fn: answers.first_name,
+                  ln: answers.last_name,
+                  st: answers.belongs_to_state === "yes" ? context.areaCode : answers.residence_state,
+                }),
+                customData: ({ context, answers, step, event }) => ({
+                  content_name: context.product,
+                  content_category: "insurance",
+                  market_state: context.areaCode,
+                  market_name: context.areaName ?? context.areaCode,
+                  residence_state: answers.belongs_to_state === "yes" ? context.areaCode : answers.residence_state,
+                  belongs_to_state: answers.belongs_to_state,
+                  has_license: answers.has_license,
+                  has_insurance: answers.has_insurance,
+                  is_clean_title: answers.is_clean_title,
+                  number_of_registered_cars: answers.number_of_registered_cars,
+                  funnel_step: step?.key,
+                  trusted_form_substep: event.trustedFormSubstep,
+                }),
+              },
+            }
+          : {}),
+        ...(metaConversionsServer ? { server: metaConversionsServer } : {}),
+      }),
+      event.submitAttempt({
+        name: "instant_form_submit_attempt",
+        includeStep: true,
+      }),
+      event.submitSuccess({
+        name: "instant_form_submit_success",
+        includeContext: ["areaCode", "product"],
+        ...(metaPixelId
+          ? {
+              meta: {
+                pixelId: metaPixelId,
+                eventName: "Lead",
+                ...(metaTestEventCode ? { testEventCode: metaTestEventCode } : {}),
+                eventId: ({ submission }) => submission.id,
+                userData: ({ context, answers }) => ({
+                  ph: answers.phone_number,
+                  fn: answers.first_name,
+                  ln: answers.last_name,
+                  st: answers.belongs_to_state === "yes" ? context.areaCode : answers.residence_state,
+                }),
+                customData: ({ context, answers }) => ({
+                  content_name: context.product,
+                  content_category: "insurance",
+                  market_state: context.areaCode,
+                  market_name: context.areaName ?? context.areaCode,
+                  residence_state: answers.belongs_to_state === "yes" ? context.areaCode : answers.residence_state,
+                }),
+              },
+            }
+          : {}),
+        ...(metaConversionsServer ? { server: metaConversionsServer } : {}),
+      }),
+      event.submitError({
+        name: "instant_form_submit_error",
+        includeStep: true,
+      }),
+    ],
+  });
+}
