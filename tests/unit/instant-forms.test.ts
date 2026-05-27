@@ -12,6 +12,7 @@ import { trustedFormCertify } from "../../src/authoring/integrations/trusted-for
 import { requestProxies } from "../../src/authoring/proxies/registry";
 import { selectedScripts } from "../../src/authoring/scripts/registry";
 import { esAutoInsuranceTemplate } from "../../src/authoring/templates/es-auto-insurance";
+import { lidernaAreaCodeSchema } from "../../src/authoring/templates/es-auto-insurance/contracts";
 import { formRoutes } from "../../src/authoring/routes/registry";
 import { createFetchHandler } from "../../src/platform/app/server";
 import { registerFormRoutes } from "../../src/platform/app/routes/forms";
@@ -622,6 +623,14 @@ describe("form registry", () => {
       requireReadyBefore: "consent_substep",
       allowSubmitWithoutCert: false,
     });
+  });
+
+  it("accepts all shared US state codes as Liderna area codes", () => {
+    expect(lidernaAreaCodeSchema.safeParse("AL").success).toBe(true);
+    expect(lidernaAreaCodeSchema.safeParse("NY").success).toBe(true);
+    expect(lidernaAreaCodeSchema.safeParse("DC").success).toBe(true);
+    expect(lidernaAreaCodeSchema.safeParse("TN").success).toBe(true);
+    expect(lidernaAreaCodeSchema.safeParse("ZZ").success).toBe(false);
   });
 
   it("centralizes GTM settings in an authoring preset", () => {
@@ -1643,6 +1652,16 @@ describe("form registry", () => {
 
     expect(validation.payload.delivery.payload).toMatchObject({
       id: "22222222-2222-4222-8222-222222222222",
+      consent: expect.stringContaining("Al marcar esta casilla"),
+      trustedform_certificate_url: trustedFormCertUrl,
+      _mock_verification: {
+        searchbug: true,
+      },
+      _mock_dispatch: {
+        googleSheets: true,
+        leadManager: true,
+        ricochet: true,
+      },
       meta_conversion: {
         enabled: true,
         pixel_id: "1234567890",
@@ -3257,6 +3276,8 @@ describe("submission validation", () => {
           has_license: "yes",
           has_insurance: "no",
           number_of_registered_cars: "1",
+          consent: expect.stringContaining("Al marcar esta casilla"),
+          trustedform_certificate_url: trustedFormCertUrl,
           meta_conversion: {
             enabled: true,
             pixel_id: "1465068051587670",
@@ -5063,6 +5084,8 @@ describe("server routing", () => {
           has_license: "yes",
           has_insurance: "no",
           number_of_registered_cars: "1",
+          consent: expect.stringContaining("Al marcar esta casilla"),
+          trustedform_certificate_url: trustedFormCertUrl,
           meta_conversion: {
             enabled: true,
             pixel_id: "1465068051587670",

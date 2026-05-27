@@ -31,6 +31,22 @@ export function createLidernaWebleadsPayloadMapping({
       has_license: answers.has_license,
       has_insurance: answers.has_insurance,
       number_of_registered_cars: answers.number_of_registered_cars,
+      consent: answers.trustedform_consent.consent,
+      ...(answers.trustedform_consent.trustedform_certificate_url
+        ? { trustedform_certificate_url: answers.trustedform_consent.trustedform_certificate_url }
+        : {}),
+      ...(metaTestEventCode
+        ? {
+            _mock_verification: {
+              searchbug: true,
+            },
+            _mock_dispatch: {
+              googleSheets: true,
+              leadManager: true,
+              ricochet: true,
+            },
+          }
+        : {}),
       meta_conversion: metaPixelId
         ? {
             enabled: true,

@@ -1,4 +1,10 @@
 import { z } from "../../../platform/flow";
+import { US_STATES } from "../../../shared/data/us-states";
+
+const lidernaAreaCodes = US_STATES.map((state) => state.code) as [
+  (typeof US_STATES)[number]["code"],
+  ...(typeof US_STATES)[number]["code"][],
+];
 
 export const autoInsuranceAnswersContract = z.object({
   belongs_to_state: z.enum(["yes", "no"]),
@@ -16,19 +22,7 @@ export const autoInsuranceAnswersContract = z.object({
   }),
 });
 
-export const lidernaAreaCodeSchema = z.enum([
-  "FL",
-  "MD",
-  "TX",
-  "CA",
-  "AZ",
-  "WA",
-  "LA",
-  "OR",
-  "GA",
-  "TN",
-  "NC",
-]);
+export const lidernaAreaCodeSchema = z.enum(lidernaAreaCodes);
 
 export const lidernaAcquisitionChannelSchema = z.enum(["paid", "organic"]);
 
@@ -69,6 +63,20 @@ export const autoInsurancePayloadContract = z.object({
   has_license: z.enum(["yes", "no"]).optional(),
   has_insurance: z.enum(["yes", "no"]).optional(),
   number_of_registered_cars: z.enum(["0", "1", "2+"]).optional(),
+  consent: z.string().min(1),
+  trustedform_certificate_url: z.string().optional(),
+  _mock_verification: z
+    .object({
+      searchbug: z.literal(true),
+    })
+    .optional(),
+  _mock_dispatch: z
+    .object({
+      googleSheets: z.literal(true),
+      leadManager: z.literal(true),
+      ricochet: z.literal(true),
+    })
+    .optional(),
   meta_conversion: metaConversionPayloadContract.optional(),
 });
 
