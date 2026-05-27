@@ -7,11 +7,13 @@ import { registerFormRoutePages, renderFormRouteNotFound } from "../routing";
 import { registerAssetRoutes } from "./routes/assets";
 import { registerFormRoutes, type SubmissionLogger } from "./routes/forms";
 import { registerScriptRoutes } from "./routes/scripts";
+import type { DeliveryOptions } from "../submissions/delivery";
 
 export type { SubmissionLogger };
 
 export type AppOptions = {
   logger?: SubmissionLogger;
+  delivery?: DeliveryOptions;
 };
 
 export function createFetchHandler(options: AppOptions = {}) {
@@ -27,7 +29,7 @@ export function createApp(options: AppOptions = {}) {
   registerAssetRoutes(app);
   registerScriptRoutes(app, selectedScripts, requestProxies);
   registerFormRoutePages(app, formRoutes);
-  registerFormRoutes(app, formRoutes, logger);
+  registerFormRoutes(app, formRoutes, logger, options.delivery);
 
   app.notFound((c) => renderFormRouteNotFound(c, formRoutes));
 

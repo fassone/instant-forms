@@ -1,9 +1,15 @@
 import { esAutoInsuranceTemplate } from "../../templates/es-auto-insurance";
 
+const lidernaWebleadsSubmissionUrl = process.env.LIDERNA_WEBLEADS_SUBMISSION_URL;
+
+if (!lidernaWebleadsSubmissionUrl) {
+  throw new Error("LIDERNA_WEBLEADS_SUBMISSION_URL is required for the Tennessee flow.");
+}
+
 export const tnFlow = esAutoInsuranceTemplate.create({
   flowName: "ES - TN - v6",
   pageName: "Seguros Aseguranza",
-  submissionUrl: "https://gertrude-submental-sarita.ngrok-free.dev/automations-v2/liderna-webleads",
+  submissionUrl: lidernaWebleadsSubmissionUrl,
   areaCode: "TN",
   areaName: "Tennessee",
   product: "auto_insurance",

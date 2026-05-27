@@ -101,8 +101,8 @@ Every source and test folder has its own `README.md` describing ownership and sa
 | `GET /_instant/scripts/:scriptKey.js` | Allowlisted first-party proxy for selected third-party scripts. |
 | `GET /~partytown/*` | Partytown worker/runtime assets used after the small bootstrap has been inlined. |
 | `POST /api/forms/:routeKey/checkpoints` | Validates one answer, writes the checkpoint cookie, and returns the next URL. |
-| `POST /api/forms/:routeKey/submissions` | Validates and logs completed submissions. |
-| `POST /api/forms/:routeKey/native-submissions` | Validates native TrustedForm submissions and redirects to the authored post-submit page. |
+| `POST /api/forms/:routeKey/submissions` | Validates, posts downstream, and logs completed submissions. |
+| `POST /api/forms/:routeKey/native-submissions` | Validates native TrustedForm submissions, posts downstream, and redirects to the authored post-submit page. |
 
 Unavailable public routes use author-controlled title, message, CTA, and status from `src/authoring/routes/registry.ts`.
 
@@ -114,7 +114,7 @@ Reusable flow shapes live in `src/authoring/templates/` and use `defineFormTempl
 
 Each flow declares a `locale`, an explicit `ui` copy block for platform-owned labels, progress text, modal copy, validation/failure messages, and native error pages, plus a neutral `postSubmit` page for the successful post-submission destination. There is no hidden Spanish fallback: a new language is authored by creating a flow whose step copy, `ui` copy, and `postSubmit` copy are in that language.
 
-Each flow also declares a Zod-backed `contract` with `context`, `answers`, and `payload` schemas. Authored business context such as `areaCode: "TN"`, `areaName: "Tennessee"`, and `product: "auto_insurance"` lives in `context`; answer-producing steps must use keys declared in `contract.answers`; and `payload` declares the downstream HTTPS URL, method, encoding, and a typed `mapping` built from `{ context, answers, submission, request, cookies, browser }`. JSON delivery payloads can contain structured objects, booleans, arrays, and nested data; `form_urlencoded` delivery stays string-only. V1 logs that delivery block but does not send it to the external endpoint yet. Supported step kinds are `choice`, `text`, `phone`, `autocomplete`, `interstitial`, and `trusted_form_consent`.
+Each flow also declares a Zod-backed `contract` with `context`, `answers`, and `payload` schemas. Authored business context such as `areaCode: "TN"`, `areaName: "Tennessee"`, and `product: "auto_insurance"` lives in `context`; answer-producing steps must use keys declared in `contract.answers`; and `payload` declares the downstream HTTPS URL, method, encoding, and a typed `mapping` built from `{ context, answers, submission, request, cookies, browser }`. JSON delivery payloads can contain structured objects, booleans, arrays, and nested data; `form_urlencoded` delivery stays string-only. Valid final submissions are posted to the authored downstream endpoint before the visitor sees success. Supported step kinds are `choice`, `text`, `phone`, `autocomplete`, `interstitial`, and `trusted_form_consent`.
 
 Dynamic authoring is step-level: a step is either static, or it declares one dependency list and one resolver for its dynamic display/body props. Nested field-level `resolve(...)` calls are intentionally rejected so it is always clear which upstream answers a dynamic step needs. Page-level presentation can set a desktop-only form height with `page.presentation.desktopHeightPx`; mobile continues to use the fixed viewport-height layout. Static `presentation.chrome` can hide the form chrome with `"hidden"` or `"hidden_on_mobile"`; TrustedForm substep-specific chrome overrides live under `substeps.review.presentation` or `substeps.consent.presentation`, not inside the dynamic review/consent copy. TrustedForm review and consent prose can use safe Markdown through `md(...)` / `markdown(...)` in that resolver. Submitted values and native controls stay plain text: use `text(...)` for resolver-produced field values and ordinary strings for button labels, placeholders, keys, and slugs. Markdown is rendered on the server with raw HTML escaped, and the browser receives only sanitized HTML in its client config.
 
@@ -141,6 +141,8 @@ The `trustedform_consent` step is authored as explicit `review` and `consent` su
 Flows can opt into Google Tag Manager through the typed `googleTagManager(...)` authoring preset. Templates expose a `gtmContainerId` variable when tracking is enabled, and individual pixel IDs stay inside the GTM container rather than in the form DSL. The browser installs a narrow first-party Google tag request shim, initializes `window.dataLayer`, inlines the tiny Partytown bootstrap, then loads GTM through Partytown and pushes standardized events such as `instant_form_view`, `instant_form_step_view`, `instant_form_step_answer`, validation errors, TrustedForm substep views, and submit attempt/success/error events. GTM preview/debug bootstrap scripts are still first-party proxied, but run on the main thread because Tag Assistant's debug runtime is not reliable inside Partytown. Tracking payloads include safe metadata such as route key, form/page names, step metadata, and explicitly included context keys; answer values are not included by default.
 
 For Meta Pixel testing, set the optional `META_TEST_EVENT_CODE` environment variable before starting the server or building forms. Tennessee passes it through the template as `meta.test_event_code` on authored Meta payloads, so GTM can forward it to Meta Test Events. Leave it unset for normal production traffic.
+
+Tennessee requires `LIDERNA_WEBLEADS_SUBMISSION_URL` before starting the server or building forms. It must be an absolute HTTPS URL and is authored into the template as the blocking downstream lead endpoint.
 
 For Tennessee Meta Conversions API testing or production server-side delivery of progress events, set the optional `META_CONVERSIONS_ACCESS_TOKEN` environment variable before starting the server. When present, the Tennessee template attaches authored server callbacks to its Meta-enabled progress tracking events and sends the same event IDs used by GTM to Meta CAPI. Final `Lead` conversion responsibility is downstream: the submitted delivery payload includes an explicit `meta_conversion` object that the lead processor can use after the lead is processed.
 
@@ -184,7 +186,7 @@ Example logged delivery block:
 ```json
 {
   "delivery": {
-    "url": "https://api.liderna.net/webleads/v2",
+    "url": "https://example.test/webleads-v2",
     "method": "POST",
     "encoding": "json",
     "payload": {

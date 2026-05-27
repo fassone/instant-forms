@@ -29,6 +29,7 @@ import {
   type SubmissionMappingContext,
   type SubmissionPayload,
 } from "../../submissions/validation";
+import { deliverPayload, type DeliveryOptions } from "../../submissions/delivery";
 import {
   createLifecycleTrackingEvent,
   createLifecycleTrackingPayload,
@@ -53,7 +54,12 @@ type NativeFormData = {
   get(name: string): unknown;
 };
 
-export function registerFormRoutes(app: Hono, routes: FormRoutes, logger: SubmissionLogger): void {
+export function registerFormRoutes(
+  app: Hono,
+  routes: FormRoutes,
+  logger: SubmissionLogger,
+  deliveryOptions: DeliveryOptions = {},
+): void {
   app.post("/api/forms/:routeKey/checkpoints", async (c) => {
     const routeKey = c.req.param("routeKey");
     const routeEntry = getFormRouteByRouteKey(routes, routeKey);
@@ -304,6 +310,15 @@ export function registerFormRoutes(app: Hono, routes: FormRoutes, logger: Submis
       return jsonResponse(c, { ok: false, errors: validation.errors }, 400);
     }
 
+    const delivery = await deliverPayload(validation.payload.delivery, deliveryOptions);
+    if (!delivery.ok) {
+      return jsonResponse(
+        c,
+        { ok: false, errors: [{ field: "delivery", message: routeEntry.form.ui.errors.submissionFailed }] },
+        502,
+      );
+    }
+
     logger(validation.payload);
     clearCheckpointAnswers(c, routeEntry.routeKey);
 
@@ -359,6 +374,15 @@ export function registerFormRoutes(app: Hono, routes: FormRoutes, logger: Submis
       return htmlResponse(
         renderNativeSubmissionErrorPage(routeEntry.form, routeEntry.routeKey, validation.errors.map((error) => error.message)),
         400,
+        "no-store",
+      );
+    }
+
+    const delivery = await deliverPayload(validation.payload.delivery, deliveryOptions);
+    if (!delivery.ok) {
+      return htmlResponse(
+        renderNativeSubmissionErrorPage(routeEntry.form, routeEntry.routeKey, [routeEntry.form.ui.errors.submissionFailed]),
+        502,
         "no-store",
       );
     }

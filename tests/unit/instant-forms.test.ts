@@ -67,6 +67,7 @@ import {
 } from "../../src/platform/scripts";
 import { createStateAutocompleteItems, rankAutocompleteItems } from "../../src/platform/steps/autocomplete/ranking";
 import { normalizeUsPhoneNumber } from "../../src/platform/steps/phone/us-phone";
+import { deliverPayload, type DeliveryFetch } from "../../src/platform/submissions/delivery";
 import { validateSubmission } from "../../src/platform/submissions/validation";
 import { US_STATES, normalizeUsState } from "../../src/shared/data/us-states";
 
@@ -113,6 +114,65 @@ const validAnswers = {
 
 const trustedFormCertUrl = "https://cert.trustedform.com/454a35b802f3e7b63ffabb4efedb7c6ebe67886c";
 const routeKey = "tn_custom";
+const expectedTennesseeTrustedFormReviewFields = [
+  {
+    name: "trusted_form_grantor_name",
+    label: "Nombre completo",
+    value: "Ana Lopez",
+    trustedForm: {
+      role: "consent-grantor-name",
+    },
+  },
+  {
+    name: "trusted_form_grantor_phone",
+    label: "Teléfono",
+    value: "(615) 555-1234",
+    trustedForm: {
+      role: "consent-grantor-phone",
+    },
+  },
+  {
+    name: "review_residence_state",
+    label: "Estado",
+    value: "Tennessee",
+  },
+  {
+    name: "review_has_license",
+    label: "Licencia de EE. UU.",
+    value: "Sí",
+  },
+  {
+    name: "review_has_insurance",
+    label: "Seguro actual",
+    value: "No",
+  },
+  {
+    name: "review_is_clean_title",
+    label: "Título limpio",
+    value: "Sí",
+  },
+  {
+    name: "review_number_of_registered_cars",
+    label: "Autos a asegurar",
+    value: "1",
+  },
+];
+
+type RecordedDeliveryRequest = {
+  url: string;
+  init: RequestInit;
+};
+
+function createSuccessfulDeliveryFetch(requests: RecordedDeliveryRequest[] = []): DeliveryFetch {
+  return async (url, init) => {
+    requests.push({ url, init });
+    return new Response("", { status: 204 });
+  };
+}
+
+function immediateDeliveryDelay(): void {
+  return undefined;
+}
 
 function expectTrustedFormConsentAnswer(value: unknown, expectedCertUrl: string | null = trustedFormCertUrl): void {
   expect(value).toEqual({
@@ -1097,7 +1157,10 @@ describe("form registry", () => {
       notFound: unavailable(unavailableContent),
     });
     const app = new Hono();
-    registerFormRoutes(app, routes, () => undefined);
+    registerFormRoutes(app, routes, () => undefined, {
+      fetch: createSuccessfulDeliveryFetch(),
+      delay: immediateDeliveryDelay,
+    });
 
     const response = await app.fetch(
       new Request("http://localhost/api/forms/meta/checkpoints", {
@@ -1222,7 +1285,10 @@ describe("form registry", () => {
       notFound: unavailable(unavailableContent),
     });
     const app = new Hono();
-    registerFormRoutes(app, routes, () => undefined);
+    registerFormRoutes(app, routes, () => undefined, {
+      fetch: createSuccessfulDeliveryFetch(),
+      delay: immediateDeliveryDelay,
+    });
 
     const warnings: unknown[][] = [];
     const originalWarn = console.warn;
@@ -1362,7 +1428,10 @@ describe("form registry", () => {
       notFound: unavailable(unavailableContent),
     });
     const app = new Hono();
-    registerFormRoutes(app, routes, () => undefined);
+    registerFormRoutes(app, routes, () => undefined, {
+      fetch: createSuccessfulDeliveryFetch(),
+      delay: immediateDeliveryDelay,
+    });
 
     const response = await app.fetch(
       new Request("http://localhost/api/forms/callback/tracking-events", {
@@ -1451,7 +1520,10 @@ describe("form registry", () => {
       notFound: unavailable(unavailableContent),
     });
     const app = new Hono();
-    registerFormRoutes(app, routes, () => undefined);
+    registerFormRoutes(app, routes, () => undefined, {
+      fetch: createSuccessfulDeliveryFetch(),
+      delay: immediateDeliveryDelay,
+    });
 
     const formBody = new URLSearchParams({ "answers[wants_quote]": "yes" });
     const response = await app.fetch(
@@ -3202,6 +3274,132 @@ describe("form templates", () => {
   });
 });
 
+describe("submission delivery", () => {
+  it("sends JSON delivery payloads with the correct body and content type", async () => {
+    const requests: RecordedDeliveryRequest[] = [];
+    const result = await deliverPayload(
+      {
+        url: "https://example.test/lead-submissions",
+        method: "POST",
+        encoding: "json",
+        payload: {
+          id: "lead-1",
+          nested: {
+            enabled: true,
+          },
+        },
+      },
+      { fetch: createSuccessfulDeliveryFetch(requests), delay: immediateDeliveryDelay },
+    );
+
+    expect(result).toEqual({ ok: true, attempts: 1, status: 204 });
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toEqual({
+      url: "https://example.test/lead-submissions",
+      init: {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: "lead-1",
+          nested: {
+            enabled: true,
+          },
+        }),
+      },
+    });
+  });
+
+  it("sends form-urlencoded delivery payloads as URLSearchParams strings", async () => {
+    const requests: RecordedDeliveryRequest[] = [];
+    const result = await deliverPayload(
+      {
+        url: "https://example.test/lead-submissions",
+        method: "POST",
+        encoding: "form_urlencoded",
+        payload: {
+          firstName: "Ana",
+          product: "auto insurance",
+        },
+      },
+      { fetch: createSuccessfulDeliveryFetch(requests), delay: immediateDeliveryDelay },
+    );
+
+    expect(result).toEqual({ ok: true, attempts: 1, status: 204 });
+    expect(requests[0]).toEqual({
+      url: "https://example.test/lead-submissions",
+      init: {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: "firstName=Ana&product=auto+insurance",
+      },
+    });
+  });
+
+  it("retries network errors and non-2xx responses before succeeding on the fourth attempt", async () => {
+    const delays: number[] = [];
+    let attempts = 0;
+    const result = await deliverPayload(
+      {
+        url: "https://example.test/lead-submissions",
+        method: "POST",
+        encoding: "json",
+        payload: { id: "lead-1" },
+      },
+      {
+        fetch: async () => {
+          attempts += 1;
+          if (attempts === 1) {
+            throw new Error("network down");
+          }
+          return new Response("", { status: attempts === 4 ? 201 : 503 });
+        },
+        delay: (milliseconds) => {
+          delays.push(milliseconds);
+        },
+      },
+    );
+
+    expect(result).toEqual({ ok: true, attempts: 4, status: 201 });
+    expect(attempts).toBe(4);
+    expect(delays).toEqual([2000, 2000, 2000]);
+  });
+
+  it("fails after four total failed delivery attempts", async () => {
+    const delays: number[] = [];
+    let attempts = 0;
+    const result = await deliverPayload(
+      {
+        url: "https://example.test/lead-submissions",
+        method: "POST",
+        encoding: "json",
+        payload: { id: "lead-1" },
+      },
+      {
+        fetch: async () => {
+          attempts += 1;
+          return new Response("", { status: 500 });
+        },
+        delay: (milliseconds) => {
+          delays.push(milliseconds);
+        },
+      },
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      attempts: 4,
+      status: 500,
+      error: "Downstream delivery returned HTTP 500.",
+    });
+    expect(attempts).toBe(4);
+    expect(delays).toEqual([2000, 2000, 2000]);
+  });
+});
+
 describe("submission validation", () => {
   const form = getRequiredTennesseeForm();
 
@@ -3258,7 +3456,7 @@ describe("submission validation", () => {
       expect(result.payload).not.toHaveProperty("pageId");
       expect(result.payload.trustedFormCertUrl).toBe(trustedFormCertUrl);
       expect(result.payload.delivery).toMatchObject({
-        url: "https://api.liderna.net/webleads/v2",
+        url: form.payload.url,
         method: "POST",
         encoding: "json",
         payload: {
@@ -3276,7 +3474,6 @@ describe("submission validation", () => {
           has_license: "yes",
           has_insurance: "no",
           number_of_registered_cars: "1",
-          consent: expect.stringContaining("Al marcar esta casilla"),
           trustedform_certificate_url: trustedFormCertUrl,
           meta_conversion: {
             enabled: true,
@@ -3286,6 +3483,7 @@ describe("submission validation", () => {
           },
         },
       });
+      expect(result.payload.delivery.payload.consent).toContain("Al marcar esta casilla");
       expect(result.payload.delivery.payload.id).toBe(result.payload.submissionId);
       expect(result.payload.delivery.payload.meta_conversion).toMatchObject({
         event_id: result.payload.submissionId,
@@ -3801,10 +3999,10 @@ describe("server routing", () => {
     expect(matchingHtml).toContain('<p class="step-count" data-step-count aria-hidden="true">Paso 5 de 9</p>');
     expect(matchingHtml).toContain('class="matching-benefit is-success is-visible"');
     expect(matchingHtml).toContain(
-      '<span class="matching-success-line" data-color="brand-navy">Encontramos agentes listos para cotizarle.</span>',
+      '<span class="matching-success-line" data-color="brand-navy">¡Encontramos opciones para usted!</span>',
     );
     expect(matchingHtml).toContain(
-      '<span class="matching-success-line" data-color="accent">Descubra cuánto puede ahorrar.</span>',
+      '<span class="matching-success-line" data-color="accent">Descubra cuánto puede ahorrar...</span>',
     );
   });
 
@@ -4562,8 +4760,8 @@ describe("server routing", () => {
     expect(html).toContain('"url":"/__preview/tn/custom/buscando-oferta"');
     expect(html).toContain(".matching-status:empty");
     expect(html).toContain('data-matching-status></p>');
-    expect(html).toContain("Encontramos agentes listos para cotizarle.");
-    expect(html).toContain("Descubra cuánto puede ahorrar.");
+    expect(html).toContain("¡Encontramos opciones para usted!");
+    expect(html).toContain("Descubra cuánto puede ahorrar...");
     expect(html).toContain('data-step="0" data-step-kind="interstitial" data-step-counted="false" aria-hidden="false"');
     expect(html).not.toContain("¿Usted vive en Tennessee?");
     expect(html).not.toContain('"slug":"nombre"');
@@ -4761,54 +4959,7 @@ describe("server routing", () => {
             "phone_number",
           ],
           review: {
-            fields: [
-              {
-                name: "review_belongs_to_state",
-                label: "Vive en Tennessee",
-                value: "Sí",
-              },
-              {
-                name: "review_residence_state",
-                label: "Estado",
-                value: "Tennessee",
-              },
-              {
-                name: "review_has_license",
-                label: "Licencia de EE. UU.",
-                value: "Sí",
-              },
-              {
-                name: "review_has_insurance",
-                label: "Seguro actual",
-                value: "No",
-              },
-              {
-                name: "review_is_clean_title",
-                label: "Título limpio",
-                value: "Sí",
-              },
-              {
-                name: "review_number_of_registered_cars",
-                label: "Autos a asegurar",
-                value: "1",
-              },
-              {
-                name: "trusted_form_grantor_name",
-                label: "Nombre completo",
-                value: "Ana Lopez",
-                trustedForm: {
-                  role: "consent-grantor-name",
-                },
-              },
-              {
-                name: "trusted_form_grantor_phone",
-                label: "Teléfono",
-                value: "(615) 555-1234",
-                trustedForm: {
-                  role: "consent-grantor-phone",
-                },
-              },
-            ],
+            fields: expectedTennesseeTrustedFormReviewFields,
           },
         },
       },
@@ -4850,54 +5001,7 @@ describe("server routing", () => {
             "phone_number",
           ],
           review: {
-            fields: [
-              {
-                name: "review_belongs_to_state",
-                label: "Vive en Tennessee",
-                value: "Sí",
-              },
-              {
-                name: "review_residence_state",
-                label: "Estado",
-                value: "Tennessee",
-              },
-              {
-                name: "review_has_license",
-                label: "Licencia de EE. UU.",
-                value: "Sí",
-              },
-              {
-                name: "review_has_insurance",
-                label: "Seguro actual",
-                value: "No",
-              },
-              {
-                name: "review_is_clean_title",
-                label: "Título limpio",
-                value: "Sí",
-              },
-              {
-                name: "review_number_of_registered_cars",
-                label: "Autos a asegurar",
-                value: "1",
-              },
-              {
-                name: "trusted_form_grantor_name",
-                label: "Nombre completo",
-                value: "Ana Lopez",
-                trustedForm: {
-                  role: "consent-grantor-name",
-                },
-              },
-              {
-                name: "trusted_form_grantor_phone",
-                label: "Teléfono",
-                value: "(615) 555-1234",
-                trustedForm: {
-                  role: "consent-grantor-phone",
-                },
-              },
-            ],
+            fields: expectedTennesseeTrustedFormReviewFields,
           },
         },
       },
@@ -5042,7 +5146,14 @@ describe("server routing", () => {
 
   it("accepts valid local submissions and logs the payload", async () => {
     const loggedPayloads: unknown[] = [];
-    const handler = createFetchHandler({ logger: (payload) => loggedPayloads.push(payload) });
+    const deliveryRequests: RecordedDeliveryRequest[] = [];
+    const handler = createFetchHandler({
+      logger: (payload) => loggedPayloads.push(payload),
+      delivery: {
+        fetch: createSuccessfulDeliveryFetch(deliveryRequests),
+        delay: immediateDeliveryDelay,
+      },
+    });
     const response = await handler(
       new Request("http://localhost/api/forms/tn_custom/submissions", {
         method: "POST",
@@ -5052,6 +5163,19 @@ describe("server routing", () => {
     );
 
     expect(response.status).toBe(201);
+    expect(deliveryRequests).toHaveLength(1);
+    expect(deliveryRequests[0]?.url).toBe(getRequiredTennesseeForm().payload.url);
+    expect(deliveryRequests[0]?.init.method).toBe("POST");
+    expect(deliveryRequests[0]?.init.headers).toEqual({
+      "Content-Type": "application/json",
+    });
+    const deliveredPayload = JSON.parse(String(deliveryRequests[0]?.init.body)) as Record<string, unknown>;
+    expect(deliveredPayload).toMatchObject({
+      area: "TN",
+      first_name: "Ana",
+      trustedform_certificate_url: trustedFormCertUrl,
+    });
+    expect(deliveredPayload.consent).toEqual(expect.stringContaining("Al marcar esta casilla"));
     expect(loggedPayloads).toHaveLength(1);
     const loggedPayload = loggedPayloads[0] as {
       submissionId?: string;
@@ -5067,7 +5191,7 @@ describe("server routing", () => {
       pageName: "Seguros Aseguranza",
       trustedFormCertUrl,
       delivery: {
-        url: "https://api.liderna.net/webleads/v2",
+        url: getRequiredTennesseeForm().payload.url,
         method: "POST",
         encoding: "json",
         payload: {
@@ -5084,7 +5208,6 @@ describe("server routing", () => {
           has_license: "yes",
           has_insurance: "no",
           number_of_registered_cars: "1",
-          consent: expect.stringContaining("Al marcar esta casilla"),
           trustedform_certificate_url: trustedFormCertUrl,
           meta_conversion: {
             enabled: true,
@@ -5095,6 +5218,9 @@ describe("server routing", () => {
         },
       },
     });
+    const loggedDeliveryPayload = (loggedPayloads[0] as { delivery?: { payload?: Record<string, unknown> } }).delivery
+      ?.payload;
+    expect(loggedDeliveryPayload?.consent).toEqual(expect.stringContaining("Al marcar esta casilla"));
     expect(loggedPayload.delivery?.payload?.id).toBe(loggedPayload.submissionId);
     expect(loggedPayload.delivery?.payload?.meta_conversion?.event_id).toBe(loggedPayload.submissionId);
     expect(loggedPayloads[0]).not.toHaveProperty("areaCode");
@@ -5105,7 +5231,12 @@ describe("server routing", () => {
   });
 
   it("clears the checkpoint cookie after a successful final submission", async () => {
-    const handler = createFetchHandler();
+    const handler = createFetchHandler({
+      delivery: {
+        fetch: createSuccessfulDeliveryFetch(),
+        delay: immediateDeliveryDelay,
+      },
+    });
     const response = await handler(
       new Request("http://localhost/api/forms/tn_custom/submissions", {
         method: "POST",
@@ -5123,9 +5254,77 @@ describe("server routing", () => {
     expect(setCookie).toContain("Max-Age=0");
   });
 
+  it("does not call downstream delivery when submission validation fails", async () => {
+    let deliveryAttempts = 0;
+    const handler = createFetchHandler({
+      delivery: {
+        fetch: async () => {
+          deliveryAttempts += 1;
+          return new Response("", { status: 204 });
+        },
+        delay: immediateDeliveryDelay,
+      },
+    });
+    const response = await handler(
+      new Request("http://localhost/api/forms/tn_custom/submissions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ answers: { ...validAnswers, has_license: "" }, trustedFormCertUrl }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(deliveryAttempts).toBe(0);
+  });
+
+  it("keeps checkpoint state and does not log when downstream JSON delivery fails", async () => {
+    const loggedPayloads: unknown[] = [];
+    const delays: number[] = [];
+    let deliveryAttempts = 0;
+    const handler = createFetchHandler({
+      logger: (payload) => loggedPayloads.push(payload),
+      delivery: {
+        fetch: async () => {
+          deliveryAttempts += 1;
+          return new Response("", { status: 500 });
+        },
+        delay: (milliseconds) => {
+          delays.push(milliseconds);
+        },
+      },
+    });
+    const response = await handler(
+      new Request("http://localhost/api/forms/tn_custom/submissions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: createCheckpointCookie({ belongs_to_state: "yes" }),
+        },
+        body: JSON.stringify({ answers: validAnswers, trustedFormCertUrl }),
+      }),
+    );
+    const body = await response.text();
+    const setCookie = response.headers.get("Set-Cookie") ?? "";
+
+    expect(response.status).toBe(502);
+    expect(body).toContain("No pudimos enviar el formulario.");
+    expect(setCookie).not.toContain(`${getCheckpointCookieName(routeKey)}=`);
+    expect(setCookie).not.toContain("Max-Age=0");
+    expect(loggedPayloads).toEqual([]);
+    expect(deliveryAttempts).toBe(4);
+    expect(delays).toEqual([2000, 2000, 2000]);
+  });
+
   it("accepts native TrustedForm form submissions and redirects to a one-time post-submit page", async () => {
     const logs: unknown[] = [];
-    const handler = createFetchHandler({ logger: (payload) => logs.push(payload) });
+    const deliveryRequests: RecordedDeliveryRequest[] = [];
+    const handler = createFetchHandler({
+      logger: (payload) => logs.push(payload),
+      delivery: {
+        fetch: createSuccessfulDeliveryFetch(deliveryRequests),
+        delay: immediateDeliveryDelay,
+      },
+    });
     const body = new URLSearchParams();
     Object.entries(validAnswers).forEach(([key, value]) => {
       if (key === "trustedform_consent") {
@@ -5153,6 +5352,16 @@ describe("server routing", () => {
     const postSubmitCookie = getPostSubmitCookie(setCookie);
 
     expect(response.status).toBe(303);
+    expect(deliveryRequests).toHaveLength(1);
+    expect(deliveryRequests[0]?.url).toBe(getRequiredTennesseeForm().payload.url);
+    const deliveredPayload = JSON.parse(String(deliveryRequests[0]?.init.body)) as Record<string, unknown>;
+    expect(deliveredPayload).toMatchObject({
+      source_channel: "facebook",
+      acquisition_channel: "paid",
+      platform: "meta",
+      trustedform_certificate_url: trustedFormCertUrl,
+    });
+    expect(deliveredPayload.consent).toEqual(expect.stringContaining("Al marcar esta casilla"));
     expect(response.headers.get("Location")).toBe("/tn/custom/gracias");
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(setCookie).toContain("Max-Age=0");
@@ -5178,7 +5387,7 @@ describe("server routing", () => {
     expect(html).toContain('class="area-pill">TN</span>');
     expect(html).toContain("Paso");
     expect(html).toContain('style="width: 100%"');
-    expect(html).toContain("Gracias.");
+    expect(html).toContain("¡Estamos ansiosos por ayudarte a ahorrar $$$!");
     expect(html).toContain("Recibimos su información. Un agente se pondrá en contacto con usted pronto.");
     expect(html).not.toContain('id="back-button"');
     expect(html).not.toContain('id="next-button"');
@@ -5202,7 +5411,7 @@ describe("server routing", () => {
         phone_number: "+16155551234",
       },
       delivery: {
-        url: "https://api.liderna.net/webleads/v2",
+        url: getRequiredTennesseeForm().payload.url,
         payload: {
           area: "TN",
           source_channel: "facebook",
@@ -5235,6 +5444,56 @@ describe("server routing", () => {
     };
     expect(loggedPayload.delivery?.payload?.id).toBe(loggedPayload.submissionId);
     expect(loggedPayload.delivery?.payload?.meta_conversion?.event_id).toBe(loggedPayload.submissionId);
+  });
+
+  it("renders a native submission error page when downstream delivery fails", async () => {
+    const logs: unknown[] = [];
+    const delays: number[] = [];
+    let deliveryAttempts = 0;
+    const handler = createFetchHandler({
+      logger: (payload) => logs.push(payload),
+      delivery: {
+        fetch: async () => {
+          deliveryAttempts += 1;
+          return new Response("", { status: 503 });
+        },
+        delay: (milliseconds) => {
+          delays.push(milliseconds);
+        },
+      },
+    });
+    const body = new URLSearchParams();
+    Object.entries(validAnswers).forEach(([key, value]) => {
+      if (key === "trustedform_consent") {
+        body.set("answers[trustedform_consent][accepted]", value);
+        body.set("answers[trustedform_consent][trustedform_certificate_url]", trustedFormCertUrl);
+        return;
+      }
+      body.set(`answers[${key}]`, value);
+    });
+    body.set("xxTrustedFormCertUrl", trustedFormCertUrl);
+
+    const response = await handler(
+      new Request("http://localhost/api/forms/tn_custom/native-submissions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: createCheckpointCookie(validAnswers),
+        },
+        body,
+      }),
+    );
+    const html = await response.text();
+    const setCookie = response.headers.get("Set-Cookie") ?? "";
+
+    expect(response.status).toBe(502);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(html).toContain("No pudimos enviar el formulario.");
+    expect(setCookie).not.toContain(`${getCheckpointCookieName(routeKey)}=`);
+    expect(setCookie).not.toContain("instant_forms_tn_custom_post_submit=");
+    expect(logs).toEqual([]);
+    expect(deliveryAttempts).toBe(4);
+    expect(delays).toEqual([2000, 2000, 2000]);
   });
 });
 
@@ -5866,9 +6125,9 @@ describe("form rendering", () => {
     expect(html).toContain("Priorizando atención en español");
     expect(html).toContain("Preparando opciones en Tennessee");
     expect(html).not.toContain("{{areaName}}");
-    expect(html).toContain("Encontramos agentes listos para cotizarle.");
-    expect(html).toContain("Descubra cuánto puede ahorrar.");
-    expect(html).toContain('"successLines":[{"text":"Encontramos agentes listos para cotizarle.","color":"brand-navy"}');
+    expect(html).toContain("¡Encontramos opciones para usted!");
+    expect(html).toContain("Descubra cuánto puede ahorrar...");
+    expect(html).toContain('"successLines":[{"text":"¡Encontramos opciones para usted!","color":"brand-navy"}');
     expect(html).toContain('registerBehaviorModule("interstitial"');
     expect(html).not.toContain('registerBehaviorModule("phone"');
     expect(html).not.toContain('registerBehaviorModule("trusted_form_consent"');
@@ -6081,7 +6340,7 @@ describe("form rendering", () => {
     );
     expect(html).toContain('"review":{"title":"Antes de cotizar"');
     expect(html).toContain("Ya tenemos posibles opciones para usted");
-    expect(html).toContain('"fields":[{"name":"review_belongs_to_state"');
+    expect(html).toContain('"fields":[{"name":"trusted_form_grantor_name"');
     expect(html).toContain('"consent":{"title":"Antes de cotizar"');
     expect(html).toContain('"substeps":{"consent":{"presentation":{"chrome":"hidden_on_mobile"}},"review":{"presentation":{"chrome":"hidden_on_mobile"}}}');
     expect(html).toContain('"disclosure":{"text":"Al marcar esta casilla y hacer clic en “Enviar”, yo, Ana Lopez');
@@ -6115,10 +6374,10 @@ describe("form rendering", () => {
     expect(html).toContain('data-trusted-form-field-bank');
     expect(html).toContain('name="trusted_form_grantor_name"');
     expect(html).toContain('name="trusted_form_grantor_phone"');
-    expect(html).toContain('name="review_belongs_to_state"');
+    expect(html).toContain('name="review_residence_state"');
     const fieldBankHtml = html.match(/<div class="trusted-form-field-bank"[\s\S]*?<\/div>/)?.[0] ?? "";
     expect(fieldBankHtml).not.toContain("data-tf-element-role");
-    expect(html).toContain('Vive en Tennessee');
+    expect(html).toContain("Estado");
     expect(html).toContain("Ya tenemos posibles opciones para usted");
     expect(html).toContain("Continuar");
     expect(html).toContain('data-tf-element-role="consent-language"');

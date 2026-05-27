@@ -2,13 +2,14 @@
 
 ## Purpose
 
-`src/platform/submissions/` owns final submission validation and payload construction.
+`src/platform/submissions/` owns final submission validation, payload construction, and downstream delivery.
 
 ## Belongs Here
 
 - Final all-answers validation against the visible step rules and `contract.answers`.
 - Normalized submission payload shape.
 - Typed delivery payload construction from each flow's downstream `payload.url`, Zod `contract.payload`, and `payload.mapping({ context, answers, submission, request, cookies, browser })`.
+- Blocking downstream delivery with bounded retries before a submission is treated as successful.
 - Top-level submission metadata such as TrustedForm certificate URLs, including authored requirements for consent steps.
 - Submission-specific exported types.
 
