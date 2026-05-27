@@ -38,6 +38,7 @@ export type RenderFormPageOptions = {
     trackingEvents: readonly TrackingEventPayload[];
     stepCountLabel: string;
   };
+  initialTrackingEvents?: readonly TrackingEventPayload[];
 };
 
 export type UnavailablePageContent = {
@@ -96,6 +97,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
     {
       routeKey,
       transitionAssetUrl: options.transitionAssetUrl,
+      initialTrackingEvents: options.initialTrackingEvents,
     },
   );
   const formConfigExpression = options.formConfigExpression ?? serializeForScript(clientConfig);

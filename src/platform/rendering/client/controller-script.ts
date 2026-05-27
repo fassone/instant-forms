@@ -1575,7 +1575,7 @@ function getCoreRuntimeScript(): string {
 
   function isServerTrackedEvent(eventKind, question) {
     const eventConfig = getTrackingEventConfig(eventKind, question);
-    return Boolean(eventConfig?.meta);
+    return Boolean(eventConfig?.meta || eventConfig?.server);
   }
 
   function getTrackingEventKey(eventPayload) {

@@ -36,15 +36,38 @@ export type ClientTrackingEventConfig = {
   name: string;
   includeContext?: readonly string[];
   includeStep: boolean;
+  server?: boolean;
   meta?: {
     pixelId: string;
     eventName: string;
   };
 };
 
+export type TrackingMetaPayload = {
+  pixel_id: string;
+  event_name: string;
+  event_id: string;
+  action_source: "website";
+  event_source_url?: string;
+  user_data: Record<string, string>;
+  custom_data: Record<string, string | number | boolean>;
+  test_event_code?: string;
+  fbp?: string;
+  fbc?: string;
+  fbclid?: string;
+  [key: string]: unknown;
+};
+
 export type TrackingEventPayload = {
   event: string;
+  id?: string;
+  meta?: TrackingMetaPayload;
   [key: string]: unknown;
+};
+
+export type LifecycleTrackingEvent = {
+  config: TrackingEventConfig;
+  payload: TrackingEventPayload & { id: string };
 };
 
 export type MetaBrowserIds = {
@@ -143,22 +166,47 @@ export function createLifecycleTrackingPayload(input: {
   eventId?: string;
   eventSourceUrl?: string;
   requireMeta?: boolean;
+  requireServerBuilt?: boolean;
 }): TrackingEventPayload | undefined {
+  return createLifecycleTrackingEvent(input)?.payload;
+}
+
+export function createLifecycleTrackingEvent(input: {
+  form: InstantForm;
+  routeKey: string;
+  kind: TrackingEventKind;
+  step?: FormStep;
+  stepIndex?: number;
+  extra?: Record<string, unknown>;
+  answers?: Record<string, string | undefined>;
+  submission?: SubmissionPayload;
+  browserIds?: MetaBrowserIds;
+  eventId?: string;
+  eventSourceUrl?: string;
+  requireMeta?: boolean;
+  requireServerBuilt?: boolean;
+}): LifecycleTrackingEvent | undefined {
   const eventConfig = getTrackingEventConfig(input.form, input.kind, input.step);
   if (!eventConfig || (input.requireMeta && !eventConfig.meta)) {
     return undefined;
   }
+  if (input.requireServerBuilt && !isServerBuiltTrackingEventConfig(eventConfig)) {
+    return undefined;
+  }
 
-  return buildTrackingPayload(input.form, input.routeKey, eventConfig, {
-    step: input.step,
-    stepIndex: input.stepIndex,
-    extra: input.extra,
-    answers: input.answers,
-    submission: input.submission,
-    browserIds: input.browserIds,
-    eventId: input.eventId,
-    eventSourceUrl: input.eventSourceUrl,
-  });
+  return {
+    config: eventConfig,
+    payload: buildTrackingPayload(input.form, input.routeKey, eventConfig, {
+      step: input.step,
+      stepIndex: input.stepIndex,
+      extra: input.extra,
+      answers: input.answers,
+      submission: input.submission,
+      browserIds: input.browserIds,
+      eventId: input.eventId,
+      eventSourceUrl: input.eventSourceUrl,
+    }),
+  };
 }
 
 export function createLifecycleTrackingPayloads(
@@ -191,6 +239,10 @@ function getTrackingEventConfig(
   return globalEvent;
 }
 
+function isServerBuiltTrackingEventConfig(eventConfig: TrackingEventConfig): boolean {
+  return Boolean(eventConfig.meta || eventConfig.server);
+}
+
 function buildTrackingPayload(
   form: InstantForm,
   routeKey: string,
@@ -205,29 +257,32 @@ function buildTrackingPayload(
     eventId?: string;
     eventSourceUrl?: string;
   },
-): TrackingEventPayload {
+): TrackingEventPayload & { id: string } {
+  const eventId = options.eventId ?? options.submission?.submissionId ?? crypto.randomUUID();
+  const metaPayload = eventConfig.meta
+    ? createMetaPayload(form, eventConfig, {
+        step: options.step,
+        stepIndex: options.stepIndex,
+        answers: options.answers,
+        submission: options.submission,
+        browserIds: options.browserIds,
+        eventId,
+        eventSourceUrl: options.eventSourceUrl,
+        extra: options.extra,
+      })
+    : undefined;
+  const resolvedEventId = metaPayload?.event_id ?? eventId;
+
   return {
     event: eventConfig.name,
+    id: resolvedEventId,
     route_key: routeKey,
     form_name: form.name,
     page_name: form.page.name,
     ...getIncludedContextPayload(form, eventConfig.includeContext),
     ...(eventConfig.includeStep ? getStepTrackingPayload(options.step, options.stepIndex) : {}),
     ...(options.extra ?? {}),
-    ...(eventConfig.meta
-      ? {
-          meta: createMetaPayload(form, eventConfig, {
-            step: options.step,
-            stepIndex: options.stepIndex,
-            answers: options.answers,
-            submission: options.submission,
-            browserIds: options.browserIds,
-            eventId: options.eventId,
-            eventSourceUrl: options.eventSourceUrl,
-            extra: options.extra,
-          }),
-        }
-      : {}),
+    ...(metaPayload ? { meta: metaPayload } : {}),
   };
 }
 
@@ -278,7 +333,7 @@ function createMetaPayload(
     eventSourceUrl?: string;
     extra?: Record<string, unknown>;
   },
-): Record<string, unknown> | undefined {
+): TrackingMetaPayload | undefined {
   const meta = eventConfig.meta;
   if (!meta) {
     return undefined;

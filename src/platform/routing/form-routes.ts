@@ -1,4 +1,5 @@
 import type { Context, Hono } from "hono";
+import { getCookie } from "hono/cookie";
 
 import {
   createAttributionCookieCollector,
@@ -27,7 +28,10 @@ import {
   renderFormPage,
   renderUnavailablePage,
   type UnavailablePageContent,
+  createLifecycleTrackingEvent,
+  type LifecycleTrackingEvent,
 } from "../rendering";
+import { scheduleTrackingServerCallback } from "../app/tracking/server-effects";
 
 const RESERVED_PREVIEW_FOLDER = "__preview";
 const FORM_ROUTE_FOLDER_PATTERN = /^[a-z0-9][a-z0-9-]*$/u;
@@ -250,6 +254,14 @@ function registerPublicFormFolder(app: Hono, routeSegments: readonly string[], f
     }
 
     const requestedStep = getStepAt(form, stepIndex);
+    const initialTrackingEvents = createInitialRouteTrackingEvents(
+      c,
+      form,
+      routeKey,
+      requestedStep,
+      stepIndex,
+      answers,
+    );
 
     if (requestedStep.kind === "interstitial" && answers[requestedStep.key] === requestedStep.seenAnswer) {
       const nextStep = getStepAt(form, getNextStepIndex(form, stepIndex, answers));
@@ -262,6 +274,7 @@ function registerPublicFormFolder(app: Hono, routeSegments: readonly string[], f
       answers,
       routeKey,
       stepUrlOverrides: createStepUrlOverrides(routeSegments, form),
+      initialTrackingEvents: initialTrackingEvents.map((event) => event.payload),
     };
     const prebuiltHtml = await readPrebuiltFormPage(form, {
       ...renderOptions,
@@ -351,6 +364,60 @@ function registerPreviewFormFolder(app: Hono, routeSegments: readonly string[], 
   });
 
   app.get(`${previewFolderRoot}/*`, () => renderUnavailableResponse(getPreviewUnavailableAction(routeSegments)));
+}
+
+function createInitialRouteTrackingEvents(
+  c: Context,
+  form: InstantForm,
+  routeKey: string,
+  step: FormStep,
+  stepIndex: number,
+  answers: Record<string, string>,
+): LifecycleTrackingEvent[] {
+  if (step.kind !== "trusted_form_consent") {
+    return [];
+  }
+
+  const lifecycleEvent = createLifecycleTrackingEvent({
+    form,
+    routeKey,
+    kind: "trustedFormSubstepView",
+    step,
+    stepIndex,
+    extra: { trusted_form_substep: "review" },
+    answers,
+    browserIds: getRouteMetaBrowserIds(c),
+    eventId: crypto.randomUUID(),
+    eventSourceUrl: c.req.raw.url,
+    requireServerBuilt: true,
+  });
+
+  scheduleTrackingServerCallback(c, form, routeKey, lifecycleEvent, {
+    answers,
+    step,
+    stepIndex,
+  });
+
+  return lifecycleEvent ? [lifecycleEvent] : [];
+}
+
+function getRouteMetaBrowserIds(c: Context): {
+  fbp?: string;
+  fbc?: string;
+  fbclid?: string;
+  eventSourceUrl: string;
+} {
+  const url = new URL(c.req.raw.url);
+  const fbp = getCookie(c, "_fbp");
+  const fbc = getCookie(c, "_fbc");
+  const fbclid = url.searchParams.get("fbclid")?.trim() || undefined;
+
+  return {
+    eventSourceUrl: c.req.raw.url,
+    ...(fbp ? { fbp } : {}),
+    ...(fbc ? { fbc } : {}),
+    ...(fbclid ? { fbclid } : {}),
+  };
 }
 
 async function executeRouteAction(

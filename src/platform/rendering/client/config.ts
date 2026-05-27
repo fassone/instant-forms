@@ -136,6 +136,7 @@ export type ClientFormConfig = {
 export type ClientFormConfigOptions = {
   routeKey?: string;
   transitionAssetUrl?: string;
+  initialTrackingEvents?: readonly TrackingEventPayload[];
 };
 
 export function createClientFormConfig(
@@ -171,14 +172,16 @@ export function createClientFormConfig(
     initialAnswers,
   );
   const routeKey = options.routeKey ?? "preview";
-  const initialTrackingEvents = createClientInitialTrackingEvents(
-    form,
-    routeKey,
-    currentStepDefinition,
-    activeStepIndex,
-    initialAnswers,
-    previewMode,
-  );
+  const initialTrackingEvents =
+    options.initialTrackingEvents ??
+    createClientInitialTrackingEvents(
+      form,
+      routeKey,
+      currentStepDefinition,
+      activeStepIndex,
+      initialAnswers,
+      previewMode,
+    );
   return {
     routeKey,
     locale: form.locale,
@@ -380,6 +383,7 @@ function createClientTrackingConfig(
         name: eventConfig.name,
         includeContext: eventConfig.includeContext ?? [],
         includeStep: eventConfig.includeStep === true,
+        ...(eventConfig.server ? { server: true } : {}),
         ...(eventConfig.meta
           ? {
               meta: {
@@ -434,7 +438,7 @@ function createClientInitialTrackingEvents(
     extra: { trusted_form_substep: "review" },
     answers: initialAnswers,
     eventId: crypto.randomUUID(),
-    requireMeta: true,
+    requireServerBuilt: true,
   });
 
   return eventPayload ? [eventPayload] : [];

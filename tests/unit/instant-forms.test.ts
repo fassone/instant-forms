@@ -957,6 +957,88 @@ describe("form registry", () => {
     expect(JSON.stringify(payload)).not.toContain("Lopez");
   });
 
+  it("allows server callbacks only on server-built tracking event kinds", () => {
+    expect(() =>
+      defineFormFlow({
+        name: "Invalid Server Callback Event Test",
+        status: "ACTIVE",
+        ...testFlowCopy,
+        contract: {
+          context: z.object({}),
+          answers: z.object({ wants_quote: z.enum(["yes", "no"]) }),
+          payload: z.object({ wantsQuote: z.string() }),
+        },
+        context: {},
+        payload: {
+          method: "POST",
+          encoding: "json",
+          mapping: ({ answers }) => ({ wantsQuote: answers.wants_quote }),
+        },
+        page: { name: "Invalid Server Callback Event Test" },
+        tracking: ({ event }) => ({
+          googleTagManager: googleTagManager({ containerId: "GTM-ABC123" }),
+          events: [
+            event.stepView({
+              name: "step_view",
+              server: (() => undefined) as never,
+            }),
+          ],
+        }),
+        steps: [
+          step.choice({
+            key: "wants_quote",
+            slug: "quote",
+            label: "Do you want a quote?",
+            options: [
+              { key: "yes", label: "Yes" },
+              { key: "no", label: "No" },
+            ],
+          }),
+        ],
+      }),
+    ).toThrow("server is only supported on submitSuccess, stepAnswer, and trustedFormSubstepView events");
+
+    const flow = defineFormFlow({
+      name: "Valid Server Callback Event Test",
+      status: "ACTIVE",
+      ...testFlowCopy,
+      contract: {
+        context: z.object({}),
+        answers: z.object({ wants_quote: z.enum(["yes", "no"]) }),
+        payload: z.object({ wantsQuote: z.string() }),
+      },
+      context: {},
+      payload: {
+        method: "POST",
+        encoding: "json",
+        mapping: ({ answers }) => ({ wantsQuote: answers.wants_quote }),
+      },
+      page: { name: "Valid Server Callback Event Test" },
+      tracking: ({ event }) => ({
+        googleTagManager: googleTagManager({ containerId: "GTM-ABC123" }),
+        events: [
+          event.stepAnswer({
+            name: "step_answer",
+            server: () => undefined,
+          }),
+        ],
+      }),
+      steps: [
+        step.choice({
+          key: "wants_quote",
+          slug: "quote",
+          label: "Do you want a quote?",
+          options: [
+            { key: "yes", label: "Yes" },
+            { key: "no", label: "No" },
+          ],
+        }),
+      ],
+    });
+
+    expect(typeof flow.tracking?.events?.[0]?.server).toBe("function");
+  });
+
   it("returns partial Meta remarketing events from validated checkpoints", async () => {
     const flow = createMetaRemarketingTestFlow();
     const routes = defineFormRoutes({
@@ -1023,6 +1105,326 @@ describe("form registry", () => {
       },
     });
     expect(typeof trackingEvent?.meta?.event_id).toBe("string");
+  });
+
+  it("runs server callbacks for checkpoint tracking events without blocking the response", async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const flow = defineFormFlow({
+      name: "Server Callback Checkpoint Test",
+      status: "ACTIVE",
+      ...testFlowCopy,
+      contract: {
+        context: z.object({ areaCode: z.string() }),
+        answers: z.object({ wants_quote: z.enum(["yes", "no"]) }),
+        payload: z.object({ wantsQuote: z.string() }),
+      },
+      context: { areaCode: "TN" },
+      payload: {
+        method: "POST",
+        encoding: "json",
+        mapping: ({ answers }) => ({ wantsQuote: answers.wants_quote }),
+      },
+      page: { name: "Server Callback Checkpoint Test" },
+      tracking: ({ event }) => ({
+        googleTagManager: googleTagManager({ containerId: "GTM-ABC123" }),
+        events: [
+          event.stepAnswer({
+            name: "server_step_answer",
+            includeStep: true,
+            meta: {
+              pixelId: "1234567890",
+              eventName: "LeadProgress",
+              eventId: ({ event }) => event.id,
+            },
+            server: ({ event, context, answers, cookies, request, step }) => {
+              calls.push({
+                eventId: event.id,
+                metaEventId: event.meta?.event_id,
+                areaCode: context.areaCode,
+                answer: answers.wants_quote,
+                fbc: cookies.get("_fbc"),
+                url: request.url,
+                ip: request.ip,
+                userAgent: request.userAgent,
+                stepKey: step?.key,
+              });
+              throw new Error("server callback failed");
+            },
+          }),
+        ],
+      }),
+      steps: [
+        step.choice({
+          key: "wants_quote",
+          slug: "quote",
+          label: "Do you want a quote?",
+          options: [
+            { key: "yes", label: "Yes" },
+            { key: "no", label: "No" },
+          ],
+        }),
+      ],
+    });
+    const routes = defineFormRoutes({
+      index: redirectTo("/callback"),
+      folders: { callback: flow },
+      notFound: unavailable(unavailableContent),
+    });
+    const app = new Hono();
+    registerFormRoutes(app, routes, () => undefined);
+
+    const warnings: unknown[][] = [];
+    const originalWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args);
+    };
+    let response: Response;
+    try {
+      response = await app.fetch(
+        new Request("http://localhost/api/forms/callback/checkpoints", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Cookie: "_fbc=fb.1.123.CLICK",
+            "CF-Connecting-IP": "203.0.113.10",
+            "User-Agent": "Callback Test Browser",
+          },
+          body: JSON.stringify({
+            questionKey: "wants_quote",
+            answer: "yes",
+          }),
+        }),
+      );
+      await Promise.resolve();
+    } finally {
+      console.warn = originalWarn;
+    }
+    const body = await response.json();
+    const trackingEvent = (body as { trackingEvents?: Array<{ id?: string }> }).trackingEvents?.[0];
+
+    expect(response.status).toBe(200);
+    expect(trackingEvent).toMatchObject({
+      event: "server_step_answer",
+      id: expect.any(String),
+      step_key: "wants_quote",
+      answer_key: "wants_quote",
+      meta: {
+        event_id: trackingEvent?.id,
+        event_name: "LeadProgress",
+      },
+    });
+    expect(calls).toEqual([
+      {
+        eventId: trackingEvent?.id,
+        metaEventId: trackingEvent?.id,
+        areaCode: "TN",
+        answer: "yes",
+        fbc: "fb.1.123.CLICK",
+        url: "http://localhost/api/forms/callback/checkpoints",
+        ip: "203.0.113.10",
+        userAgent: "Callback Test Browser",
+        stepKey: "wants_quote",
+      },
+    ]);
+    expect(warnings[0]?.[0]).toBe("[instant-forms] tracking server callback failed");
+    expect(warnings[0]?.[1]).toMatchObject({
+      routeKey: "callback",
+      event: "server_step_answer",
+      eventId: trackingEvent?.id,
+      message: "server callback failed",
+    });
+  });
+
+  it("runs server callbacks for TrustedForm substep tracking events", async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const flow = defineFormFlow({
+      name: "Server Callback TrustedForm Test",
+      status: "ACTIVE",
+      ...testFlowCopy,
+      contract: {
+        context: z.object({}),
+        answers: z.object({ wants_quote: z.enum(["yes", "no"]) }),
+        payload: z.object({ wantsQuote: z.string() }),
+      },
+      context: {},
+      payload: {
+        method: "POST",
+        encoding: "json",
+        mapping: ({ answers }) => ({ wantsQuote: answers.wants_quote }),
+      },
+      page: { name: "Server Callback TrustedForm Test" },
+      tracking: ({ event }) => ({
+        googleTagManager: googleTagManager({ containerId: "GTM-ABC123" }),
+        events: [
+          event.trustedFormSubstepView({
+            name: "server_trusted_form_substep",
+            includeStep: true,
+            server: ({ event, answers, step }) => {
+              calls.push({
+                eventId: event.id,
+                answer: answers.wants_quote,
+                substep: event.trusted_form_substep,
+                stepKey: step?.key,
+              });
+            },
+          }),
+        ],
+      }),
+      steps: [
+        step.choice({
+          key: "wants_quote",
+          slug: "quote",
+          label: "Do you want a quote?",
+          options: [
+            { key: "yes", label: "Yes" },
+            { key: "no", label: "No" },
+          ],
+        }),
+        step.trustedFormConsent({
+          key: "trustedform_consent",
+          slug: "consent",
+          review: {
+            title: text("Review"),
+            fields: [
+              {
+                name: "review_quote",
+                label: "Quote",
+                value: text("Yes"),
+              },
+            ],
+          },
+          consent: {
+            title: text("Consent"),
+            disclosure: consentMd("Consent language."),
+          },
+          trustedForm: trustedFormCertify({ allowSubmitWithoutCert: true }),
+        }),
+      ],
+    });
+    const routes = defineFormRoutes({
+      index: redirectTo("/callback"),
+      folders: { callback: flow },
+      notFound: unavailable(unavailableContent),
+    });
+    const app = new Hono();
+    registerFormRoutes(app, routes, () => undefined);
+
+    const response = await app.fetch(
+      new Request("http://localhost/api/forms/callback/tracking-events", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `${getCheckpointCookieName("callback")}=${encodeCheckpointAnswers({ wants_quote: "yes" })}`,
+        },
+        body: JSON.stringify({
+          eventKind: "trustedFormSubstepView",
+          stepKey: "trustedform_consent",
+          trustedFormSubstep: "consent",
+          answers: {},
+        }),
+      }),
+    );
+    const body = await response.json();
+    const trackingEvent = (body as { trackingEvents?: Array<{ id?: string }> }).trackingEvents?.[0];
+
+    expect(response.status).toBe(200);
+    expect(trackingEvent).toMatchObject({
+      event: "server_trusted_form_substep",
+      id: expect.any(String),
+      trusted_form_substep: "consent",
+      step_key: "trustedform_consent",
+    });
+    expect(calls).toEqual([
+      {
+        eventId: trackingEvent?.id,
+        answer: "yes",
+        substep: "consent",
+        stepKey: "trustedform_consent",
+      },
+    ]);
+  });
+
+  it("runs native submit server callbacks with the same event ID stored for GTM", async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const flow = defineFormFlow({
+      name: "Server Callback Native Submit Test",
+      status: "ACTIVE",
+      ...testFlowCopy,
+      contract: {
+        context: z.object({}),
+        answers: z.object({ wants_quote: z.enum(["yes", "no"]) }),
+        payload: z.object({ wantsQuote: z.string() }),
+      },
+      context: {},
+      payload: {
+        method: "POST",
+        encoding: "json",
+        mapping: ({ answers }) => ({ wantsQuote: answers.wants_quote }),
+      },
+      page: { name: "Server Callback Native Submit Test" },
+      tracking: ({ event }) => ({
+        googleTagManager: googleTagManager({ containerId: "GTM-ABC123" }),
+        events: [
+          event.submitSuccess({
+            name: "server_submit_success",
+            server: ({ event, answers, submission }) => {
+              calls.push({
+                eventId: event.id,
+                answer: answers.wants_quote,
+                submissionId: submission?.id,
+              });
+            },
+          }),
+        ],
+      }),
+      steps: [
+        step.choice({
+          key: "wants_quote",
+          slug: "quote",
+          label: "Do you want a quote?",
+          options: [
+            { key: "yes", label: "Yes" },
+            { key: "no", label: "No" },
+          ],
+        }),
+      ],
+    });
+    const routes = defineFormRoutes({
+      index: redirectTo("/callback"),
+      folders: { callback: flow },
+      notFound: unavailable(unavailableContent),
+    });
+    const app = new Hono();
+    registerFormRoutes(app, routes, () => undefined);
+
+    const formBody = new URLSearchParams({ "answers[wants_quote]": "yes" });
+    const response = await app.fetch(
+      new Request("http://localhost/api/forms/callback/native-submissions", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: formBody,
+      }),
+    );
+    const setCookie = response.headers.get("set-cookie") ?? "";
+    const postSubmitCookie = /instant_forms_callback_post_submit=([^;,]+)/u.exec(setCookie)?.[1] ?? "";
+    const postSubmitState = JSON.parse(
+      Buffer.from(postSubmitCookie, "base64url").toString("utf8"),
+    ) as { trackingEvents?: Array<{ id?: string }> };
+    const trackingEvent = postSubmitState.trackingEvents?.[0];
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("/callback/thanks");
+    expect(trackingEvent).toMatchObject({
+      event: "server_submit_success",
+      id: expect.any(String),
+    });
+    expect(calls).toEqual([
+      {
+        eventId: trackingEvent?.id,
+        answer: "yes",
+        submissionId: trackingEvent?.id,
+      },
+    ]);
   });
 
   it("returns server-built Meta events for TrustedForm substep views", async () => {

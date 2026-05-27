@@ -25,6 +25,7 @@ import {
 } from "../../routing";
 import { validateSubmission, type SubmissionPayload } from "../../submissions/validation";
 import {
+  createLifecycleTrackingEvent,
   createLifecycleTrackingPayload,
   createResolvedStepPayload,
   renderGoogleTagManagerHead,
@@ -38,6 +39,7 @@ import {
   setPostSubmitState,
 } from "../http/cookies";
 import { htmlResponse, jsonResponse, redirectNoStore } from "../http/responses";
+import { scheduleTrackingServerCallback } from "../tracking/server-effects";
 
 export type SubmissionLogger = (payload: SubmissionPayload) => void;
 
@@ -119,9 +121,9 @@ export function registerFormRoutes(app: Hono, routes: FormRoutes, logger: Submis
           )
         : undefined;
     const trackingEvents = createCheckpointTrackingEvents(
+      c,
       form,
       routeEntry.routeKey,
-      c.req.raw,
       getFormRouteStepUrl(routeEntry.routeSegments, stepDefinition),
       stepDefinition,
       stepIndex,
@@ -251,9 +253,9 @@ export function registerFormRoutes(app: Hono, routes: FormRoutes, logger: Submis
 
     const trustedFormSubstep = body.value.trustedFormSubstep === "consent" ? "consent" : "review";
     const trackingEvents = createTrustedFormSubstepTrackingEvents(
+      c,
       routeEntry.form,
       routeEntry.routeKey,
-      c.req.raw,
       getFormRouteStepUrl(routeEntry.routeSegments, stepDefinition),
       stepDefinition,
       stepIndex,
@@ -293,9 +295,9 @@ export function registerFormRoutes(app: Hono, routes: FormRoutes, logger: Submis
     clearCheckpointAnswers(c, routeEntry.routeKey);
 
     const trackingEvents = createNativeSubmissionTrackingEvents(
+      c,
       routeEntry.form,
       routeEntry.routeKey,
-      c.req.raw,
       validation.payload,
       getJsonMetaBrowserIds(body.value),
     );
@@ -350,9 +352,9 @@ export function registerFormRoutes(app: Hono, routes: FormRoutes, logger: Submis
     logger(validation.payload);
     clearCheckpointAnswers(c, routeEntry.routeKey);
     const trackingEvents = createNativeSubmissionTrackingEvents(
+      c,
       routeEntry.form,
       routeEntry.routeKey,
-      c.req.raw,
       validation.payload,
       createNativeSubmissionMetaBrowserIds(c, formDataResult.value),
     );
@@ -430,14 +432,14 @@ function getNativeTrustedFormCertUrl(form: InstantForm, formData: NativeFormData
 }
 
 function createNativeSubmissionTrackingEvents(
+  c: Context,
   form: InstantForm,
   routeKey: string,
-  request: Pick<Request, "url">,
   payload: SubmissionPayload,
   browserIds: MetaBrowserIds = {},
 ) {
-  const eventSourceUrl = getRequestPageUrl(request.url);
-  const eventPayload = createLifecycleTrackingPayload({
+  const eventSourceUrl = getRequestPageUrl(c.req.raw.url);
+  const lifecycleEvent = createLifecycleTrackingEvent({
     form,
     routeKey,
     kind: "submitSuccess",
@@ -445,22 +447,26 @@ function createNativeSubmissionTrackingEvents(
     browserIds,
     eventSourceUrl: browserIds.eventSourceUrl ?? eventSourceUrl,
   });
+  scheduleTrackingServerCallback(c, form, routeKey, lifecycleEvent, {
+    answers: payload.answers,
+    submission: payload,
+  });
 
-  return eventPayload ? [eventPayload] : [];
+  return lifecycleEvent ? [lifecycleEvent.payload] : [];
 }
 
 function createCheckpointTrackingEvents(
+  c: Context,
   form: InstantForm,
   routeKey: string,
-  request: Pick<Request, "url">,
   stepUrl: string,
   step: FormStep,
   stepIndex: number,
   answers: Record<string, string>,
   browserIds: MetaBrowserIds = {},
 ) {
-  const eventSourceUrl = browserIds.eventSourceUrl ?? getRequestAbsoluteUrl(request.url, stepUrl);
-  const eventPayload = createLifecycleTrackingPayload({
+  const eventSourceUrl = browserIds.eventSourceUrl ?? getRequestAbsoluteUrl(c.req.raw.url, stepUrl);
+  const lifecycleEvent = createLifecycleTrackingEvent({
     form,
     routeKey,
     kind: "stepAnswer",
@@ -471,16 +477,21 @@ function createCheckpointTrackingEvents(
     browserIds,
     eventId: crypto.randomUUID(),
     eventSourceUrl,
-    requireMeta: true,
+    requireServerBuilt: true,
+  });
+  scheduleTrackingServerCallback(c, form, routeKey, lifecycleEvent, {
+    answers,
+    step,
+    stepIndex: stepIndex === -1 ? undefined : stepIndex,
   });
 
-  return eventPayload ? [eventPayload] : [];
+  return lifecycleEvent ? [lifecycleEvent.payload] : [];
 }
 
 function createTrustedFormSubstepTrackingEvents(
+  c: Context,
   form: InstantForm,
   routeKey: string,
-  request: Pick<Request, "url">,
   stepUrl: string,
   step: FormStep,
   stepIndex: number,
@@ -488,8 +499,8 @@ function createTrustedFormSubstepTrackingEvents(
   answers: Record<string, string>,
   browserIds: MetaBrowserIds = {},
 ) {
-  const eventSourceUrl = browserIds.eventSourceUrl ?? getRequestAbsoluteUrl(request.url, stepUrl);
-  const eventPayload = createLifecycleTrackingPayload({
+  const eventSourceUrl = browserIds.eventSourceUrl ?? getRequestAbsoluteUrl(c.req.raw.url, stepUrl);
+  const lifecycleEvent = createLifecycleTrackingEvent({
     form,
     routeKey,
     kind: "trustedFormSubstepView",
@@ -500,10 +511,15 @@ function createTrustedFormSubstepTrackingEvents(
     browserIds,
     eventId: crypto.randomUUID(),
     eventSourceUrl,
-    requireMeta: true,
+    requireServerBuilt: true,
+  });
+  scheduleTrackingServerCallback(c, form, routeKey, lifecycleEvent, {
+    answers,
+    step,
+    stepIndex: stepIndex === -1 ? undefined : stepIndex,
   });
 
-  return eventPayload ? [eventPayload] : [];
+  return lifecycleEvent ? [lifecycleEvent.payload] : [];
 }
 
 function getJsonMetaBrowserIds(input: unknown): MetaBrowserIds {

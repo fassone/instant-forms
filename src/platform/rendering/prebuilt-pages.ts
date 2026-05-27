@@ -129,6 +129,7 @@ function createRequestFormConfig(
   return createClientFormConfig(form, activeStepIndex, answers, options.previewMode ?? false, getClientStepUrl, {
     routeKey: options.routeKey,
     transitionAssetUrl: options.transitionAssetUrl,
+    initialTrackingEvents: options.initialTrackingEvents,
   });
 }
 

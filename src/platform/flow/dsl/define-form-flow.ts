@@ -358,6 +358,17 @@ function assertTrackingContract(contract: FormContract, tracking: FormTracking |
         `tracking.events.${eventConfig.kind}.meta is only supported on submitSuccess, stepAnswer, and trustedFormSubstepView events.`,
       );
     }
+
+    if (
+      eventConfig.server &&
+      eventConfig.kind !== "submitSuccess" &&
+      eventConfig.kind !== "stepAnswer" &&
+      eventConfig.kind !== "trustedFormSubstepView"
+    ) {
+      throw new Error(
+        `tracking.events.${eventConfig.kind}.server is only supported on submitSuccess, stepAnswer, and trustedFormSubstepView events.`,
+      );
+    }
   }
 }
 

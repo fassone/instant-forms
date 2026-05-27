@@ -106,6 +106,7 @@ export type TrackingEventKind =
   | "submitSuccess"
   | "submitError";
 
+export type ServerTrackingEventKind = "stepAnswer" | "trustedFormSubstepView" | "submitSuccess";
 export type MetaPixelId = string;
 export type MetaUserDataKey = "ph" | "em" | "fn" | "ln" | "ct" | "st" | "zp" | "country" | "external_id";
 
@@ -124,6 +125,49 @@ export type TrackingRuntimeStepContext = {
   slug: string;
   kind: string;
   index?: number;
+};
+
+export type TrackingServerMetaPayload = {
+  pixel_id: string;
+  event_name: string;
+  event_id: string;
+  action_source: string;
+  event_source_url?: string;
+  user_data: Record<string, string>;
+  custom_data: Record<string, string | number | boolean>;
+  test_event_code?: string;
+  fbp?: string;
+  fbc?: string;
+  fbclid?: string;
+  [key: string]: unknown;
+};
+
+export type TrackingServerEventPayload = {
+  event: string;
+  id: string;
+  meta?: TrackingServerMetaPayload;
+  [key: string]: unknown;
+};
+
+export type TrackingServerCookieHelpers = {
+  get: (name: string) => string | undefined;
+};
+
+export type TrackingServerRequest = {
+  url: string;
+  ip?: string;
+  userAgent?: string;
+  headers: Headers;
+};
+
+export type TrackingServerEventInput<TContract extends FormContract = FormContract> = {
+  event: TrackingServerEventPayload;
+  context: ContractContext<TContract>;
+  answers: ContractAnswers<TContract>;
+  cookies: TrackingServerCookieHelpers;
+  request: TrackingServerRequest;
+  submission?: TrackingSubmissionContext;
+  step?: TrackingRuntimeStepContext;
 };
 
 export type TrackingMetaMapping<TContract extends FormContract = FormContract> = {
@@ -153,6 +197,17 @@ export type TrackingMetaMapping<TContract extends FormContract = FormContract> =
   }) => Record<string, string | number | boolean | undefined>;
 };
 
+type TrackingServerCallbackConfig<
+  TKind extends TrackingEventKind,
+  TContract extends FormContract,
+> = TKind extends ServerTrackingEventKind
+  ? {
+      server?: (input: TrackingServerEventInput<TContract>) => void | Promise<void>;
+    }
+  : {
+      server?: never;
+    };
+
 export type TrackingEventConfig<
   TKind extends TrackingEventKind = TrackingEventKind,
   TContextKey extends string = string,
@@ -163,7 +218,7 @@ export type TrackingEventConfig<
   includeContext?: readonly TContextKey[];
   includeStep?: boolean;
   meta?: TrackingMetaMapping<TContract>;
-};
+} & TrackingServerCallbackConfig<TKind, TContract>;
 
 export type TrackingEventInput<
   TKind extends TrackingEventKind,

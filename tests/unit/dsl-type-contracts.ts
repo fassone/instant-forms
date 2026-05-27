@@ -293,6 +293,88 @@ void defineFormFlow({
 });
 
 void defineFormFlow({
+  name: "Tracking Server Callback Type Fixture",
+  status: "ACTIVE",
+  ...testFlowCopy,
+  contract: {
+    context: z.object({ areaCode: z.string() }),
+    answers: z.object({ first_name: z.string() }),
+    payload: z.object({ firstName: z.string() }),
+  },
+  context: { areaCode: "TN" },
+  payload: {
+    method: "POST",
+    encoding: "json",
+    mapping: ({ answers }) => ({ firstName: answers.first_name }),
+  },
+  page: { name: "Page" },
+  tracking: ({ event }) => ({
+    googleTagManager: googleTagManager({ containerId: "GTM-ABC123" }),
+    events: [
+      event.submitSuccess({
+        name: "submit_success",
+        server: ({ event, context, answers, cookies, request, submission }) => {
+          const eventId: string = event.id;
+          const metaEventId: string | undefined = event.meta?.event_id;
+          const areaCode: string = context.areaCode;
+          const firstName: string = answers.first_name;
+          const fbc: string | undefined = cookies.get("_fbc");
+          const url: string = request.url;
+          const userAgent: string | undefined = request.userAgent;
+          const submissionId: string | undefined = submission?.id;
+
+          void eventId;
+          void metaEventId;
+          void areaCode;
+          void firstName;
+          void fbc;
+          void url;
+          void userAgent;
+          void submissionId;
+        },
+      }),
+    ],
+  }),
+  steps: [
+    step.text({
+      key: "first_name",
+      slug: "first-name",
+      label: "First name",
+      autocomplete: "given-name",
+    }),
+  ],
+});
+
+void defineFormFlow({
+  name: "Invalid Tracking Server Callback Type Fixture",
+  status: "ACTIVE",
+  ...testFlowCopy,
+  contract: {
+    context: z.object({}),
+    answers: z.object({}),
+    payload: z.object({ ok: z.string() }),
+  },
+  context: {},
+  payload: {
+    method: "POST",
+    encoding: "json",
+    mapping: () => ({ ok: "yes" }),
+  },
+  page: { name: "Page" },
+  tracking: ({ event }) => ({
+    googleTagManager: googleTagManager({ containerId: "GTM-ABC123" }),
+    events: [
+      event.stepView({
+        name: "step_view",
+        // @ts-expect-error server callbacks are only allowed on server-built tracking events.
+        server: () => undefined,
+      }),
+    ],
+  }),
+  steps: [],
+});
+
+void defineFormFlow({
   name: "Old Thank You Type Fixture",
   status: "ACTIVE",
   locale: "en",

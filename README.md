@@ -142,6 +142,8 @@ Flows can opt into Google Tag Manager through the typed `googleTagManager(...)` 
 
 For Meta Pixel testing, set the optional `META_TEST_EVENT_CODE` environment variable before starting the server or building forms. Tennessee passes it through the template as `meta.test_event_code` on authored Meta payloads, so GTM can forward it to Meta Test Events. Leave it unset for normal production traffic.
 
+For Tennessee Meta Conversions API testing or production server-side delivery, set the optional `META_CONVERSIONS_ACCESS_TOKEN` environment variable before starting the server. When present, the Tennessee template attaches authored server callbacks to its Meta-enabled tracking events and sends the same event IDs used by GTM to Meta CAPI. Leave it unset to use only the browser/GTM path.
+
 Flows can also declare `attribution` capture hooks for request query parameters that must survive route guards. Tennessee preserves `fbclid` through server redirects until a form page can run the authored capture callback, whose `cookies` helper stores Meta's `_fbc` cookie as `fb.1.<timestamp>.<fbclid>` only when the click id is new or missing. After capture, the client may clean the visible step URL as usual.
 
 ## Selected Scripts

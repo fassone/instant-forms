@@ -24,11 +24,11 @@ export function createTrackingAuthoringHelpers<TContract extends FormContract>()
 
 function createEventBuilder<TKind extends TrackingEventKind>(kind: TKind) {
   return function buildTrackingEvent<TContract extends FormContract>(
-    input: TrackingEventInput<TKind, ContractSchemaKeys<TContract["context"]>, TContract>,
+  input: TrackingEventInput<TKind, ContractSchemaKeys<TContract["context"]>, TContract>,
   ): TrackingEventConfig<TKind, ContractSchemaKeys<TContract["context"]>, TContract> {
     return {
       kind,
       ...input,
-    };
+    } as TrackingEventConfig<TKind, ContractSchemaKeys<TContract["context"]>, TContract>;
   };
 }

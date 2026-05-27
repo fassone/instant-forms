@@ -10,4 +10,6 @@ export const tnFlow = esAutoInsuranceTemplate.create({
   gtmContainerId: "GTM-MVJNX5DZ",
   metaPixelId: "1465068051587670",
   metaTestEventCode: process.env.META_TEST_EVENT_CODE,
+  metaConversionsAccessToken:
+    process.env.NODE_ENV === "test" ? undefined : process.env.META_CONVERSIONS_ACCESS_TOKEN || undefined,
 });

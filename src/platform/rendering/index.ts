@@ -24,11 +24,13 @@ export { buildTransitionAsset, type TransitionAsset } from "./transition-bundle"
 export { createResolvedStepPayload, type ResolvedStepPayload } from "./resolved-step-payload";
 export {
   createBaseTrackingPayload,
+  createLifecycleTrackingEvent,
   createLifecycleTrackingPayload,
   createLifecycleTrackingPayloads,
   renderGoogleTagManagerHead,
   type ClientGoogleTagManagerConfig,
   type ClientTrackingConfig,
+  type LifecycleTrackingEvent,
   type TrackingEventPayload,
   type MetaBrowserIds,
 } from "./tracking";
