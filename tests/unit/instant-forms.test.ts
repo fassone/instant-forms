@@ -179,6 +179,26 @@ function immediateDeliveryDelay(): void {
   return undefined;
 }
 
+function createValidNativeSubmissionBody(options: { responseMode?: "iframe"; token?: string } = {}): URLSearchParams {
+  const body = new URLSearchParams();
+  Object.entries(validAnswers).forEach(([key, value]) => {
+    if (key === "trustedform_consent") {
+      body.set("answers[trustedform_consent][accepted]", value);
+      body.set("answers[trustedform_consent][trustedform_certificate_url]", trustedFormCertUrl);
+      return;
+    }
+    body.set(`answers[${key}]`, value);
+  });
+  body.set("xxTrustedFormCertUrl", trustedFormCertUrl);
+  if (options.responseMode) {
+    body.set("instant_form_response_mode", options.responseMode);
+  }
+  if (options.token) {
+    body.set("instant_form_submission_token", options.token);
+  }
+  return body;
+}
+
 function expectTrustedFormConsentAnswer(value: unknown, expectedCertUrl: string | null = trustedFormCertUrl): void {
   expect(value).toEqual({
     consent: expect.stringContaining("Al marcar esta casilla"),
@@ -3360,7 +3380,7 @@ describe("submission delivery", () => {
 
     expect(result).toEqual({ ok: true, attempts: 1, status: 204 });
     expect(requests).toHaveLength(1);
-    expect(requests[0]).toEqual({
+    expect(requests[0]).toMatchObject({
       url: "https://example.test/lead-submissions",
       init: {
         method: "POST",
@@ -3375,6 +3395,7 @@ describe("submission delivery", () => {
         }),
       },
     });
+    expect(requests[0]?.init.signal).toBeInstanceOf(AbortSignal);
   });
 
   it("sends form-urlencoded delivery payloads as URLSearchParams strings", async () => {
@@ -3393,7 +3414,7 @@ describe("submission delivery", () => {
     );
 
     expect(result).toEqual({ ok: true, attempts: 1, status: 204 });
-    expect(requests[0]).toEqual({
+    expect(requests[0]).toMatchObject({
       url: "https://example.test/lead-submissions",
       init: {
         method: "POST",
@@ -3403,6 +3424,7 @@ describe("submission delivery", () => {
         body: "firstName=Ana&product=auto+insurance",
       },
     });
+    expect(requests[0]?.init.signal).toBeInstanceOf(AbortSignal);
   });
 
   it("retries network errors and non-2xx responses before succeeding on the fourth attempt", async () => {
@@ -3422,7 +3444,13 @@ describe("submission delivery", () => {
           if (attempts === 1) {
             throw new Error("network down");
           }
-          return new Response("", { status: attempts === 4 ? 201 : 503 });
+          return new Response(
+            attempts === 4 ? JSON.stringify({ accepted: true }) : JSON.stringify({ error: "try again" }),
+            {
+              status: attempts === 4 ? 201 : 503,
+              headers: { "Content-Type": "application/json" },
+            },
+          );
         },
         delay: (milliseconds) => {
           delays.push(milliseconds);
@@ -3443,12 +3471,24 @@ describe("submission delivery", () => {
     expect(attempts).toBe(4);
     expect(delays).toEqual([2000, 2000, 2000]);
     expect(logRecords.map((record) => record.event)).toEqual([
+      "lead.delivery_attempt_started",
       "lead.delivery_attempt_failed",
+      "lead.delivery_attempt_started",
       "lead.delivery_attempt_failed",
+      "lead.delivery_attempt_started",
       "lead.delivery_attempt_failed",
+      "lead.delivery_attempt_started",
       "lead.delivery_attempt_succeeded",
       "lead.delivery_succeeded",
     ]);
+    expect(logRecords[0]).toMatchObject({
+      event: "lead.delivery_attempt_started",
+      data: {
+        attempt: 1,
+        maxAttempts: 4,
+        attemptTimeoutMs: 8000,
+      },
+    });
     expect(logRecords.at(-1)).toMatchObject({
       level: "info",
       event: "lead.delivery_succeeded",
@@ -3464,6 +3504,8 @@ describe("submission delivery", () => {
         delivery: {
           payload: { id: "lead-1" },
         },
+        responseBody: JSON.stringify({ accepted: true }),
+        responseContentType: "application/json",
       },
     });
   });
@@ -3482,7 +3524,10 @@ describe("submission delivery", () => {
       {
         fetch: async () => {
           attempts += 1;
-          return new Response("", { status: 500 });
+          return new Response(JSON.stringify({ error: "missing consent" }), {
+            status: 500,
+            headers: { "Content-Type": "application/json" },
+          });
         },
         delay: (milliseconds) => {
           delays.push(milliseconds);
@@ -3505,7 +3550,15 @@ describe("submission delivery", () => {
     });
     expect(attempts).toBe(4);
     expect(delays).toEqual([2000, 2000, 2000]);
+    expect(logRecords.filter((record) => record.event === "lead.delivery_attempt_started")).toHaveLength(4);
     expect(logRecords.filter((record) => record.event === "lead.delivery_attempt_failed")).toHaveLength(4);
+    expect(logRecords.find((record) => record.event === "lead.delivery_attempt_failed")).toMatchObject({
+      status: 500,
+      data: {
+        responseBody: JSON.stringify({ error: "missing consent" }),
+        responseContentType: "application/json",
+      },
+    });
     expect(logRecords.at(-1)).toMatchObject({
       level: "error",
       event: "lead.delivery_failed",
@@ -3523,8 +3576,109 @@ describe("submission delivery", () => {
           url: "https://example.test/lead-submissions",
           payload: { id: "lead-1" },
         },
+        responseBody: JSON.stringify({ error: "missing consent" }),
+        responseContentType: "application/json",
       },
     });
+  });
+
+  it("truncates long downstream response bodies in delivery logs", async () => {
+    const logRecords: InstantFormLogRecord[] = [];
+    const longResponseBody = "x".repeat(8193);
+    const result = await deliverPayload(
+      {
+        url: "https://example.test/lead-submissions",
+        method: "POST",
+        encoding: "json",
+        payload: { id: "lead-long-response" },
+      },
+      {
+        fetch: async () =>
+          new Response(longResponseBody, {
+            status: 422,
+            headers: { "Content-Type": "text/plain" },
+          }),
+        delay: immediateDeliveryDelay,
+        maxAttempts: 1,
+        logger: (record) => logRecords.push(record),
+      },
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      attempts: 1,
+      status: 422,
+      error: "Downstream delivery returned HTTP 422.",
+    });
+    expect(logRecords.at(-1)).toMatchObject({
+      level: "error",
+      event: "lead.delivery_failed",
+      critical: true,
+      data: {
+        responseBody: "x".repeat(8192),
+        responseBodyTruncated: true,
+        responseContentType: "text/plain",
+      },
+    });
+  });
+
+  it("times out hanging delivery attempts and logs the exhausted failure", async () => {
+    const delays: number[] = [];
+    const logRecords: InstantFormLogRecord[] = [];
+    let attempts = 0;
+    const result = await deliverPayload(
+      {
+        url: "https://example.test/lead-submissions",
+        method: "POST",
+        encoding: "json",
+        payload: { id: "lead-timeout" },
+      },
+      {
+        fetch: () => {
+          attempts += 1;
+          return new Promise<Response>(() => undefined);
+        },
+        delay: (milliseconds) => {
+          delays.push(milliseconds);
+        },
+        attemptTimeoutMs: 1,
+        logger: (record) => logRecords.push(record),
+        logContext: {
+          requestId: "req_delivery_timeout",
+          routeKey: "tn_custom",
+          submissionId: "lead-timeout",
+          data: { answers: { first_name: "Ana" } },
+        },
+      },
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      attempts: 4,
+      error: "Downstream delivery timed out after 1ms.",
+    });
+    expect(attempts).toBe(4);
+    expect(delays).toEqual([2000, 2000, 2000]);
+    expect(logRecords.filter((record) => record.event === "lead.delivery_attempt_started")).toHaveLength(4);
+    expect(logRecords.filter((record) => record.event === "lead.delivery_attempt_failed")).toHaveLength(4);
+    expect(logRecords.at(-1)).toMatchObject({
+      level: "error",
+      event: "lead.delivery_failed",
+      requestId: "req_delivery_timeout",
+      routeKey: "tn_custom",
+      submissionId: "lead-timeout",
+      critical: true,
+      data: {
+        answers: { first_name: "Ana" },
+        attempts: 4,
+        error: "Downstream delivery timed out after 1ms.",
+        delivery: {
+          url: "https://example.test/lead-submissions",
+          payload: { id: "lead-timeout" },
+        },
+      },
+    });
+    expect((logRecords.at(-1)?.data as Record<string, unknown> | undefined)?.responseBody).toBeUndefined();
   });
 });
 
@@ -5702,6 +5856,82 @@ describe("server routing", () => {
     }));
   });
 
+  it("returns an iframe bridge for successful native TrustedForm submissions", async () => {
+    const logs: unknown[] = [];
+    const deliveryRequests: RecordedDeliveryRequest[] = [];
+    const handler = createFetchHandler({
+      logger: (payload) => logs.push(payload),
+      delivery: {
+        fetch: createSuccessfulDeliveryFetch(deliveryRequests),
+        delay: immediateDeliveryDelay,
+      },
+    });
+    const body = createValidNativeSubmissionBody({
+      responseMode: "iframe",
+      token: "native-token-123",
+    });
+
+    const response = await handler(
+      new Request("http://localhost/api/forms/tn_custom/native-submissions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body,
+      }),
+    );
+    const html = await response.text();
+    const setCookie = response.headers.get("Set-Cookie") ?? "";
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(response.headers.get("X-Request-Id")).toBeTruthy();
+    expect(deliveryRequests).toHaveLength(1);
+    expect(setCookie).toContain("Max-Age=0");
+    expect(setCookie).toContain("instant_forms_tn_custom_post_submit=");
+    expect(html).toContain("instant_form_native_submission_result");
+    expect(html).toContain('"ok":true');
+    expect(html).toContain('"redirectUrl":"/tn/custom/gracias"');
+    expect(html).toContain('"token":"native-token-123"');
+    expect(html).not.toContain('data-form-view="post-submit"');
+    expect(logs).toHaveLength(1);
+  });
+
+  it("returns an iframe bridge for native validation failures", async () => {
+    let deliveryAttempts = 0;
+    const handler = createFetchHandler({
+      delivery: {
+        fetch: async () => {
+          deliveryAttempts += 1;
+          return new Response("", { status: 204 });
+        },
+        delay: immediateDeliveryDelay,
+      },
+    });
+    const body = new URLSearchParams();
+    body.set("instant_form_response_mode", "iframe");
+    body.set("instant_form_submission_token", "native-token-invalid");
+
+    const response = await handler(
+      new Request("http://localhost/api/forms/tn_custom/native-submissions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body,
+      }),
+    );
+    const html = await response.text();
+
+    expect(response.status).toBe(400);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(html).toContain("instant_form_native_submission_result");
+    expect(html).toContain('"ok":false');
+    expect(html).toContain('"token":"native-token-invalid"');
+    expect(html).toContain("Esta respuesta es requerida.");
+    expect(deliveryAttempts).toBe(0);
+  });
+
   it("renders a native submission error page when downstream delivery fails", async () => {
     const logs: unknown[] = [];
     const logRecords: InstantFormLogRecord[] = [];
@@ -5713,7 +5943,10 @@ describe("server routing", () => {
       delivery: {
         fetch: async () => {
           deliveryAttempts += 1;
-          return new Response("", { status: 503 });
+          return new Response(JSON.stringify({ error: "downstream unavailable" }), {
+            status: 503,
+            headers: { "Content-Type": "application/json" },
+          });
         },
         delay: (milliseconds) => {
           delays.push(milliseconds);
@@ -5757,6 +5990,10 @@ describe("server routing", () => {
       event: "lead.delivery_failed",
       routeKey,
       critical: true,
+      data: expect.objectContaining({
+        responseBody: JSON.stringify({ error: "downstream unavailable" }),
+        responseContentType: "application/json",
+      }),
     }));
     expect(logRecords).toContainEqual(expect.objectContaining({
       level: "error",
@@ -5767,6 +6004,133 @@ describe("server routing", () => {
       data: expect.objectContaining({
         mode: "native",
         reason: "delivery_failed",
+      }),
+    }));
+  });
+
+  it("returns an iframe bridge and keeps checkpoint state when iframe native delivery fails", async () => {
+    const logs: unknown[] = [];
+    const logRecords: InstantFormLogRecord[] = [];
+    const delays: number[] = [];
+    let deliveryAttempts = 0;
+    const handler = createFetchHandler({
+      logger: (payload) => logs.push(payload),
+      eventLogger: (record) => logRecords.push(record),
+      delivery: {
+        fetch: async () => {
+          deliveryAttempts += 1;
+          return new Response(JSON.stringify({ error: "downstream unavailable" }), {
+            status: 503,
+            headers: { "Content-Type": "application/json" },
+          });
+        },
+        delay: (milliseconds) => {
+          delays.push(milliseconds);
+        },
+      },
+    });
+    const body = createValidNativeSubmissionBody({
+      responseMode: "iframe",
+      token: "native-token-failure",
+    });
+
+    const response = await handler(
+      new Request("http://localhost/api/forms/tn_custom/native-submissions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: createCheckpointCookie(validAnswers),
+        },
+        body,
+      }),
+    );
+    const html = await response.text();
+    const setCookie = response.headers.get("Set-Cookie") ?? "";
+
+    expect(response.status).toBe(502);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(html).toContain("instant_form_native_submission_result");
+    expect(html).toContain('"ok":false');
+    expect(html).toContain('"token":"native-token-failure"');
+    expect(html).toContain("No pudimos enviar el formulario.");
+    expect(html).not.toContain("native-submission-error");
+    expect(setCookie).not.toContain(`${getCheckpointCookieName(routeKey)}=`);
+    expect(setCookie).not.toContain("instant_forms_tn_custom_post_submit=");
+    expect(logs).toEqual([]);
+    expect(deliveryAttempts).toBe(4);
+    expect(delays).toEqual([2000, 2000, 2000]);
+    expect(logRecords).toContainEqual(expect.objectContaining({
+      level: "error",
+      event: "submission.rejected",
+      routeKey,
+      status: 502,
+      critical: true,
+      data: expect.objectContaining({
+        mode: "native",
+        reason: "delivery_failed",
+      }),
+    }));
+  });
+
+  it("renders a native submission error page when downstream delivery hangs until timeout", async () => {
+    const logs: unknown[] = [];
+    const logRecords: InstantFormLogRecord[] = [];
+    const delays: number[] = [];
+    let deliveryAttempts = 0;
+    const handler = createFetchHandler({
+      logger: (payload) => logs.push(payload),
+      eventLogger: (record) => logRecords.push(record),
+      delivery: {
+        fetch: () => {
+          deliveryAttempts += 1;
+          return new Promise<Response>(() => undefined);
+        },
+        delay: (milliseconds) => {
+          delays.push(milliseconds);
+        },
+        attemptTimeoutMs: 1,
+      },
+    });
+    const body = new URLSearchParams();
+    Object.entries(validAnswers).forEach(([key, value]) => {
+      if (key === "trustedform_consent") {
+        body.set("answers[trustedform_consent][accepted]", value);
+        body.set("answers[trustedform_consent][trustedform_certificate_url]", trustedFormCertUrl);
+        return;
+      }
+      body.set(`answers[${key}]`, value);
+    });
+    body.set("xxTrustedFormCertUrl", trustedFormCertUrl);
+
+    const response = await handler(
+      new Request("http://localhost/api/forms/tn_custom/native-submissions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: createCheckpointCookie(validAnswers),
+        },
+        body,
+      }),
+    );
+    const html = await response.text();
+    const setCookie = response.headers.get("Set-Cookie") ?? "";
+
+    expect(response.status).toBe(502);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(html).toContain("No pudimos enviar el formulario.");
+    expect(setCookie).not.toContain(`${getCheckpointCookieName(routeKey)}=`);
+    expect(setCookie).not.toContain("instant_forms_tn_custom_post_submit=");
+    expect(logs).toEqual([]);
+    expect(deliveryAttempts).toBe(4);
+    expect(delays).toEqual([2000, 2000, 2000]);
+    expect(logRecords.filter((record) => record.event === "lead.delivery_attempt_started")).toHaveLength(4);
+    expect(logRecords).toContainEqual(expect.objectContaining({
+      level: "error",
+      event: "lead.delivery_failed",
+      routeKey,
+      critical: true,
+      data: expect.objectContaining({
+        error: "Downstream delivery timed out after 1ms.",
       }),
     }));
   });
@@ -6649,6 +7013,11 @@ describe("form rendering", () => {
     expect(html).toContain('<h1 class="question-title" data-question-title>Antes de cotizar</h1>');
     expect(html).not.toContain('<h1 class="question-title" data-question-title><p>Antes de cotizar</p></h1>');
     expect(html).toContain('method="post" action="/api/forms/tn_custom/native-submissions"');
+    expect(html).toContain('const nativeSubmitMessageType = "instant_form_native_submission_result"');
+    expect(html).toContain('const nativeSubmitResponseModeFieldName = "instant_form_response_mode"');
+    expect(html).toContain('const nativeSubmitTokenFieldName = "instant_form_submission_token"');
+    expect(html).toContain('ctx.form.target = iframe.name');
+    expect(html).toContain('window.addEventListener("message", handleNativeSubmitMessage)');
     expect(html).toContain('data-trusted-form-substep="review"');
     expect(html).toContain('data-trusted-form-review-scroll-shell');
     expect(html).toContain('data-can-scroll-up="false"');

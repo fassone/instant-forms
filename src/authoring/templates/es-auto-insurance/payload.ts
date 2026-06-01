@@ -16,7 +16,7 @@ export function createLidernaWebleadsPayloadMapping({
 
     return {
       id: submission.id,
-      area: context.areaCode,
+      area: answers.residence_state ?? context.areaCode,
       source_channel: attribution.sourceChannel,
       acquisition_channel: attribution.acquisitionChannel,
       ingress_channel: "website",
@@ -26,7 +26,7 @@ export function createLidernaWebleadsPayloadMapping({
       phone_number: answers.phone_number,
       created_time: submission.submittedAt,
       ...("platform" in attribution ? { platform: attribution.platform } : {}),
-      state_code: answers.belongs_to_state === "yes" ? context.areaCode : answers.residence_state,
+      state_code: answers.residence_state ?? context.areaCode,
       is_clean_title: answers.is_clean_title,
       has_license: answers.has_license,
       has_insurance: answers.has_insurance,

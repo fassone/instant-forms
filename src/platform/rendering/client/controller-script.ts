@@ -2491,6 +2491,10 @@ ${requestProxyRuntimeScript}
     const trustedFormReadyErrorMessage = window.__FORM_CONFIG__.ui.errors.trustedFormCertFailed;
     const trustedFormReviewLoadingReason = "trusted-form-review";
     const trustedFormSubmitLoadingReason = "trusted-form-submit";
+    const nativeSubmitMessageType = "instant_form_native_submission_result";
+    const nativeSubmitResponseModeFieldName = "instant_form_response_mode";
+    const nativeSubmitTokenFieldName = "instant_form_submission_token";
+    const nativeSubmitWatchdogMs = 45000;
     let trustedFormSdkLoaded = false;
     let trustedFormSdkLoadPromise;
     let trustedFormReadyPromise;
@@ -2499,6 +2503,8 @@ ${requestProxyRuntimeScript}
     let partytownLoaded = false;
     let activeSubstep = "review";
     let allowNativeSubmit = false;
+    let nativeSubmitState;
+    let nativeSubmitMessageListenerInstalled = false;
 
     function getAnswer(_ctx, question, step) {
       const checked = step.querySelector("[data-trusted-form-consent]:checked");
@@ -2544,6 +2550,8 @@ ${requestProxyRuntimeScript}
     }
 
     function unmount(ctx) {
+      clearNativeSubmitState();
+      resetNativeSubmissionTarget(ctx);
       ctx.form.removeAttribute("data-tf-element-role");
       ctx.form.noValidate = true;
       ctx.nextButton.removeAttribute("data-tf-element-role");
@@ -2737,7 +2745,13 @@ ${requestProxyRuntimeScript}
     }
 
     function submitNativeFormWithHiddenSubmitter(ctx, question, step, trustedFormCertUrl) {
-      syncNativeSubmissionFields(ctx, question, step, trustedFormCertUrl);
+      clearNativeSubmitState();
+      resetNativeSubmissionTarget(ctx);
+      installNativeSubmitMessageListener();
+      const token = createNativeSubmissionToken();
+      syncNativeSubmissionFields(ctx, question, step, trustedFormCertUrl, { responseMode: "iframe", token });
+      const iframe = getNativeSubmissionIframe(ctx);
+      ctx.form.target = iframe.name;
       const submitter = document.createElement("button");
       submitter.type = "submit";
       submitter.hidden = true;
@@ -2745,10 +2759,25 @@ ${requestProxyRuntimeScript}
       submitter.dataset.nativeSubmitter = "true";
       ctx.form.appendChild(submitter);
       allowNativeSubmit = true;
-      ctx.form.requestSubmit(submitter);
+      nativeSubmitState = {
+        ctx,
+        question,
+        token,
+        timeoutId: window.setTimeout(() => {
+          handleNativeSubmitFailure(ctx, question, ctx.config.ui.errors.submissionFailed);
+        }, nativeSubmitWatchdogMs),
+      };
+      try {
+        ctx.form.requestSubmit(submitter);
+      } catch {
+        clearNativeSubmitState();
+        resetNativeSubmissionTarget(ctx);
+        submitter.remove();
+        throw new Error(ctx.config.ui.errors.submissionFailed);
+      }
     }
 
-    function syncNativeSubmissionFields(ctx, question, step, trustedFormCertUrl) {
+    function syncNativeSubmissionFields(ctx, question, step, trustedFormCertUrl, options = {}) {
       const container = getNativeSubmissionFieldContainer(ctx.form);
       container.replaceChildren();
       const postedAnswers = {
@@ -2772,11 +2801,104 @@ ${requestProxyRuntimeScript}
           appendHiddenInput(container, "tracking[" + trackingKey + "]", trackingValue);
         }
       });
+      if (options.responseMode) {
+        appendHiddenInput(container, nativeSubmitResponseModeFieldName, options.responseMode);
+      }
+      if (options.token) {
+        appendHiddenInput(container, nativeSubmitTokenFieldName, options.token);
+      }
 
       const certField = step.querySelector('input[name="' + CSS.escape(question.trustedForm.fieldName) + '"]');
       if (certField instanceof HTMLInputElement && trustedFormCertUrl) {
         certField.value = trustedFormCertUrl;
       }
+    }
+
+    function installNativeSubmitMessageListener() {
+      if (nativeSubmitMessageListenerInstalled) {
+        return;
+      }
+      window.addEventListener("message", handleNativeSubmitMessage);
+      nativeSubmitMessageListenerInstalled = true;
+    }
+
+    function handleNativeSubmitMessage(event) {
+      if (event.origin !== window.location.origin) {
+        return;
+      }
+      const message = event.data;
+      if (!message || typeof message !== "object" || message.type !== nativeSubmitMessageType) {
+        return;
+      }
+      const state = nativeSubmitState;
+      if (!state || message.routeKey !== state.ctx.config.routeKey || message.token !== state.token) {
+        return;
+      }
+
+      if (message.ok === true && typeof message.redirectUrl === "string" && message.redirectUrl) {
+        clearNativeSubmitState();
+        resetNativeSubmissionTarget(state.ctx);
+        window.location.assign(message.redirectUrl);
+        return;
+      }
+
+      const messageText = typeof message.message === "string" && message.message.trim()
+        ? message.message.trim()
+        : state.ctx.config.ui.errors.submissionFailed;
+      handleNativeSubmitFailure(state.ctx, state.question, messageText);
+    }
+
+    function handleNativeSubmitFailure(ctx, question, message) {
+      clearNativeSubmitState();
+      resetNativeSubmissionTarget(ctx);
+      allowNativeSubmit = false;
+      ctx.setNextButtonLoading(trustedFormSubmitLoadingReason, false);
+      ctx.trackFormEvent("submitError", {
+        step_key: question.key,
+        step_slug: question.slug,
+        step_index: ctx.currentStep,
+        step_kind: question.kind,
+        step_url: question.url,
+        trusted_form_substep: activeSubstep,
+        error_message: message,
+      });
+      ctx.showErrorModal(message);
+    }
+
+    function clearNativeSubmitState() {
+      if (nativeSubmitState?.timeoutId) {
+        window.clearTimeout(nativeSubmitState.timeoutId);
+      }
+      nativeSubmitState = undefined;
+    }
+
+    function resetNativeSubmissionTarget(ctx) {
+      if (ctx.form.target === getNativeSubmissionIframeName(ctx)) {
+        ctx.form.removeAttribute("target");
+      }
+    }
+
+    function getNativeSubmissionIframe(ctx) {
+      const iframeName = getNativeSubmissionIframeName(ctx);
+      let iframe = document.querySelector('iframe[name="' + CSS.escape(iframeName) + '"]');
+      if (!(iframe instanceof HTMLIFrameElement)) {
+        iframe = document.createElement("iframe");
+        iframe.name = iframeName;
+        iframe.hidden = true;
+        iframe.tabIndex = -1;
+        iframe.dataset.nativeSubmissionFrame = "true";
+        iframe.style.display = "none";
+        document.body.appendChild(iframe);
+      }
+      return iframe;
+    }
+
+    function getNativeSubmissionIframeName(ctx) {
+      return "__instant_form_native_submission_" + String(ctx.config.routeKey || "form").replace(/[^a-zA-Z0-9_-]/g, "_");
+    }
+
+    function createNativeSubmissionToken() {
+      return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
     }
 
     function getNativeSubmissionFieldContainer(form) {
@@ -3045,7 +3167,6 @@ ${requestProxyRuntimeScript}
 
         if (allowNativeSubmit) {
           allowNativeSubmit = false;
-          syncNativeSubmissionFields(ctx, question, step, getTrustedFormCertUrl(question.trustedForm));
           return "allowDefault";
         }
 

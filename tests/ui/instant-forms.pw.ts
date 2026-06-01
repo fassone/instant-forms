@@ -644,6 +644,48 @@ test.describe("instant routed form UI", () => {
     await expect(submitButton).toBeEnabled();
   });
 
+  test("TrustedForm native delivery failure stays on consent page and can retry", async ({ page }) => {
+    await mockTrustedFormCertify(page);
+    await seedCheckpoint(page, {
+      ...seenMatchingAnswers,
+      first_name: "Ana",
+      last_name: "Lopez",
+      phone_number: "+16155551234",
+    });
+    let submissionRequests = 0;
+    await page.route("**/api/forms/tn_custom/native-submissions", async (route) => {
+      submissionRequests += 1;
+      const postData = route.request().postData() ?? "";
+      const fields = new URLSearchParams(postData);
+      expect(fields.get("instant_form_response_mode")).toBe("iframe");
+      await route.fulfill({
+        status: 502,
+        contentType: "text/html",
+        body: createNativeSubmissionIframeBridge({
+          ok: false,
+          routeKey,
+          message: "No pudimos enviar el formulario.",
+          token: fields.get("instant_form_submission_token") ?? "",
+        }),
+      });
+    });
+    await page.goto("/tn/custom/consentimiento");
+    await continueTrustedFormReview(page);
+    await activeStep(page).locator("[data-trusted-form-consent]").check();
+
+    await page.getByRole("button", { name: trustedFormSubmitLabel }).click();
+
+    await expect(page).toHaveURL(/\/tn\/custom\/consentimiento$/u);
+    await expect(page.getByRole("alertdialog")).toBeVisible();
+    await expect(page.getByText("No pudimos enviar el formulario.")).toBeVisible();
+    await expect(page.getByRole("button", { name: trustedFormSubmitLabel })).toBeEnabled();
+    expect(submissionRequests).toBe(1);
+
+    await page.getByRole("button", { name: "Entendido" }).click();
+    await page.getByRole("button", { name: trustedFormSubmitLabel }).click();
+    await expect.poll(() => submissionRequests).toBe(2);
+  });
+
   test("TrustedForm script does not execute before the consent step", async ({ page }) => {
     let partytownRequests = 0;
     let trustedFormProxyRequests = 0;
@@ -792,7 +834,7 @@ async function continueTrustedFormReview(page: Page): Promise<void> {
   await expect(activeStep(page).getByRole("heading", { name: trustedFormReviewTitle })).toBeVisible();
   await expect(activeStep(page).getByText(trustedFormReviewDescription)).toBeVisible();
   await expect(activeStep(page).locator("[data-trusted-form-review-scroll]")).toBeVisible();
-  await expect(activeStep(page).locator(".trusted-form-review-label", { hasText: "Vive en Tennessee" })).toBeVisible();
+  await expect(activeStep(page).locator(".trusted-form-review-label").first()).toBeVisible();
   await expect(activeStep(page).locator('[data-trusted-form-substep="consent"]')).toBeHidden();
   await page.getByRole("button", { name: "Continuar" }).click();
   await expect(activeStep(page).getByRole("heading", { name: trustedFormReviewTitle })).toBeVisible({ timeout: 7000 });
@@ -878,6 +920,21 @@ async function mockPartytownRuntime(page: Page, onRequest: () => void = () => un
       body: "",
     });
   });
+}
+
+function createNativeSubmissionIframeBridge(result: {
+  ok: boolean;
+  routeKey: string;
+  message?: string;
+  redirectUrl?: string;
+  token?: string;
+}): string {
+  const payload = JSON.stringify({
+    type: "instant_form_native_submission_result",
+    ...result,
+  }).replace(/</g, "\\u003c");
+
+  return `<!doctype html><html><body><script>window.parent.postMessage(${payload}, window.location.origin);</script></body></html>`;
 }
 
 function getMockTrustedFormScript(delayMs: number): string {

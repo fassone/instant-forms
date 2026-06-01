@@ -6,9 +6,11 @@ const lidernaAreaCodes = US_STATES.map((state) => state.code) as [
   ...(typeof US_STATES)[number]["code"][],
 ];
 
+export const lidernaAreaCodeSchema = z.enum(lidernaAreaCodes);
+
 export const autoInsuranceAnswersContract = z.object({
   belongs_to_state: z.enum(["yes", "no"]),
-  residence_state: z.string().optional(),
+  residence_state: lidernaAreaCodeSchema.optional(),
   has_license: z.enum(["yes", "no"]),
   has_insurance: z.enum(["yes", "no"]),
   is_clean_title: z.enum(["yes", "no"]),
@@ -22,7 +24,6 @@ export const autoInsuranceAnswersContract = z.object({
   }),
 });
 
-export const lidernaAreaCodeSchema = z.enum(lidernaAreaCodes);
 
 export const lidernaAcquisitionChannelSchema = z.enum(["paid", "organic"]);
 

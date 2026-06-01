@@ -1,5 +1,6 @@
 import type { Context, Hono } from "hono";
 import { getCookie } from "hono/cookie";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
 
 import {
   canAccessStep,
@@ -612,6 +613,7 @@ export function registerFormRoutes(
         "no-store",
       );
     }
+    const iframeResponseMode = isNativeIframeResponseMode(formDataResult.value);
 
     const checkpointAnswers = readCheckpointAnswers(c, routeEntry.form, routeEntry.routeKey);
     const postedAnswers = getNativeSubmissionAnswers(formDataResult.value);
@@ -634,6 +636,18 @@ export function registerFormRoutes(
         status: 400,
         data: { mode: "native", errors: validation.errors },
       });
+      if (iframeResponseMode) {
+        return nativeSubmissionIframeResponse(
+          c,
+          {
+            ok: false,
+            routeKey: routeEntry.routeKey,
+            message: validation.errors[0]?.message ?? routeEntry.form.ui.errors.submissionFailed,
+            token: getNativeSubmissionToken(formDataResult.value),
+          },
+          400,
+        );
+      }
       return htmlResponse(
         renderNativeSubmissionErrorPage(routeEntry.form, routeEntry.routeKey, validation.errors.map((error) => error.message)),
         400,
@@ -666,6 +680,18 @@ export function registerFormRoutes(
         critical: true,
         data: { mode: "native", reason: "delivery_failed", deliveryResult: delivery, payload: validation.payload },
       });
+      if (iframeResponseMode) {
+        return nativeSubmissionIframeResponse(
+          c,
+          {
+            ok: false,
+            routeKey: routeEntry.routeKey,
+            message: routeEntry.form.ui.errors.submissionFailed,
+            token: getNativeSubmissionToken(formDataResult.value),
+          },
+          502,
+        );
+      }
       return htmlResponse(
         renderNativeSubmissionErrorPage(routeEntry.form, routeEntry.routeKey, [routeEntry.form.ui.errors.submissionFailed]),
         502,
@@ -693,14 +719,28 @@ export function registerFormRoutes(
       routeKey: routeEntry.routeKey,
       form: routeEntry.form,
       submissionId: validation.payload.submissionId,
-      status: 303,
+      status: iframeResponseMode ? 200 : 303,
       data: {
         mode: "native",
+        responseMode: iframeResponseMode ? "iframe" : "document",
         payload: validation.payload,
         trackingEventCount: trackingEvents.length,
         postSubmitUrl: getFormRoutePostSubmitUrl(routeEntry.routeSegments, routeEntry.form),
       },
     });
+
+    if (iframeResponseMode) {
+      return nativeSubmissionIframeResponse(
+        c,
+        {
+          ok: true,
+          routeKey: routeEntry.routeKey,
+          redirectUrl: getFormRoutePostSubmitUrl(routeEntry.routeSegments, routeEntry.form),
+          token: getNativeSubmissionToken(formDataResult.value),
+        },
+        200,
+      );
+    }
 
     return redirectNoStore(c, getFormRoutePostSubmitUrl(routeEntry.routeSegments, routeEntry.form), 303);
   });
@@ -989,6 +1029,15 @@ function getNativeTrackingFields(formData: NativeFormData): Record<string, strin
   return values;
 }
 
+function isNativeIframeResponseMode(formData: NativeFormData): boolean {
+  return formData.get("instant_form_response_mode") === "iframe";
+}
+
+function getNativeSubmissionToken(formData: NativeFormData): string | undefined {
+  const value = formData.get("instant_form_submission_token");
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
 function readMetaBrowserIds(input: Record<string, unknown>, fallback: MetaBrowserIds): MetaBrowserIds {
   return {
     ...fallback,
@@ -1130,6 +1179,42 @@ ${trackingHead}
     </main>
   </body>
 </html>`;
+}
+
+function renderNativeSubmissionIframeBridge(result: {
+  ok: boolean;
+  routeKey: string;
+  message?: string;
+  redirectUrl?: string;
+  token?: string;
+}): string {
+  const payload = JSON.stringify({
+    type: "instant_form_native_submission_result",
+    ...result,
+  }).replace(/</g, "\\u003c");
+
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="robots" content="noindex">
+  </head>
+  <body>
+    <script>
+      window.parent.postMessage(${payload}, window.location.origin);
+    </script>
+  </body>
+</html>`;
+}
+
+function nativeSubmissionIframeResponse(
+  c: Context,
+  result: Parameters<typeof renderNativeSubmissionIframeBridge>[0],
+  status: ContentfulStatusCode,
+): Response {
+  c.header("Cache-Control", "no-store");
+  c.header("Content-Type", "text/html; charset=utf-8");
+  return c.body(renderNativeSubmissionIframeBridge(result), status);
 }
 
 function isNativeSubmissionErrorForm(value: InstantForm | readonly string[]): value is InstantForm {
