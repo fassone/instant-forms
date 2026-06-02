@@ -198,6 +198,66 @@ function getCoreRuntimeScript(): string {
     });
   }
 
+  function handleScrollMoreHintClick(event) {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+      return false;
+    }
+
+    const hint = target.closest("[data-scroll-more-hint]");
+    if (!(hint instanceof HTMLElement) || !form.contains(hint)) {
+      return false;
+    }
+
+    const scrollTarget = getScrollMoreTarget(hint);
+    if (!scrollTarget) {
+      return false;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    scrollElementBySmartPage(scrollTarget);
+    scheduleAfterLayout(() => {
+      getActiveBehavior()?.onResize?.(getContext(), getQuestion(), getStepElement());
+    });
+    return true;
+  }
+
+  function getScrollMoreTarget(hint) {
+    const shell = hint.parentElement;
+    if (!(shell instanceof HTMLElement)) {
+      return undefined;
+    }
+
+    const scrollTarget = shell.querySelector(
+      "[data-choice-options-scroll], [data-autocomplete-suggestions], [data-trusted-form-review-scroll], [data-trusted-form-consent-scroll]",
+    );
+    return scrollTarget instanceof HTMLElement ? scrollTarget : undefined;
+  }
+
+  function scrollElementBySmartPage(scrollTarget) {
+    const maxScrollTop = Math.max(scrollTarget.scrollHeight - scrollTarget.clientHeight, 0);
+    const remainingScroll = maxScrollTop - scrollTarget.scrollTop;
+    if (remainingScroll <= 1) {
+      return;
+    }
+
+    const pageAmount = Math.max(96, Math.floor(scrollTarget.clientHeight * 0.72));
+    const nextScrollTop = Math.min(maxScrollTop, scrollTarget.scrollTop + Math.min(pageAmount, remainingScroll));
+    const prefersReducedMotion =
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    try {
+      scrollTarget.scrollTo({
+        top: nextScrollTop,
+        behavior: prefersReducedMotion ? "auto" : "smooth",
+      });
+    } catch {
+      scrollTarget.scrollTop = nextScrollTop;
+    }
+  }
+
   function bootstrapInstantFormRuntime() {
     nextButton.addEventListener("click", (event) => {
       const activeBehavior = getActiveBehavior();
@@ -265,6 +325,10 @@ function getCoreRuntimeScript(): string {
     });
 
     form.addEventListener("click", (event) => {
+      if (handleScrollMoreHintClick(event)) {
+        return;
+      }
+
       getActiveBehavior()?.onClick?.(event, getContext(), getQuestion(), getStepElement());
     });
 

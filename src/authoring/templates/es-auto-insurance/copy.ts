@@ -26,6 +26,10 @@ export const esUiCopy = {
     trustedFormCertFailed:
       "No pudimos preparar el certificado de consentimiento. Revise su conexión e intente de nuevo.",
   },
+  scrollHints: {
+    moreOptions: "Más opciones",
+    moreContent: "Más",
+  },
   pages: {
     nativeSubmissionError: {
       title: "No pudimos enviar el formulario",
@@ -41,6 +45,6 @@ export const esAutoInsurancePostSubmit = {
   message: "Recibimos su información. Un agente se pondrá en contacto con usted pronto.",
   cta: {
     label: "¡Dele like a nuestra página!",
-    href: "https://www.facebook.com/seguros.aseguranza"
-  }
+    href: "https://www.facebook.com/seguros.aseguranza",
+  },
 } as const;

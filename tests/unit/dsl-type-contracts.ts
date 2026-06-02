@@ -81,6 +81,10 @@ const testFlowCopy = {
       submissionFailed: "We could not submit the form.",
       trustedFormCertFailed: "We could not prepare the consent certificate. Check your connection and try again.",
     },
+    scrollHints: {
+      moreOptions: "More options",
+      moreContent: "More",
+    },
     pages: {
       nativeSubmissionError: {
         title: "We could not submit the form",
@@ -241,6 +245,35 @@ void defineFormFlow({
       desktopHeightPx: 780,
     },
   },
+  steps: [],
+});
+
+void defineFormFlow({
+  name: "Missing Scroll Hint Copy Type Fixture",
+  status: "ACTIVE",
+  locale: "en",
+  // @ts-expect-error form UI copy must explicitly declare scroll hint labels.
+  ui: {
+    actions: testFlowCopy.ui.actions,
+    progress: testFlowCopy.ui.progress,
+    errorModal: testFlowCopy.ui.errorModal,
+    errors: testFlowCopy.ui.errors,
+    pages: testFlowCopy.ui.pages,
+  },
+  postSubmit: testFlowCopy.postSubmit,
+  contract: {
+    context: z.object({}),
+    answers: z.object({}),
+    payload: z.object({ ok: z.string() }),
+  },
+  context: {},
+  payload: {
+    url: "https://example.test/lead-submissions",
+    method: "POST",
+    encoding: "json",
+    mapping: () => ({ ok: "yes" }),
+  },
+  page: { name: "Page" },
   steps: [],
 });
 
@@ -455,6 +488,7 @@ void defineFormFlow({
     progress: testFlowCopy.ui.progress,
     errorModal: testFlowCopy.ui.errorModal,
     errors: testFlowCopy.ui.errors,
+    scrollHints: testFlowCopy.ui.scrollHints,
     pages: {
       nativeSubmissionError: testFlowCopy.ui.pages.nativeSubmissionError,
       // @ts-expect-error thank-you copy moved to flow-level postSubmit.

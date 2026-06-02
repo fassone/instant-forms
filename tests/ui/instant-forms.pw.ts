@@ -353,7 +353,15 @@ test.describe("instant routed form UI", () => {
     await expect(shell).toHaveAttribute("data-can-scroll-down", "true");
     await expect(bottomFade).toHaveCSS("opacity", "1");
     await expect(hint).toHaveCSS("opacity", "1");
+    await expect(hint).toHaveText("Más opciones");
     await expectScrollShellToRespectFooter(page, shell);
+
+    const maxScrollTop = await scroll.evaluate((element) => element.scrollHeight - element.clientHeight);
+    await hint.click();
+    await expect.poll(() => scroll.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+    if (maxScrollTop > 120) {
+      expect(await scroll.evaluate((element) => element.scrollTop)).toBeLessThan(maxScrollTop);
+    }
 
     await scroll.evaluate((element) => {
       element.scrollTop = element.scrollHeight;

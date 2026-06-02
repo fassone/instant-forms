@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { Hono } from "hono";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import {
@@ -289,6 +289,10 @@ const testFlowCopy = {
       stepResolutionFailed: "We could not prepare this step.",
       submissionFailed: "We could not submit the form.",
       trustedFormCertFailed: "We could not prepare the consent certificate. Check your connection and try again.",
+    },
+    scrollHints: {
+      moreOptions: "More options",
+      moreContent: "More",
     },
     pages: {
       nativeSubmissionError: {
@@ -2440,6 +2444,53 @@ describe("form registry", () => {
       'presentation.choiceSize for step "choice_key" must be "default", "compact", or "spacious".',
     );
     expect(() => createFlowWithChoiceSize("compact")).not.toThrow();
+  });
+
+  it("requires authored scroll hint copy and validates choice overrides", () => {
+    const createFlowWithScrollHints = (scrollHints: unknown, scrollHintOverride?: unknown) =>
+      defineFormFlow({
+        name: "Scroll Hint Copy",
+        status: "ACTIVE",
+        ...testFlowCopy,
+        ui: {
+          ...testFlowCopy.ui,
+          scrollHints,
+        } as any,
+        contract: {
+          context: z.object({}),
+          answers: z.object({ choice_key: z.enum(["yes"]) }),
+          payload: z.object({ choice: z.string() }),
+        },
+        context: {},
+        payload: {
+          url: "https://example.test/lead-submissions",
+          method: "POST",
+          encoding: "json",
+          mapping: ({ answers }) => ({ choice: answers.choice_key }),
+        },
+        page: { name: "Page" },
+        steps: [
+          step.choice({
+            key: "choice_key",
+            slug: "elige",
+            label: "Elige",
+            ...(scrollHintOverride === undefined ? {} : { scrollHint: scrollHintOverride as any }),
+            options: [{ key: "yes", label: "Si" }],
+          }),
+        ],
+      });
+
+    expect(() => createFlowWithScrollHints(undefined)).toThrow("ui.scrollHints.moreOptions is required.");
+    expect(() => createFlowWithScrollHints({ moreOptions: "", moreContent: "More" })).toThrow(
+      "ui.scrollHints.moreOptions is required.",
+    );
+    expect(() => createFlowWithScrollHints({ moreOptions: "More options", moreContent: " " })).toThrow(
+      "ui.scrollHints.moreContent is required.",
+    );
+    expect(() =>
+      createFlowWithScrollHints({ moreOptions: "More options", moreContent: "More" }, { label: " " }),
+    ).toThrow('scrollHint.label for step "choice_key" is required when scrollHint is provided.');
+    expect(() => createFlowWithScrollHints({ moreOptions: "More options", moreContent: "More" })).not.toThrow();
   });
 
   it("accepts only absolute HTTPS payload submission URLs", () => {
@@ -7222,8 +7273,10 @@ describe("form rendering", () => {
     expect(html).toContain(".choice-options-fade-bottom");
     expect(html).toContain('.choice-options-shell[data-can-scroll-up="true"] .choice-options-fade-top');
     expect(html).toContain('.choice-options-shell[data-can-scroll-down="true"] .choice-options-fade-bottom');
-    expect(html).toContain('<span class="scroll-more-hint" aria-hidden="true">Más opciones</span>');
-    expect(html).toContain('[data-can-scroll-down="true"][data-can-scroll-up="false"] > .scroll-more-hint');
+    expect(html).toContain(
+      '<button type="button" class="scroll-more-hint" data-scroll-more-hint>Más opciones</button>',
+    );
+    expect(html).toContain('[data-can-scroll-down="true"] > .scroll-more-hint');
     expect(html).toContain("@supports (scrollbar-gutter: stable)");
     expect(html).toContain("@supports not selector(:has(*))");
     expect(html).toContain('data-choice-size="default"');
@@ -7303,6 +7356,11 @@ describe("form rendering", () => {
     expect(html).toContain('window.visualViewport?.addEventListener("resize"');
     expect(html).toContain("function updateChoiceOptionsScrollHints(options)");
     expect(html).toContain("function refreshChoiceScrollHints(ctx, step)");
+    expect(html).toContain("function handleScrollMoreHintClick(event)");
+    expect(html).toContain("function scrollElementBySmartPage(scrollTarget)");
+    expect(html).toContain("Math.floor(scrollTarget.clientHeight * 0.72)");
+    expect(html).toContain('target.closest("[data-scroll-more-hint]")');
+    expect(html).toContain("scrollElementBySmartPage(scrollTarget)");
     expect(html).toContain("ctx.scheduleAfterLayout(() => updateChoiceOptionsScrollHints(options))");
     expect(html).toContain("form.dataset.activeStepKind = question.kind");
     expect(html).toContain("function updateFocusedInputKind()");
@@ -7355,12 +7413,104 @@ describe("form rendering", () => {
     expect(html).toContain('class="options" data-choice-options-scroll');
     expect(html).toContain('class="choice-options-fade choice-options-fade-top"');
     expect(html).toContain('class="choice-options-fade choice-options-fade-bottom"');
-    expect(html).toContain('<span class="scroll-more-hint" aria-hidden="true">Más opciones</span>');
+    expect(html).toContain(
+      '<button type="button" class="scroll-more-hint" data-scroll-more-hint>Más opciones</button>',
+    );
     expect(html).toContain("--choice-option-min-height: 62px;");
     expect(html).toContain("--choice-option-min-height: var(--mfs-56);");
     expect(optionsIndex).toBeGreaterThan(-1);
     expect(footerIndex).toBeGreaterThan(-1);
     expect(optionsIndex).toBeLessThan(footerIndex);
+  });
+
+  it("renders authored scroll hint copy and supports choice-step overrides", async () => {
+    const createFlow = (scrollHint?: { label: string }) =>
+      defineFormFlow({
+        name: "English Scroll Copy",
+        status: "ACTIVE",
+        ...testFlowCopy,
+        contract: {
+          context: z.object({}),
+          answers: z.object({ choice_key: z.enum(["yes", "no"]) }),
+          payload: z.object({ choice: z.string() }),
+        },
+        context: {},
+        payload: {
+          url: "https://example.test/lead-submissions",
+          method: "POST",
+          encoding: "json",
+          mapping: ({ answers }) => ({ choice: answers.choice_key }),
+        },
+        page: { name: "English Scroll Copy" },
+        steps: [
+          step.choice({
+            key: "choice_key",
+            slug: "choose",
+            label: "Choose",
+            ...(scrollHint ? { scrollHint } : {}),
+            options: [
+              { key: "yes", label: "Yes" },
+              { key: "no", label: "No" },
+            ],
+          }),
+        ],
+      });
+
+    const fallbackHtml = await renderFormPage(createFlow());
+    const overrideHtml = await renderFormPage(createFlow({ label: "See more choices" }));
+
+    expect(fallbackHtml).toContain(
+      '<button type="button" class="scroll-more-hint" data-scroll-more-hint>More options</button>',
+    );
+    expect(overrideHtml).toContain(
+      '<button type="button" class="scroll-more-hint" data-scroll-more-hint>See more choices</button>',
+    );
+    expect(overrideHtml).not.toContain(
+      '<button type="button" class="scroll-more-hint" data-scroll-more-hint>More options</button>',
+    );
+  });
+
+  it("does not hardcode Spanish scroll hint copy in the platform renderer", () => {
+    const source = readFileSync("src/platform/rendering/render-form-page.ts", "utf8");
+
+    expect(source).not.toContain("Más opciones");
+    expect(source).not.toContain(">Más<");
+  });
+
+  it("keeps platform scroll hint copy mandatory at the type level", () => {
+    const copyWithoutScrollHints = {
+      locale: "en",
+      ui: {
+        actions: testFlowCopy.ui.actions,
+        progress: testFlowCopy.ui.progress,
+        errorModal: testFlowCopy.ui.errorModal,
+        errors: testFlowCopy.ui.errors,
+        pages: testFlowCopy.ui.pages,
+      },
+      postSubmit: testFlowCopy.postSubmit,
+    };
+
+    expect(() =>
+      defineFormFlow({
+        name: "Missing Scroll Copy",
+        status: "ACTIVE",
+        ...(copyWithoutScrollHints as any),
+        contract: {
+          context: z.object({}),
+          answers: z.object({}),
+          payload: z.object({ ok: z.string() }),
+        },
+        context: {},
+        payload: {
+          url: "https://example.test/lead-submissions",
+          method: "POST",
+          encoding: "json",
+          mapping: () => ({ ok: "yes" }),
+        },
+        page: { name: "Missing Scroll Copy" },
+        steps: [],
+      }),
+    ).toThrow("ui.scrollHints.moreOptions is required.");
   });
 
   it("renders the branded matching step with one-time auto-continue wiring", async () => {
@@ -7633,7 +7783,7 @@ describe("form rendering", () => {
     expect(html).toContain('data-trusted-form-review-scroll tabindex="0" aria-label="Resumen de información"');
     expect(html).toContain('data-trusted-form-review-scroll-fade-top');
     expect(html).toContain('data-trusted-form-review-scroll-fade-bottom');
-    expect(html).toContain('<span class="scroll-more-hint" aria-hidden="true">Más</span>');
+    expect(html).toContain('<button type="button" class="scroll-more-hint" data-scroll-more-hint>Más</button>');
     expect(html).toContain('data-trusted-form-substep="consent" aria-hidden="true"');
     expect(html).toContain('data-trusted-form-substep="consent" aria-hidden="true" inert');
     expect(html).toContain('data-trusted-form-field-bank');
@@ -7925,7 +8075,9 @@ describe("form rendering", () => {
     expect(html).toContain("overscroll-behavior: contain;");
     expect(html).toContain("autocomplete-scroll-fade-top");
     expect(html).toContain("autocomplete-scroll-fade-bottom");
-    expect(html).toContain('<span class="scroll-more-hint" aria-hidden="true">Más opciones</span>');
+    expect(html).toContain(
+      '<button type="button" class="scroll-more-hint" data-scroll-more-hint>Más opciones</button>',
+    );
     expect(html).toContain("function updateAutocompleteSuggestionScrollHints(suggestions)");
     expect(html).toContain("function scheduleAutocompleteSuggestionScrollHints(ctx, suggestions)");
     expect(html).toContain("ctx.scheduleAfterLayout(() => updateAutocompleteSuggestionScrollHints(suggestions))");

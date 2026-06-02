@@ -10,6 +10,7 @@ import type {
   FormStep,
   FormTracking,
   FormPayloadDelivery,
+  FormUiCopy,
   InstantForm,
   StepPresentation,
 } from "./types";
@@ -49,6 +50,7 @@ export function defineFormFlow<const TContract extends FormContract, const TStep
   const tracking =
     typeof input.tracking === "function" ? input.tracking(createTrackingAuthoringHelpers()) : input.tracking;
   assertAnswerStepContract(input.contract, steps);
+  assertUiCopy(input.ui);
   assertPayloadDelivery(input.payload);
   assertPagePresentation(input.page);
   assertPostSubmit(input.postSubmit, steps);
@@ -118,6 +120,7 @@ function assertAnswerStepContract(
 
     if (stepDefinition.kind === "choice") {
       assertChoiceOptionContract(contract, stepDefinition);
+      assertChoiceScrollHint(stepDefinition);
     }
   }
 
@@ -245,6 +248,30 @@ function assertPagePresentation(page: FormPage): void {
   if (typeof desktopHeightPx !== "number" || !Number.isFinite(desktopHeightPx) || desktopHeightPx <= 0) {
     throw new Error("page.presentation.desktopHeightPx must be a finite positive number.");
   }
+}
+
+function assertUiCopy(ui: FormUiCopy): void {
+  if (!isNonEmptyPlainText(ui.scrollHints?.moreOptions)) {
+    throw new Error("ui.scrollHints.moreOptions is required.");
+  }
+
+  if (!isNonEmptyPlainText(ui.scrollHints?.moreContent)) {
+    throw new Error("ui.scrollHints.moreContent is required.");
+  }
+}
+
+function assertChoiceScrollHint(stepDefinition: FormStep): void {
+  if (stepDefinition.kind !== "choice" || !stepDefinition.scrollHint) {
+    return;
+  }
+
+  if (!isNonEmptyPlainText(stepDefinition.scrollHint.label)) {
+    throw new Error(`scrollHint.label for step "${stepDefinition.key}" is required when scrollHint is provided.`);
+  }
+}
+
+function isNonEmptyPlainText(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
 }
 
 function assertStepPresentation(stepDefinition: FormStep): void {
@@ -449,6 +476,7 @@ function getStepTemplateStrings(stepDefinition: FormStep): string[] {
 
   if (stepDefinition.kind === "choice") {
     values.push(...stepDefinition.options.map((option) => option.value));
+    values.push(stepDefinition.scrollHint?.label ?? "");
   }
 
   if (stepDefinition.kind === "interstitial") {

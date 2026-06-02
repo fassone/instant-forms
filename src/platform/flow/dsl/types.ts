@@ -33,6 +33,10 @@ export type StepPresentation = {
   choiceSize?: ChoiceSizePresentation;
 };
 
+export type ChoiceScrollHint = {
+  label: string;
+};
+
 export type TrustedFormSubstepPresentation = {
   presentation?: StepPresentation;
 };
@@ -282,6 +286,7 @@ export type ChoiceStep<
   kind: "choice";
   type: "CUSTOM";
   options: readonly FormOption<TOptionKey>[];
+  scrollHint?: ChoiceScrollHint;
 };
 
 export type TextStep<
@@ -626,11 +631,17 @@ export type FormUiPageCopy = {
   };
 };
 
+export type FormUiScrollHintCopy = {
+  moreOptions: string;
+  moreContent: string;
+};
+
 export type FormUiCopy = {
   actions: FormUiActionCopy;
   progress: FormUiProgressCopy;
   errorModal: FormUiErrorModalCopy;
   errors: FormUiErrorCopy;
+  scrollHints: FormUiScrollHintCopy;
   pages: FormUiPageCopy;
 };
 
@@ -724,6 +735,7 @@ export type ChoiceStepInput<
   TShowWhen extends StepCondition | undefined = StepCondition | undefined,
 > = BaseStepInput<TKey, TShowWhen> & {
   options: TOptions;
+  scrollHint?: ChoiceScrollHint;
 };
 
 export type TextStepInput<

@@ -4,6 +4,7 @@ import type {
   AutocompleteStep,
   BaseStep,
   CheckpointMode,
+  ChoiceScrollHint,
   ChoiceOptionInput,
   ChoiceStep,
   ContractAnswerKey,
@@ -53,6 +54,7 @@ type RawBaseStepInput = {
 };
 type RawChoiceStepInput = RawBaseStepInput & {
   options: readonly ChoiceOptionInput[];
+  scrollHint?: ChoiceScrollHint;
 };
 type RawTextStepInput = RawBaseStepInput & {
   type?: TextStep["type"];
@@ -459,6 +461,7 @@ export const step = {
       kind: "choice",
       type: "CUSTOM",
       options: input.options.map((option) => ({ key: option.key, value: option.label })),
+      ...(input.scrollHint ? { scrollHint: input.scrollHint } : {}),
     };
   },
 

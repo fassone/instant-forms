@@ -563,15 +563,18 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
       }
 
       .scroll-more-hint {
+        appearance: none;
         position: absolute;
         right: 50%;
-        bottom: 10px;
+        bottom: 2px;
         z-index: 3;
         border: 1px solid rgba(6, 77, 246, 0.16);
         border-radius: 999px;
         background: rgba(255, 255, 255, 0.92);
         box-shadow: 0 10px 28px rgba(7, 59, 142, 0.14);
         color: var(--brand-navy);
+        cursor: pointer;
+        font-family: inherit;
         font-size: 0.78rem;
         font-weight: 800;
         opacity: 0;
@@ -582,8 +585,9 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         white-space: nowrap;
       }
 
-      [data-can-scroll-down="true"][data-can-scroll-up="false"] > .scroll-more-hint {
+      [data-can-scroll-down="true"] > .scroll-more-hint {
         opacity: 1;
+        pointer-events: auto;
         transform: translateX(50%) translateY(0);
       }
 
@@ -1905,8 +1909,13 @@ function renderInterstitialSuccessLines(successLines: InterstitialStep["successL
     .join("");
 }
 
-function renderOptions(stepDefinition: ChoiceStep, answers: Record<string, string>): string {
+function renderOptions(
+  stepDefinition: ChoiceStep,
+  answers: Record<string, string>,
+  context: StepTemplateContext,
+): string {
   const currentAnswer = answers[stepDefinition.key];
+  const scrollHintLabel = stepDefinition.scrollHint?.label ?? context.form?.ui.scrollHints.moreOptions;
 
   return `<div class="choice-options-shell" data-choice-options-shell data-can-scroll-up="false" data-can-scroll-down="false">
     <span class="choice-options-fade choice-options-fade-top" aria-hidden="true"></span>
@@ -1924,7 +1933,7 @@ function renderOptions(stepDefinition: ChoiceStep, answers: Record<string, strin
         .join("")}
     </div>
     <span class="choice-options-fade choice-options-fade-bottom" aria-hidden="true"></span>
-    <span class="scroll-more-hint" aria-hidden="true">Más opciones</span>
+    ${renderScrollMoreHint(scrollHintLabel)}
   </div>`;
 }
 
@@ -1939,14 +1948,15 @@ function renderPhoneInput(stepDefinition: PhoneStep, answers: Record<string, str
 function renderTrustedFormConsent(
   stepDefinition: TrustedFormConsentStep,
   answers: Record<string, string>,
-  _context: StepTemplateContext,
+  context: StepTemplateContext,
 ): string {
   const checked = answers[stepDefinition.key] === stepDefinition.acceptedAnswer ? " checked" : "";
+  const scrollHintLabel = context.form?.ui.scrollHints.moreContent;
 
   return `${renderTrustedFormFieldBank(stepDefinition)}
   <div class="trusted-form-panels" data-trusted-form-substeps data-trusted-form-active-substep="review">
     <div class="trusted-form-panel trusted-form-review" data-trusted-form-substep="review" aria-hidden="false">
-      ${renderTrustedFormReviewList(stepDefinition)}
+      ${renderTrustedFormReviewList(stepDefinition, scrollHintLabel)}
     </div>
     <div class="trusted-form-panel" data-trusted-form-substep="consent" aria-hidden="true" inert>
       <div class="consent-card">
@@ -1972,7 +1982,7 @@ function renderTrustedFormConsent(
               <span class="consent-acceptance">${escapeHtml(stepDefinition.consent.checkboxLabel)}</span>
             </span>
             <span class="consent-scroll-fade consent-scroll-fade-bottom" data-trusted-form-consent-scroll-fade-bottom aria-hidden="true"></span>
-            <span class="scroll-more-hint" aria-hidden="true">Más</span>
+            ${renderScrollMoreHint(scrollHintLabel)}
           </span>
         </label>
       </div>
@@ -2007,7 +2017,7 @@ function renderTrustedFormConsentInput(field: TrustedFormReviewField): string {
     </label>`;
 }
 
-function renderTrustedFormReviewList(stepDefinition: TrustedFormConsentStep): string {
+function renderTrustedFormReviewList(stepDefinition: TrustedFormConsentStep, scrollHintLabel?: string): string {
   const fields = stepDefinition.review.fields;
   const reviewItems = fields.map((field) => ({
     label: field.label,
@@ -2047,7 +2057,7 @@ function renderTrustedFormReviewList(stepDefinition: TrustedFormConsentStep): st
       data-trusted-form-review-scroll-fade-bottom
       aria-hidden="true"
     ></div>
-    <span class="scroll-more-hint" aria-hidden="true">Más</span>
+    ${renderScrollMoreHint(scrollHintLabel)}
   </div>`;
 }
 
@@ -2086,9 +2096,14 @@ function renderBaseTextInput(
   >`;
 }
 
-function renderAutocompleteInput(stepDefinition: AutocompleteStep, answers: Record<string, string>): string {
+function renderAutocompleteInput(
+  stepDefinition: AutocompleteStep,
+  answers: Record<string, string>,
+  context: StepTemplateContext,
+): string {
   const value = answers[stepDefinition.key] ?? "";
   const placeholder = getInputPlaceholder(stepDefinition);
+  const scrollHintLabel = context.form?.ui.scrollHints.moreOptions;
 
   return `<div class="autocomplete-field">
     <input
@@ -2112,9 +2127,17 @@ function renderAutocompleteInput(stepDefinition: AutocompleteStep, answers: Reco
       <div class="autocomplete-scroll-fade autocomplete-scroll-fade-top" aria-hidden="true"></div>
       <div class="autocomplete-suggestions" data-autocomplete-suggestions></div>
       <div class="autocomplete-scroll-fade autocomplete-scroll-fade-bottom" aria-hidden="true"></div>
-      <span class="scroll-more-hint" aria-hidden="true">Más opciones</span>
+      ${renderScrollMoreHint(scrollHintLabel)}
     </div>
   </div>`;
+}
+
+function renderScrollMoreHint(label: string | undefined): string {
+  if (!label) {
+    return "";
+  }
+
+  return `<button type="button" class="scroll-more-hint" data-scroll-more-hint>${escapeHtml(label)}</button>`;
 }
 
 function getInputPlaceholder(stepDefinition: TextStep | PhoneStep | AutocompleteStep): string {
