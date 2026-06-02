@@ -1,6 +1,6 @@
 # instant-forms
 
-Ultra-fast Bun + Hono + TypeScript progressive lead forms. The first flow family is Spanish auto insurance for Seguros Aseguranza, rendered from authored public route folders such as `/auto/tn`.
+Ultra-fast Bun + Hono + TypeScript progressive lead forms. The first flow families are Spanish auto and home insurance for Seguros Aseguranza, rendered from authored public route folders such as `/auto/tn` and `/home/tn`.
 
 ## Purpose
 
@@ -97,6 +97,10 @@ Every source and test folder has its own `README.md` describing ownership and sa
 | `GET /auto/:state` | Redirects to the next unanswered state-specific auto step. |
 | `GET /auto/:state/:stepSlug` | Renders a guarded routed step, for example `/auto/tn/vive-en-tennessee` or `/auto/ca/vive-en-california`. |
 | `GET /auto/*` | Redirects unknown auto group paths back to `/auto/tn`. |
+| `GET /home` | Redirects to the authored Tennessee home form route at `/home/tn`. |
+| `GET /home/:state` | Redirects to the next unanswered state-specific home step. |
+| `GET /home/:state/:stepSlug` | Renders a guarded routed step, for example `/home/tn/propiedad-en-tennessee`. |
+| `GET /home/*` | Redirects unknown home group paths back to `/home/tn`. |
 | `GET /__preview/auto/tn/:stepSlug` | No-store preview mirror for public form step visual iteration. |
 | `GET /_instant/scripts/:scriptKey.js` | Allowlisted first-party proxy for selected third-party scripts. |
 | `GET /~partytown/*` | Partytown worker/runtime assets used after the small bootstrap has been inlined. |
@@ -108,9 +112,9 @@ Unavailable public routes use author-controlled title, message, CTA, and status 
 
 ## Form Flow
 
-The auto-insurance flows live in `src/authoring/flows/auto/{state}/flow.ts` and are built with the typed DSL in `src/platform/flow/dsl/`. Public route placement lives in `src/authoring/routes/registry.ts`, where every `US_STATES` code is mounted under `/auto/{state}`. Runtime identity comes from that route mount, so `/auto/tn` uses the encoded route key `auto_tn`.
+The auto-insurance flows live in `src/authoring/flows/auto/{state}/flow.ts`, and home-insurance flows are generated from `src/authoring/flows/home/registry.ts`. Both are built with the typed DSL in `src/platform/flow/dsl/`. Public route placement lives in `src/authoring/routes/registry.ts`, where every `US_STATES` code is mounted under `/auto/{state}` and `/home/{state}`. Runtime identity comes from that route mount, so `/auto/tn` uses the encoded route key `auto_tn` and `/home/tn` uses `home_tn`.
 
-Reusable flow shapes live in `src/authoring/templates/` and use `defineFormTemplate(...)`. A template declares a Zod `variables` contract and exposes `.create(input)`, which validates required, optional, and unknown variables before returning a normal `InstantForm` through `defineFormFlow(...)`. Each auto state is currently an instantiation of the reusable Spanish auto-insurance template.
+Reusable flow shapes live in `src/authoring/templates/` and use `defineFormTemplate(...)`. A template declares a Zod `variables` contract and exposes `.create(input)`, which validates required, optional, and unknown variables before returning a normal `InstantForm` through `defineFormFlow(...)`. Each auto state is currently an instantiation of the reusable Spanish auto-insurance template; each home state is an instantiation of the reusable Spanish home-insurance template.
 
 Each flow declares a `locale`, an explicit `ui` copy block for platform-owned labels, progress text, modal copy, validation/failure messages, and native error pages, plus a neutral `postSubmit` page for the successful post-submission destination. There is no hidden Spanish fallback: a new language is authored by creating a flow whose step copy, `ui` copy, and `postSubmit` copy are in that language.
 
@@ -118,7 +122,7 @@ Each flow also declares a Zod-backed `contract` with `context`, `answers`, and `
 
 Dynamic authoring is step-level: a step is either static, or it declares one dependency list and one resolver for its dynamic display/body props. Nested field-level `resolve(...)` calls are intentionally rejected so it is always clear which upstream answers a dynamic step needs. Page-level presentation can set a desktop-only form height with `page.presentation.desktopHeightPx`; mobile continues to use the fixed viewport-height layout. Static `presentation.chrome` can hide the form chrome with `"hidden"` or `"hidden_on_mobile"`; TrustedForm substep-specific chrome overrides live under `substeps.review.presentation` or `substeps.consent.presentation`, not inside the dynamic review/consent copy. TrustedForm review and consent prose can use safe Markdown through `md(...)` / `markdown(...)` in that resolver. Submitted values and native controls stay plain text: use `text(...)` for resolver-produced field values and ordinary strings for button labels, placeholders, keys, and slugs. Markdown is rendered on the server with raw HTML escaped, and the browser receives only sanitized HTML in its client config.
 
-Current visible order:
+Current auto visible order:
 
 1. `belongs_to_state`
 2. `residence_state` when `belongs_to_state` is `no`
@@ -134,6 +138,22 @@ Current visible order:
 
 The `matching_offer` step is routed and checkpointed, but not counted in `Paso X de Y`. Its success copy uses separate colored lines so each phrase can use a distinct brand color.
 
+Current home visible order:
+
+1. `property_in_state`
+2. `property_state` when `property_in_state` is `no`
+3. `ownership_status`
+4. `property_type`
+5. `property_use`
+6. `has_home_insurance`
+7. `house_age_years`
+8. `roof_age_years`
+9. `matching_offer`
+10. `first_name`
+11. `last_name`
+12. `phone_number`
+13. `trustedform_consent`
+
 The `trustedform_consent` step is authored as explicit `review` and `consent` substeps on one route and one native form. `review` owns the confirmation title, optional description, continue label, and ordered field list; fields are tagged for TrustedForm only when the author adds a `trustedForm.role`. `consent` owns the final title, optional description, Markdown disclosure, checkbox label, and submit label. The step executes the TrustedForm Certify SDK only when mounted. Tennessee uses the selected-script proxy at `/_instant/scripts/trustedform.com/tfc.js`, so browsers request the SDK through the first-party domain whether the authored delivery mode is `main_thread` or `partytown`. Transition assets may register the TrustedForm behavior module ahead of time, and the runtime may preload same-origin TrustedForm assets before the consent step, but preloading must not execute Certify or create a certificate. The consent checkbox substep is gated behind TrustedForm readiness.
 
 ## Tracking
@@ -142,7 +162,7 @@ Flows can opt into Google Tag Manager through the typed `googleTagManager(...)` 
 
 For Meta Pixel testing, set the optional `META_TEST_EVENT_CODE` environment variable before starting the server or building forms. Tennessee passes it through the template as `meta.test_event_code` on authored Meta payloads, so GTM can forward it to Meta Test Events. Leave it unset for normal production traffic.
 
-Auto-insurance flows require `LIDERNA_WEBLEADS_SUBMISSION_URL` before starting the server or building forms. It must be an absolute HTTPS URL and is authored into the template as the blocking downstream lead endpoint.
+Auto- and home-insurance flows require `LIDERNA_WEBLEADS_SUBMISSION_URL` before starting the server or building forms. It must be an absolute HTTPS URL and is authored into each template as the blocking downstream lead endpoint.
 
 For Tennessee Meta Conversions API testing or production server-side delivery of progress events, set the optional `META_CONVERSIONS_ACCESS_TOKEN` environment variable before starting the server. When present, the Tennessee template attaches authored server callbacks to its Meta-enabled progress tracking events and sends the same event IDs used by GTM to Meta CAPI. Final `Lead` conversion responsibility is downstream: the submitted delivery payload includes an explicit `meta_conversion` object that the lead processor can use after the lead is processed.
 
@@ -154,7 +174,7 @@ Selected third-party scripts are declared in `src/authoring/scripts/registry.ts`
 
 ## Checkpoints
 
-Partial answers are saved in an HttpOnly cookie named `instant_forms_<routeKey>_answers` with a 7-day max age, `SameSite=Lax`, `Path=/`, and `Secure` on HTTPS. For the current Tennessee mount, that cookie is `instant_forms_auto_tn_answers`. Cookie values are base64url JSON and are sanitized before use.
+Partial answers are saved in an HttpOnly cookie named `instant_forms_<routeKey>_answers` with a 7-day max age, `SameSite=Lax`, `Path=/`, and `Secure` on HTTPS. For the current Tennessee auto mount, that cookie is `instant_forms_auto_tn_answers`; for Tennessee home it is `instant_forms_home_tn_answers`. Cookie values are base64url JSON and are sanitized before use.
 
 Phone checkpoints preserve the visitor-visible value for resume. Final submissions normalize valid US numbers to E.164, for example `+16155551234`.
 

@@ -13,11 +13,20 @@ import { requestProxies } from "../../src/authoring/proxies/registry";
 import { selectedScripts } from "../../src/authoring/scripts/registry";
 import { esAutoInsuranceTemplate } from "../../src/authoring/templates/es-auto-insurance";
 import { lidernaAreaCodeSchema } from "../../src/authoring/templates/es-auto-insurance/contracts";
+import { esHomeInsuranceTemplate } from "../../src/authoring/templates/es-home-insurance";
+import {
+  homeInsurancePayloadContract,
+  lidernaAreaCodeSchema as homeLidernaAreaCodeSchema,
+} from "../../src/authoring/templates/es-home-insurance/contracts";
 import { formRoutes } from "../../src/authoring/routes/registry";
 import {
   createAutoInsuranceFlow,
   defaultAutoInsuranceVariables,
 } from "../../src/authoring/flows/auto/shared";
+import {
+  createHomeInsuranceFlow,
+  defaultHomeInsuranceVariables,
+} from "../../src/authoring/flows/home/shared";
 import { createFetchHandler } from "../../src/platform/app/server";
 import { registerFormRoutes } from "../../src/platform/app/routes/forms";
 import { registerScriptRoutes } from "../../src/platform/app/routes/scripts";
@@ -121,8 +130,31 @@ const validAnswers = {
   trustedform_consent: "accepted",
 };
 
+const homePreContactAnswers = {
+  property_in_state: "yes",
+  ownership_status: "own",
+  property_type: "single_family",
+  property_use: "primary_residence",
+  has_home_insurance: "yes",
+  house_age_years: "11_20",
+  roof_age_years: "6_10",
+};
+
+const homePreConsentAnswers = {
+  ...homePreContactAnswers,
+  first_name: "Ana",
+  last_name: "Lopez",
+  phone_number: "(615) 555-1234",
+};
+
+const validHomeAnswers = {
+  ...homePreConsentAnswers,
+  trustedform_consent: "accepted",
+};
+
 const trustedFormCertUrl = "https://cert.trustedform.com/454a35b802f3e7b63ffabb4efedb7c6ebe67886c";
 const routeKey = "auto_tn";
+const homeRouteKey = "home_tn";
 const expectedTennesseeTrustedFormReviewFields = [
   {
     name: "trusted_form_grantor_name",
@@ -313,6 +345,27 @@ describe("form registry", () => {
     expect(formRoutes.notFound).toEqual({ type: "unavailable", ...unavailableContent, status: 404 });
   });
 
+  it("maps every US state under the public home route folder", () => {
+    const homeRoute = getRequiredHomeTennesseeRoute();
+    const homeNode = formRoutes.folders.home;
+
+    expect(homeNode?.type).toBe("group");
+    if (homeNode?.type === "group") {
+      expect(homeNode.notFound).toEqual({ type: "redirect", to: "/home/tn" });
+      for (const state of US_STATES) {
+        expect(homeNode.children[state.code.toLowerCase()]?.type).toBe("flow");
+      }
+      expect(homeNode.children.tn).toEqual({ type: "flow", form: homeRoute.form });
+    }
+    expect(homeRoute.routeKey).toBe(homeRouteKey);
+    expect(homeRoute.routeSegments).toEqual(["home", "tn"]);
+    expect(homeRoute.form.customVariables).toMatchObject({
+      areaCode: "TN",
+      areaName: "Tennessee",
+      product: "home_insurance",
+    });
+  });
+
   it("keeps Tennessee Meta config and leaves non-Tennessee auto flows without Meta pixel config", () => {
     const tnRoute = getRequiredTennesseeRoute();
     const caRoute = getFormRouteByRouteKey(formRoutes, "auto_ca");
@@ -328,6 +381,16 @@ describe("form registry", () => {
       areaCode: "CA",
       areaName: "California",
     });
+  });
+
+  it("keeps home flows on shared GTM without a Meta pixel by default", () => {
+    const tnRoute = getRequiredHomeTennesseeRoute();
+    const caRoute = getFormRouteByRouteKey(formRoutes, "home_ca");
+
+    expect(tnRoute.form.tracking?.googleTagManager?.containerId).toBe("GTM-MVJNX5DZ");
+    expect(JSON.stringify(tnRoute.form.tracking?.events)).not.toContain('"pixelId"');
+    expect(caRoute?.form.tracking?.googleTagManager?.containerId).toBe("GTM-MVJNX5DZ");
+    expect(JSON.stringify(caRoute?.form.tracking?.events)).not.toContain('"pixelId"');
   });
 
   it("renders sample non-Tennessee auto state copy from each area's variables", async () => {
@@ -351,6 +414,64 @@ describe("form registry", () => {
 
     expect(caHtml).toContain("¿Usted vive en California?");
     expect(dcHtml).toContain("¿Usted vive en District of Columbia?");
+  });
+
+  it("renders sample home state copy from each area's variables", async () => {
+    const caRoute = getFormRouteByRouteKey(formRoutes, "home_ca");
+    const dcRoute = getFormRouteByRouteKey(formRoutes, "home_dc");
+
+    expect(caRoute?.routeSegments).toEqual(["home", "ca"]);
+    expect(dcRoute?.routeSegments).toEqual(["home", "dc"]);
+    if (!caRoute || !dcRoute) {
+      throw new Error("Expected sample home routes to exist.");
+    }
+
+    const caHtml = await renderFormPage(caRoute.form, {
+      routeKey: "home_ca",
+      stepUrlOverrides: createStepUrlOverridesForRoute(caRoute.routeSegments, caRoute.form),
+    });
+    const dcHtml = await renderFormPage(dcRoute.form, {
+      routeKey: "home_dc",
+      stepUrlOverrides: createStepUrlOverridesForRoute(dcRoute.routeSegments, dcRoute.form),
+    });
+
+    expect(caHtml).toContain("¿La propiedad que quiere asegurar está en California?");
+    expect(dcHtml).toContain("¿La propiedad que quiere asegurar está en District of Columbia?");
+  });
+
+  it("creates reusable Spanish home insurance template flows", () => {
+    const flow = esHomeInsuranceTemplate.create({
+      flowName: "ES - TX Home - Template Test",
+      pageName: "Template Test",
+      submissionUrl: "https://example.test/lead-submissions",
+      areaCode: "TX",
+      areaName: "Texas",
+      product: "home_insurance",
+      advertiserName: "Liderna Inc",
+      gtmContainerId: "GTM-ABC123",
+    });
+
+    expect(flow.name).toBe("ES - TX Home - Template Test");
+    expect(flow.customVariables).toMatchObject({
+      areaCode: "TX",
+      areaName: "Texas",
+      product: "home_insurance",
+    });
+    expect(flow.steps.map((stepDefinition) => stepDefinition.key)).toEqual([
+      "property_in_state",
+      "property_state",
+      "ownership_status",
+      "property_type",
+      "property_use",
+      "has_home_insurance",
+      "house_age_years",
+      "roof_age_years",
+      "matching_offer",
+      "first_name",
+      "last_name",
+      "phone_number",
+      "trustedform_consent",
+    ]);
   });
 
   it("reserves the preview folder for platform-generated mirrors", () => {
@@ -763,6 +884,10 @@ describe("form registry", () => {
     expect(lidernaAreaCodeSchema.safeParse("DC").success).toBe(true);
     expect(lidernaAreaCodeSchema.safeParse("TN").success).toBe(true);
     expect(lidernaAreaCodeSchema.safeParse("ZZ").success).toBe(false);
+    expect(homeLidernaAreaCodeSchema.safeParse("AL").success).toBe(true);
+    expect(homeLidernaAreaCodeSchema.safeParse("NY").success).toBe(true);
+    expect(homeLidernaAreaCodeSchema.safeParse("DC").success).toBe(true);
+    expect(homeLidernaAreaCodeSchema.safeParse("ZZ").success).toBe(false);
   });
 
   it("centralizes GTM settings in an authoring preset", () => {
@@ -3849,6 +3974,96 @@ describe("submission validation", () => {
     }
   });
 
+  it("builds the correct downstream payload for the Tennessee home flow", () => {
+    const homeRoute = getRequiredHomeTennesseeRoute();
+    const result = validateSubmission(
+      homeRoute.form,
+      homeRouteKey,
+      { answers: validHomeAnswers, trustedFormCertUrl },
+      "2026-05-13T00:00:00.000Z",
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.payload.delivery).toMatchObject({
+        url: homeRoute.form.payload.url,
+        method: "POST",
+        encoding: "json",
+        payload: {
+          area: "TN",
+          source_channel: "unknown",
+          acquisition_channel: "organic",
+          ingress_channel: "website",
+          first_name: "Ana",
+          type: "insurance_home",
+          last_name: "Lopez",
+          phone_number: "+16155551234",
+          created_time: "2026-05-13T00:00:00.000Z",
+          state_code: "TN",
+          ownership_status: "own",
+          property_type: "single_family",
+          property_use: "primary_residence",
+          has_home_insurance: "yes",
+          house_age_years: "11_20",
+          roof_age_years: "6_10",
+          trustedform_certificate_url: trustedFormCertUrl,
+          meta_conversion: {
+            enabled: false,
+          },
+        },
+      });
+      expect(result.payload.delivery.payload.consent).toContain("seguro de vivienda");
+      expect(result.payload.delivery.payload.id).toBe(result.payload.submissionId);
+      expectTrustedFormConsentAnswer(result.payload.answers.trustedform_consent);
+    }
+  });
+
+  it("uses the selected property state for home payload area when the property is outside the route state", () => {
+    const homeRoute = getRequiredHomeTennesseeRoute();
+    const result = validateSubmission(
+      homeRoute.form,
+      homeRouteKey,
+      {
+        answers: {
+          ...validHomeAnswers,
+          property_in_state: "no",
+          property_state: "California",
+        },
+        trustedFormCertUrl,
+      },
+      "2026-05-13T00:00:00.000Z",
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.payload.answers.property_state).toBe("CA");
+      expect(result.payload.delivery.payload).toMatchObject({
+        area: "CA",
+        state_code: "CA",
+        type: "insurance_home",
+      });
+    }
+  });
+
+  it("requires a phone or email in home delivery payloads", () => {
+    const basePayload = {
+      id: "home-payload-test",
+      area: "TN",
+      source_channel: "unknown",
+      acquisition_channel: "organic",
+      ingress_channel: "website",
+      first_name: "Ana",
+      type: "insurance_home",
+      consent: "Consent text",
+    };
+
+    expect(homeInsurancePayloadContract.safeParse({ ...basePayload, phone_number: "+16155551234" }).success).toBe(
+      true,
+    );
+    expect(homeInsurancePayloadContract.safeParse({ ...basePayload, email: "ana@example.test" }).success).toBe(true);
+    expect(homeInsurancePayloadContract.safeParse(basePayload).success).toBe(false);
+  });
+
   it("accepts shared auto Meta env values on non-Tennessee flows without enabling Meta pixel callbacks", () => {
     expect(defaultAutoInsuranceVariables).toHaveProperty("metaTestEventCode");
     expect(defaultAutoInsuranceVariables).toHaveProperty("metaConversionsAccessToken");
@@ -3866,6 +4081,46 @@ describe("submission validation", () => {
       caFlowWithSharedMetaEnv,
       "auto_ca",
       { answers: validAnswers, trustedFormCertUrl },
+      "2026-05-13T00:00:00.000Z",
+    );
+
+    expect(JSON.stringify(trackingEvents)).not.toContain('"pixelId"');
+    expect(trackingEvents.some((eventDefinition) => "server" in eventDefinition)).toBe(false);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.payload.delivery.payload).toMatchObject({
+        _mock_verification: {
+          searchbug: true,
+        },
+        _mock_dispatch: {
+          googleSheets: true,
+          leadManager: true,
+          ricochet: true,
+        },
+        meta_conversion: {
+          enabled: false,
+        },
+      });
+    }
+  });
+
+  it("accepts shared home Meta env values without enabling Meta pixel callbacks", () => {
+    expect(defaultHomeInsuranceVariables).toHaveProperty("metaTestEventCode");
+    expect(defaultHomeInsuranceVariables).toHaveProperty("metaConversionsAccessToken");
+    expect(defaultHomeInsuranceVariables).not.toHaveProperty("metaPixelId");
+
+    const homeFlowWithSharedMetaEnv = createHomeInsuranceFlow({
+      flowName: "ES - TN Home - Shared Meta Env Test",
+      areaCode: "TN",
+      areaName: "Tennessee",
+      metaTestEventCode: "TESTHOME",
+      metaConversionsAccessToken: "token-for-non-pixel-flow",
+    });
+    const trackingEvents = homeFlowWithSharedMetaEnv.tracking?.events ?? [];
+    const result = validateSubmission(
+      homeFlowWithSharedMetaEnv,
+      homeRouteKey,
+      { answers: validHomeAnswers, trustedFormCertUrl },
       "2026-05-13T00:00:00.000Z",
     );
 
@@ -4299,6 +4554,24 @@ describe("server routing", () => {
     expect(response.headers.get("Cache-Control")).toBe("no-store");
   });
 
+  it("redirects the home group route to Tennessee", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(new Request("http://localhost/home"));
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe("/home/tn");
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+  });
+
+  it("redirects unknown home group paths to Tennessee", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(new Request("http://localhost/home/not-real"));
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe("/home/tn");
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+  });
+
   it("redirects Tennessee custom to the first unanswered step without a checkpoint", async () => {
     const handler = createFetchHandler();
     const response = await handler(new Request("http://localhost/auto/tn"));
@@ -4317,6 +4590,17 @@ describe("server routing", () => {
     expect(tnResponse.headers.get("Location")).toBe("/auto/tn/vive-en-tennessee");
     expect(caResponse.headers.get("Location")).toBe("/auto/ca/vive-en-california");
     expect(dcResponse.headers.get("Location")).toBe("/auto/dc/vive-en-district-of-columbia");
+  });
+
+  it("redirects sample home state routes to their first unanswered step", async () => {
+    const handler = createFetchHandler();
+    const tnResponse = await handler(new Request("http://localhost/home/tn"));
+    const caResponse = await handler(new Request("http://localhost/home/ca"));
+    const dcResponse = await handler(new Request("http://localhost/home/dc"));
+
+    expect(tnResponse.headers.get("Location")).toBe("/home/tn/propiedad-en-tennessee");
+    expect(caResponse.headers.get("Location")).toBe("/home/ca/propiedad-en-california");
+    expect(dcResponse.headers.get("Location")).toBe("/home/dc/propiedad-en-district-of-columbia");
   });
 
   it("redirects Tennessee custom to the next unanswered step from a checkpoint", async () => {
@@ -7479,6 +7763,16 @@ function getRequiredTennesseeRoute() {
 
   if (!routeEntry) {
     throw new Error("Expected Tennessee form route to exist.");
+  }
+
+  return routeEntry;
+}
+
+function getRequiredHomeTennesseeRoute() {
+  const routeEntry = getFormRouteByRouteKey(formRoutes, homeRouteKey);
+
+  if (!routeEntry) {
+    throw new Error("Expected Tennessee home form route to exist.");
   }
 
   return routeEntry;

@@ -1,0 +1,53 @@
+import { defineFormFlow, defineFormTemplate } from "../../../platform/flow";
+import { createLeadAttribution } from "./attribution";
+import { homeInsuranceContract } from "./contracts";
+import { esHomeInsurancePostSubmit, esUiCopy } from "./copy";
+import { createLidernaWebleadsPayloadMapping } from "./payload";
+import { createHomeInsuranceSteps } from "./steps";
+import { createHomeInsuranceTracking } from "./tracking";
+import { esHomeInsuranceVariables } from "./variables";
+
+export { esHomeInsuranceVariables } from "./variables";
+
+export const esHomeInsuranceTemplate = defineFormTemplate({
+  variables: esHomeInsuranceVariables,
+  create: ({ variables }) => {
+    const areaDisplayName = variables.areaName ?? variables.areaCode;
+    const tracking = createHomeInsuranceTracking({
+      gtmContainerId: variables.gtmContainerId,
+      metaPixelId: variables.metaPixelId,
+      metaTestEventCode: variables.metaTestEventCode,
+      metaConversionsAccessToken: variables.metaConversionsAccessToken,
+    });
+
+    return defineFormFlow({
+      name: variables.flowName,
+      status: "ACTIVE",
+      locale: "es",
+      ui: esUiCopy,
+      contract: homeInsuranceContract,
+      context: {
+        areaCode: variables.areaCode,
+        areaName: variables.areaName,
+        product: variables.product,
+        advertiserName: variables.advertiserName,
+      },
+      payload: {
+        url: variables.submissionUrl,
+        method: "POST",
+        encoding: "json",
+        mapping: createLidernaWebleadsPayloadMapping({
+          metaPixelId: variables.metaPixelId,
+          metaTestEventCode: variables.metaTestEventCode,
+        }),
+      },
+      page: {
+        name: variables.pageName,
+      },
+      postSubmit: esHomeInsurancePostSubmit,
+      attribution: createLeadAttribution(),
+      ...(tracking ? { tracking } : {}),
+      steps: createHomeInsuranceSteps({ areaDisplayName }),
+    });
+  },
+});
