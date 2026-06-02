@@ -294,13 +294,49 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         display: grid;
       }
 
-      #steps:has(.step[data-step-kind="autocomplete"][aria-hidden="false"]) {
-        display: grid;
-      }
-
+      #steps:has(.step[data-step-kind="autocomplete"][aria-hidden="false"]),
+      #steps:has(.step[data-step-kind="choice"][aria-hidden="false"]),
       #steps:has(.step[data-step-kind="trusted_form_consent"][aria-hidden="false"]) {
         display: grid;
+        grid-template-rows: minmax(0, 1fr);
+        height: 100%;
+        min-height: 0;
         overflow: hidden;
+      }
+
+      .step[data-step-kind="choice"] {
+        --choice-options-gap: 12px;
+        --choice-option-min-height: 64px;
+        --choice-option-gap: 14px;
+        --choice-option-padding-block: 16px;
+        --choice-option-padding-inline: 18px;
+        --choice-option-input-size: 20px;
+        --choice-option-index-size: 28px;
+        --choice-option-index-radius: 6px;
+        --choice-option-index-font-size: 0.85rem;
+        --choice-option-text-font-size: 1.15rem;
+      }
+
+      .step[data-step-kind="choice"][data-choice-size="compact"] {
+        --choice-options-gap: 8px;
+        --choice-option-min-height: 56px;
+        --choice-option-gap: 12px;
+        --choice-option-padding-block: 12px;
+        --choice-option-padding-inline: 14px;
+        --choice-option-input-size: 18px;
+        --choice-option-index-size: 26px;
+        --choice-option-text-font-size: 1.05rem;
+      }
+
+      .step[data-step-kind="choice"][data-choice-size="spacious"] {
+        --choice-options-gap: 16px;
+        --choice-option-min-height: 72px;
+        --choice-option-gap: 16px;
+        --choice-option-padding-block: 18px;
+        --choice-option-padding-inline: 22px;
+        --choice-option-input-size: 22px;
+        --choice-option-index-size: 32px;
+        --choice-option-text-font-size: 1.22rem;
       }
 
       .step[data-step-kind="interstitial"][aria-hidden="false"] {
@@ -309,6 +345,15 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         height: 100%;
         min-height: 0;
         align-self: stretch;
+      }
+
+      .step[data-step-kind="choice"][aria-hidden="false"] {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        height: 100%;
+        min-height: 0;
+        align-self: stretch;
+        overflow: hidden;
       }
 
       .step[data-step-kind="autocomplete"][aria-hidden="false"] {
@@ -466,21 +511,66 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         display: none;
       }
 
+      .choice-options-shell {
+        position: relative;
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      .step[data-step-kind="choice"][aria-hidden="false"] .choice-options-shell {
+        grid-row: 2;
+        align-self: stretch;
+        height: 100%;
+      }
+
       .options {
         display: grid;
-        gap: 12px;
+        height: 100%;
+        align-content: start;
+        gap: var(--choice-options-gap);
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        padding: 2px 4px 2px 0;
+        scrollbar-gutter: stable;
+        -webkit-overflow-scrolling: touch;
+      }
+
+      .choice-options-fade {
+        position: absolute;
+        right: 0;
+        left: 0;
+        z-index: 2;
+        height: 32px;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 140ms ease;
+      }
+
+      .choice-options-fade-top {
+        top: 0;
+        background: linear-gradient(180deg, var(--surface), rgba(255, 253, 244, 0));
+      }
+
+      .choice-options-fade-bottom {
+        bottom: 0;
+        background: linear-gradient(0deg, var(--surface), rgba(255, 253, 244, 0));
+      }
+
+      .choice-options-shell[data-can-scroll-up="true"] .choice-options-fade-top,
+      .choice-options-shell[data-can-scroll-down="true"] .choice-options-fade-bottom {
+        opacity: 1;
       }
 
       .option {
         display: flex;
-        min-height: 64px;
+        min-height: var(--choice-option-min-height);
         align-items: center;
-        gap: 14px;
+        gap: var(--choice-option-gap);
         border: 1px solid var(--border);
         border-radius: 8px;
         background: #ffffff;
         cursor: pointer;
-        padding: 16px 18px;
+        padding: var(--choice-option-padding-block) var(--choice-option-padding-inline);
         transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
       }
 
@@ -497,25 +587,26 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
       }
 
       .option input {
-        width: 20px;
-        height: 20px;
+        width: var(--choice-option-input-size);
+        height: var(--choice-option-input-size);
         accent-color: var(--primary);
       }
 
       .option-index {
         display: inline-grid;
-        width: 28px;
-        height: 28px;
+        width: var(--choice-option-index-size);
+        height: var(--choice-option-index-size);
         place-items: center;
         border: 1px solid var(--border);
-        border-radius: 6px;
+        border-radius: var(--choice-option-index-radius);
         color: var(--brand-navy);
-        font-size: 0.85rem;
+        font-size: var(--choice-option-index-font-size);
         font-weight: 800;
       }
 
       .option-text {
-        font-size: 1.15rem;
+        min-width: 0;
+        font-size: var(--choice-option-text-font-size);
         font-weight: 800;
       }
 
@@ -561,7 +652,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
 
       .step[data-step-kind="autocomplete"][aria-hidden="false"] .autocomplete-suggestions-shell {
         align-self: stretch;
-        height: auto;
+        height: 100%;
       }
 
       .autocomplete-suggestions-shell[data-autocomplete-empty="true"] {
@@ -668,6 +759,8 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
 
       .trusted-form-review-scroll-shell {
         position: relative;
+        align-self: stretch;
+        height: 100%;
         min-height: 0;
         overflow: hidden;
       }
@@ -1013,29 +1106,39 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
           height: var(--form-desktop-height, 724px);
         }
 
-        .options {
-          gap: 16px;
+        .step[data-step-kind="choice"] {
+          --choice-options-gap: 16px;
+          --choice-option-min-height: 78px;
+          --choice-option-gap: 18px;
+          --choice-option-padding-block: 20px;
+          --choice-option-padding-inline: 24px;
+          --choice-option-input-size: 24px;
+          --choice-option-index-size: 34px;
+          --choice-option-index-font-size: 0.95rem;
+          --choice-option-text-font-size: 1.28rem;
         }
 
-        .option {
-          min-height: 78px;
-          gap: 18px;
-          padding: 20px 24px;
+        .step[data-step-kind="choice"][data-choice-size="compact"] {
+          --choice-options-gap: 10px;
+          --choice-option-min-height: 62px;
+          --choice-option-gap: 14px;
+          --choice-option-padding-block: 13px;
+          --choice-option-padding-inline: 18px;
+          --choice-option-input-size: 21px;
+          --choice-option-index-size: 30px;
+          --choice-option-index-font-size: 0.9rem;
+          --choice-option-text-font-size: 1.1rem;
         }
 
-        .option input {
-          width: 24px;
-          height: 24px;
-        }
-
-        .option-index {
-          width: 34px;
-          height: 34px;
-          font-size: 0.95rem;
-        }
-
-        .option-text {
-          font-size: 1.28rem;
+        .step[data-step-kind="choice"][data-choice-size="spacious"] {
+          --choice-options-gap: 18px;
+          --choice-option-min-height: 88px;
+          --choice-option-gap: 20px;
+          --choice-option-padding-block: 23px;
+          --choice-option-padding-inline: 28px;
+          --choice-option-input-size: 26px;
+          --choice-option-index-size: 38px;
+          --choice-option-text-font-size: 1.36rem;
         }
 
         .actions {
@@ -1180,30 +1283,46 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
           gap: var(--mfs-16);
         }
 
-        .options {
-          gap: var(--mfs-12);
+        .step[data-step-kind="choice"] {
+          --choice-options-gap: var(--mfs-12);
+          --choice-option-min-height: var(--mfs-64);
+          --choice-option-gap: var(--mfs-14);
+          --choice-option-padding-block: var(--mfs-16);
+          --choice-option-padding-inline: var(--mfs-18);
+          --choice-option-input-size: var(--mfs-20);
+          --choice-option-index-size: var(--mfs-28);
+          --choice-option-index-radius: var(--mfs-6);
+          --choice-option-index-font-size: 0.85rem;
+          --choice-option-text-font-size: 1.15rem;
         }
 
-        .option {
-          min-height: var(--mfs-64);
-          gap: var(--mfs-14);
-          padding: var(--mfs-16) var(--mfs-18);
+        .step[data-step-kind="choice"][data-choice-size="compact"] {
+          --choice-options-gap: var(--mfs-8);
+          --choice-option-min-height: var(--mfs-56);
+          --choice-option-gap: var(--mfs-12);
+          --choice-option-padding-block: var(--mfs-12);
+          --choice-option-padding-inline: var(--mfs-14);
+          --choice-option-input-size: var(--mfs-18);
+          --choice-option-index-size: var(--mfs-24);
+          --choice-option-text-font-size: 1.02rem;
         }
 
-        .option input {
-          width: var(--mfs-20);
-          height: var(--mfs-20);
+        .step[data-step-kind="choice"][data-choice-size="spacious"] {
+          --choice-options-gap: var(--mfs-16);
+          --choice-option-min-height: var(--mfs-68);
+          --choice-option-gap: var(--mfs-16);
+          --choice-option-padding-block: var(--mfs-18);
+          --choice-option-padding-inline: var(--mfs-20);
+          --choice-option-input-size: var(--mfs-22);
+          --choice-option-index-size: var(--mfs-32);
+          --choice-option-text-font-size: 1.2rem;
         }
 
-        .option-index {
-          width: var(--mfs-28);
-          height: var(--mfs-28);
-          border-radius: var(--mfs-6);
-          font-size: 0.85rem;
-        }
-
-        .option-text {
-          font-size: 1.15rem;
+        .choice-options-fade,
+        .autocomplete-scroll-fade,
+        .trusted-form-review-scroll-fade,
+        .consent-scroll-fade {
+          height: var(--mfs-32);
         }
 
         .text-input {
@@ -1219,12 +1338,6 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         .autocomplete-suggestions {
           gap: var(--mfs-8);
           padding: var(--mfs-2) var(--mfs-4) var(--mfs-2) 0;
-        }
-
-        .autocomplete-scroll-fade,
-        .trusted-form-review-scroll-fade,
-        .consent-scroll-fade {
-          height: var(--mfs-32);
         }
 
         .autocomplete-suggestion {
@@ -1672,8 +1785,12 @@ function renderQuestion(
   const isCurrent = index === activeStepIndex;
   const countsAsStep = isCountedStep(stepDefinition);
   const renderTemplate = stepTemplateRegistry[stepDefinition.template] as StepTemplateRenderer<FormStep>;
+  const choiceSizeAttribute =
+    stepDefinition.kind === "choice"
+      ? ` data-choice-size="${escapeHtml(stepDefinition.presentation?.choiceSize ?? "default")}"`
+      : "";
 
-  return `<article class="step" data-step="${index}" data-step-kind="${escapeHtml(stepDefinition.kind)}" data-step-counted="${String(countsAsStep)}" aria-hidden="${String(!isCurrent)}"${isCurrent ? "" : " inert"}>
+  return `<article class="step" data-step="${index}" data-step-kind="${escapeHtml(stepDefinition.kind)}"${choiceSizeAttribute} data-step-counted="${String(countsAsStep)}" aria-hidden="${String(!isCurrent)}"${isCurrent ? "" : " inert"}>
     <h1 class="question-title" data-question-title>${getQuestionTitleHtml(stepDefinition)}</h1>
     ${renderQuestionDescription(stepDefinition)}
     ${renderTemplate(stepDefinition, answers, { form, index })}
@@ -1724,18 +1841,22 @@ function renderInterstitialSuccessLines(successLines: InterstitialStep["successL
 function renderOptions(stepDefinition: ChoiceStep, answers: Record<string, string>): string {
   const currentAnswer = answers[stepDefinition.key];
 
-  return `<div class="options">
-    ${stepDefinition.options
-      .map(
-        (option, index) => `<label class="option" data-option>
+  return `<div class="choice-options-shell" data-choice-options-shell data-can-scroll-up="false" data-can-scroll-down="false">
+    <span class="choice-options-fade choice-options-fade-top" aria-hidden="true"></span>
+    <div class="options" data-choice-options-scroll>
+      ${stepDefinition.options
+        .map(
+          (option, index) => `<label class="option" data-option>
           <input type="radio" name="${escapeHtml(stepDefinition.key)}" value="${escapeHtml(option.key)}"${
             currentAnswer === option.key ? " checked" : ""
           }>
           <span class="option-index">${index + 1}</span>
           <span class="option-text">${escapeHtml(option.value)}</span>
         </label>`,
-      )
-      .join("")}
+        )
+        .join("")}
+    </div>
+    <span class="choice-options-fade choice-options-fade-bottom" aria-hidden="true"></span>
   </div>`;
 }
 

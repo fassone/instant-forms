@@ -11,6 +11,7 @@ import type {
   FormTracking,
   FormPayloadDelivery,
   InstantForm,
+  StepPresentation,
 } from "./types";
 import { getStepDynamicResolverDependencies } from "./dynamic-resolvers";
 import { createFlowAuthoringHelpers, type FlowAuthoringHelpers } from "./step-builders";
@@ -96,6 +97,7 @@ function assertAnswerStepContract(
   const seenAnswerKeys = new Set<string>();
 
   for (const stepDefinition of steps) {
+    assertStepPresentation(stepDefinition);
     assertShowWhenContract(contract, stepDefinition, seenAnswerKeys);
     assertDynamicResolverDependencies(contract, stepDefinition, seenAnswerKeys);
     assertStepTrackingContract(contract, stepDefinition);
@@ -242,6 +244,29 @@ function assertPagePresentation(page: FormPage): void {
 
   if (typeof desktopHeightPx !== "number" || !Number.isFinite(desktopHeightPx) || desktopHeightPx <= 0) {
     throw new Error("page.presentation.desktopHeightPx must be a finite positive number.");
+  }
+}
+
+function assertStepPresentation(stepDefinition: FormStep): void {
+  assertChoiceSizePresentation(stepDefinition.key, stepDefinition.presentation);
+
+  if (stepDefinition.kind === "trusted_form_consent") {
+    assertChoiceSizePresentation(`${stepDefinition.key}.substeps.review`, stepDefinition.substeps?.review?.presentation);
+    assertChoiceSizePresentation(`${stepDefinition.key}.substeps.consent`, stepDefinition.substeps?.consent?.presentation);
+  }
+}
+
+function assertChoiceSizePresentation(stepKey: string, presentation: StepPresentation | undefined): void {
+  const choiceSize = presentation?.choiceSize;
+
+  if (choiceSize === undefined) {
+    return;
+  }
+
+  if (choiceSize !== "default" && choiceSize !== "compact" && choiceSize !== "spacious") {
+    throw new Error(
+      `presentation.choiceSize for step "${stepKey}" must be "default", "compact", or "spacious".`,
+    );
   }
 }
 

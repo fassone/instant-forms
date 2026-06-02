@@ -26,9 +26,11 @@ export type StepTemplateKey = "choice" | "text" | "phone" | "autocomplete" | "in
 export type CheckpointMode = "answer" | "checkpoint_only";
 
 export type StepChromePresentation = "visible" | "hidden" | "hidden_on_mobile";
+export type ChoiceSizePresentation = "default" | "compact" | "spacious";
 
 export type StepPresentation = {
   chrome?: StepChromePresentation;
+  choiceSize?: ChoiceSizePresentation;
 };
 
 export type TrustedFormSubstepPresentation = {

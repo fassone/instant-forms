@@ -75,6 +75,9 @@ export function createHomeInsuranceSteps({ areaDisplayName }: CreateHomeInsuranc
         key: "property_type",
         slug: "tipo-de-propiedad",
         label: "¿Qué tipo de propiedad quiere asegurar?",
+        presentation: {
+          choiceSize: "compact",
+        },
         options: [
           { key: "single_family", label: propertyTypeLabels.single_family },
           { key: "condo", label: propertyTypeLabels.condo },

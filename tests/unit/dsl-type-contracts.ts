@@ -167,6 +167,33 @@ void defineAreaMetaPixelMap({
   zz: "1234567890",
 });
 
+void step.choice({
+  key: "belongs_to_state",
+  slug: "vive-en-estado",
+  label: "¿Vive aqui?",
+  presentation: {
+    choiceSize: "compact",
+  },
+  options: [
+    { key: "yes", label: "Si" },
+    { key: "no", label: "No" },
+  ],
+});
+
+void step.choice({
+  key: "belongs_to_state",
+  slug: "vive-en-estado",
+  label: "¿Vive aqui?",
+  presentation: {
+    // @ts-expect-error Choice size presentation only accepts supported presets.
+    choiceSize: "tiny",
+  },
+  options: [
+    { key: "yes", label: "Si" },
+    { key: "no", label: "No" },
+  ],
+});
+
 void (["TN", "CA"] as const satisfies readonly AreaCode[]);
 
 void ([

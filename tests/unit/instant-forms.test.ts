@@ -2403,6 +2403,45 @@ describe("form registry", () => {
     );
   });
 
+  it("rejects invalid choice size presentation presets", () => {
+    const createFlowWithChoiceSize = (choiceSize: unknown) =>
+      defineFormFlow({
+        name: "Invalid Choice Size",
+        status: "ACTIVE",
+        ...testFlowCopy,
+        contract: {
+          context: z.object({}),
+          answers: z.object({ choice_key: z.enum(["yes"]) }),
+          payload: z.object({ choice: z.string() }),
+        },
+        context: {},
+        payload: {
+          url: "https://example.test/lead-submissions",
+          method: "POST",
+          encoding: "json",
+          mapping: ({ answers }) => ({ choice: answers.choice_key }),
+        },
+        page: { name: "Page" },
+        steps: [
+          step.choice({
+            key: "choice_key",
+            slug: "elige",
+            label: "Elige",
+            presentation: { choiceSize } as any,
+            options: [{ key: "yes", label: "Si" }],
+          }),
+        ],
+      });
+
+    expect(() => createFlowWithChoiceSize("tiny")).toThrow(
+      'presentation.choiceSize for step "choice_key" must be "default", "compact", or "spacious".',
+    );
+    expect(() => createFlowWithChoiceSize(56)).toThrow(
+      'presentation.choiceSize for step "choice_key" must be "default", "compact", or "spacious".',
+    );
+    expect(() => createFlowWithChoiceSize("compact")).not.toThrow();
+  });
+
   it("accepts only absolute HTTPS payload submission URLs", () => {
     const createFlowWithPayloadUrl = (url: string) =>
       defineFormFlow({
@@ -7169,6 +7208,22 @@ describe("form rendering", () => {
     expect(html).toContain("panel.inert = true;");
     expect(html).toContain("panel.inert = false;");
     expect(html).toContain("activeElement.blur();");
+    expect(html).toContain('#steps:has(.step[data-step-kind="choice"][aria-hidden="false"])');
+    expect(html).toContain('.step[data-step-kind="choice"][aria-hidden="false"]');
+    expect(html).toContain("grid-template-rows: minmax(0, 1fr);");
+    expect(html).toContain("grid-template-rows: auto minmax(0, 1fr);");
+    expect(html).toContain(".choice-options-shell");
+    expect(html).toContain("grid-row: 2;");
+    expect(html).toContain(".choice-options-fade");
+    expect(html).toContain(".choice-options-fade-top");
+    expect(html).toContain(".choice-options-fade-bottom");
+    expect(html).toContain('.choice-options-shell[data-can-scroll-up="true"] .choice-options-fade-top');
+    expect(html).toContain('.choice-options-shell[data-can-scroll-down="true"] .choice-options-fade-bottom');
+    expect(html).toContain('data-choice-size="default"');
+    expect(html).toContain('class="choice-options-shell" data-choice-options-shell');
+    expect(html).toContain('class="options" data-choice-options-scroll');
+    expect(html).toContain("--choice-option-min-height: 78px;");
+    expect(html).toContain("min-height: var(--choice-option-min-height);");
     expect(html).toContain('#steps:has(.step[data-step-kind="interstitial"][aria-hidden="false"])');
     expect(html).toContain('.step[data-step-kind="interstitial"][aria-hidden="false"]');
     expect(html).toContain("grid-template-rows: auto minmax(0, 1fr);");
@@ -7216,7 +7271,7 @@ describe("form rendering", () => {
     expect(html).toContain("flex-direction: column;");
     expect(html).toContain("width: min(190px, 38vw);");
     expect(html).toContain("min-height: var(--mfs-58);");
-    expect(html).toContain("min-height: var(--mfs-64);");
+    expect(html).toContain("--choice-option-min-height: var(--mfs-64);");
     expect(html).toContain("min-height: var(--mfs-68);");
     expect(html).toContain("font-size: 1.12rem;");
     expect(html).toContain(".trusted-form-review-row");
@@ -7235,6 +7290,17 @@ describe("form rendering", () => {
     expect(html).toContain('registerBehaviorModule("choice"');
     expect(html).toContain("function advanceAfterChoiceSelection(ctx, question, answer)");
     expect(html).toContain("function saveCheckpoint(questionKey, answer)");
+    expect(html).toContain("function scheduleAfterLayout(callback)");
+    expect(html).toContain('window.addEventListener("resize"');
+    expect(html).toContain('window.visualViewport?.addEventListener("resize"');
+    expect(html).toContain("function updateChoiceOptionsScrollHints(options)");
+    expect(html).toContain("function refreshChoiceScrollHints(ctx, step)");
+    expect(html).toContain("ctx.scheduleAfterLayout(() => updateChoiceOptionsScrollHints(options))");
+    expect(html).toContain("onResize(ctx, _question, step)");
+    expect(html).toContain('options.closest("[data-choice-options-shell]")');
+    expect(html).toContain('step.querySelector("[data-choice-options-scroll]")');
+    expect(html).toContain('target.matches("[data-choice-options-scroll]")');
+    expect(html).toContain("updateChoiceOptionsScrollHints(target)");
     expect(html).toContain("ctx.advanceOptimistically(question, answer)");
     expect(html).toContain("/checkpoints");
     expect(html).not.toContain('registerBehaviorModule("phone"');
@@ -7255,6 +7321,34 @@ describe("form rendering", () => {
     expect(html).toContain("option.checked = true");
     expect(html).toContain("advanceAfterChoiceSelection(ctx, question, option.value)");
     expect(html).toContain("}, 180);");
+  });
+
+  it("renders compact scrollable choice options for the home property type step", async () => {
+    const homeRoute = getRequiredHogarTexasRoute();
+    const propertyTypeIndex = homeRoute.form.steps.findIndex((stepDefinition) => stepDefinition.key === "property_type");
+
+    expect(propertyTypeIndex).toBeGreaterThan(-1);
+
+    const html = await renderHogarTexasForm({
+      activeStepIndex: propertyTypeIndex,
+      answers: {
+        property_in_state: "yes",
+        ownership_status: "own",
+      },
+    });
+    const optionsIndex = html.indexOf('data-choice-options-scroll');
+    const footerIndex = html.indexOf("<footer>");
+
+    expect(html).toContain('data-step-kind="choice" data-choice-size="compact"');
+    expect(html).toContain('class="choice-options-shell" data-choice-options-shell');
+    expect(html).toContain('class="options" data-choice-options-scroll');
+    expect(html).toContain('class="choice-options-fade choice-options-fade-top"');
+    expect(html).toContain('class="choice-options-fade choice-options-fade-bottom"');
+    expect(html).toContain("--choice-option-min-height: 62px;");
+    expect(html).toContain("--choice-option-min-height: var(--mfs-56);");
+    expect(optionsIndex).toBeGreaterThan(-1);
+    expect(footerIndex).toBeGreaterThan(-1);
+    expect(optionsIndex).toBeLessThan(footerIndex);
   });
 
   it("renders the branded matching step with one-time auto-continue wiring", async () => {
@@ -7444,6 +7538,10 @@ describe("form rendering", () => {
     expect(html).toContain(".trusted-form-review-scroll-fade-bottom");
     expect(html).toContain('.trusted-form-review-scroll-shell[data-can-scroll-down="true"] .trusted-form-review-scroll-fade-bottom');
     expect(html).toContain("function updateTrustedFormReviewScrollHints(reviewScroll)");
+    expect(html).toContain("function scheduleTrustedFormReviewScrollHints(ctx, step)");
+    expect(html).toContain("function scheduleTrustedFormConsentScrollHints(ctx, step)");
+    expect(html).toContain("ctx.scheduleAfterLayout(() => updateTrustedFormReviewScrollHints(reviewScroll))");
+    expect(html).toContain("ctx.scheduleAfterLayout(() => updateTrustedFormConsentScrollHints(consentScroll))");
     expect(unsafeHtml).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
     expect(unsafeHtml).not.toContain("<script>");
     expect(unsafeHtml).not.toContain("<img");
@@ -7805,7 +7903,7 @@ describe("form rendering", () => {
     expect(html).toContain('.step[data-step-kind="autocomplete"][aria-hidden="false"] .autocomplete-field');
     expect(html).toContain("grid-template-rows: auto minmax(0, 1fr);");
     expect(html).toContain("align-self: stretch;");
-    expect(html).toContain("height: auto;");
+    expect(html).toContain("height: 100%;");
     expect(html).not.toContain("height: 220px;");
     expect(html).not.toContain("height: 180px;");
     expect(html).toContain("overflow-y: auto;");
@@ -7813,11 +7911,12 @@ describe("form rendering", () => {
     expect(html).toContain("autocomplete-scroll-fade-top");
     expect(html).toContain("autocomplete-scroll-fade-bottom");
     expect(html).toContain("function updateAutocompleteSuggestionScrollHints(suggestions)");
-    expect(html).toContain("window.requestAnimationFrame(() =>");
+    expect(html).toContain("function scheduleAutocompleteSuggestionScrollHints(ctx, suggestions)");
+    expect(html).toContain("ctx.scheduleAfterLayout(() => updateAutocompleteSuggestionScrollHints(suggestions))");
     expect(html).toContain("data-can-scroll-up");
     expect(html).toContain("data-can-scroll-down");
     expect(html).toContain('target.matches("[data-autocomplete-suggestions]")');
-    expect(html).toContain("function updateAutocompleteSuggestions(input, question)");
+    expect(html).toContain("function updateAutocompleteSuggestions(ctx, input, question)");
     expect(html).toContain('target.closest("[data-autocomplete-suggestion]")');
     expect(html).toContain("void ctx.handleNext()");
     expect(html).toContain('step?.querySelector("[data-autocomplete-suggestions-shell]")');
@@ -7859,6 +7958,16 @@ function renderTennesseeForm(options: Parameters<typeof renderFormPage>[1] = {})
   return renderFormPage(form, {
     routeKey,
     stepUrlOverrides: createTennesseeStepUrlOverrides(form),
+    ...options,
+  });
+}
+
+function renderHogarTexasForm(options: Parameters<typeof renderFormPage>[1] = {}): Promise<string> {
+  const route = getRequiredHogarTexasRoute();
+
+  return renderFormPage(route.form, {
+    routeKey: homeRouteKey,
+    stepUrlOverrides: createStepUrlOverridesForRoute(route.routeSegments, route.form),
     ...options,
   });
 }
