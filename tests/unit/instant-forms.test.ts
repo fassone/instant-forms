@@ -162,6 +162,9 @@ const validHomeAnswers = {
 const trustedFormCertUrl = "https://cert.trustedform.com/454a35b802f3e7b63ffabb4efedb7c6ebe67886c";
 const routeKey = "auto_tn";
 const homeRouteKey = "hogar_tx";
+const autoTennesseeMetaPixelId = "1025903583116475";
+const autoCaliforniaMetaPixelId = "2458973931233184";
+const hogarTexasMetaPixelId = "1430748765773171";
 const expectedTennesseeTrustedFormReviewFields = [
   {
     name: "trusted_form_grantor_name",
@@ -389,17 +392,17 @@ describe("form registry", () => {
     });
   });
 
-  it("keeps Tennessee Meta config and mounts authored non-Tennessee auto states without pixels", () => {
+  it("keeps product-specific Meta config for authored auto states", () => {
     const tnRoute = getRequiredTennesseeRoute();
     const caRoute = getFormRouteByRouteKey(formRoutes, "auto_ca");
 
     expect(tnRoute.form.tracking?.googleTagManager?.containerId).toBe("GTM-MVJNX5DZ");
-    expect(JSON.stringify(tnRoute.form.tracking?.events)).toContain('"pixelId":"1465068051587670"');
+    expect(JSON.stringify(tnRoute.form.tracking?.events)).toContain(`"pixelId":"${autoTennesseeMetaPixelId}"`);
     expect(tnRoute.form.customVariables).toMatchObject({
       areaCode: "TN",
     });
     expect(caRoute?.form.tracking?.googleTagManager?.containerId).toBe("GTM-MVJNX5DZ");
-    expect(JSON.stringify(caRoute?.form.tracking?.events)).not.toContain('"pixelId"');
+    expect(JSON.stringify(caRoute?.form.tracking?.events)).toContain(`"pixelId":"${autoCaliforniaMetaPixelId}"`);
     expect(caRoute?.form.name).toBe("ES - CA - v1");
     expect(caRoute?.form.customVariables).toMatchObject({
       areaCode: "CA",
@@ -407,12 +410,12 @@ describe("form registry", () => {
     });
   });
 
-  it("keeps authored home flows on shared GTM without a Meta pixel by default", () => {
+  it("keeps product-specific Meta config for authored hogar states", () => {
     const txRoute = getRequiredHogarTexasRoute();
     const tnRoute = getFormRouteByRouteKey(formRoutes, "hogar_tn");
 
     expect(txRoute.form.tracking?.googleTagManager?.containerId).toBe("GTM-MVJNX5DZ");
-    expect(JSON.stringify(txRoute.form.tracking?.events)).not.toContain('"pixelId"');
+    expect(JSON.stringify(txRoute.form.tracking?.events)).toContain(`"pixelId":"${hogarTexasMetaPixelId}"`);
     expect(tnRoute).toBeUndefined();
   });
 
@@ -1853,7 +1856,7 @@ describe("form registry", () => {
       step_key: "trustedform_consent",
       trusted_form_substep: "review",
       meta: {
-        pixel_id: "1465068051587670",
+        pixel_id: autoTennesseeMetaPixelId,
         event_name: "LeadProgress",
         action_source: "website",
         event_source_url: "https://example.test/auto/tn/consentimiento",
@@ -1900,7 +1903,7 @@ describe("form registry", () => {
       step_key: "trustedform_consent",
       trusted_form_substep: "review",
       meta: {
-        pixel_id: "1465068051587670",
+        pixel_id: autoTennesseeMetaPixelId,
         event_name: "LeadProgress",
         custom_data: {
           residence_state: "TN",
@@ -4074,7 +4077,7 @@ describe("submission validation", () => {
           trustedform_certificate_url: trustedFormCertUrl,
           meta_conversion: {
             enabled: true,
-            pixel_id: "1465068051587670",
+            pixel_id: autoTennesseeMetaPixelId,
             event_name: "Lead",
             event_source_url: "",
           },
@@ -4152,7 +4155,10 @@ describe("submission validation", () => {
           roof_age_years: "6_10",
           trustedform_certificate_url: trustedFormCertUrl,
           meta_conversion: {
-            enabled: false,
+            enabled: true,
+            pixel_id: hogarTexasMetaPixelId,
+            event_name: "Lead",
+            event_source_url: "",
           },
         },
       });
@@ -6122,7 +6128,7 @@ describe("server routing", () => {
           trustedform_certificate_url: trustedFormCertUrl,
           meta_conversion: {
             enabled: true,
-            pixel_id: "1465068051587670",
+            pixel_id: autoTennesseeMetaPixelId,
             event_name: "Lead",
             event_source_url: "http://localhost/api/forms/auto_tn/submissions",
           },
@@ -6375,7 +6381,7 @@ describe("server routing", () => {
     expect(html).not.toContain('window.__FORM_CONFIG__');
     expect(html).toContain("instant_form_submit_success");
     expect(html).not.toContain('"event_name":"Lead"');
-    expect(html).not.toContain('"pixel_id":"1465068051587670"');
+    expect(html).not.toContain(`"pixel_id":"${autoTennesseeMetaPixelId}"`);
     expect(html).toContain('document.addEventListener("pt0", window.__INSTANT_PUSH_INITIAL_TRACKING_EVENTS__');
     expect(html).not.toContain("Ana");
     expect(html).not.toContain("Lopez");
@@ -6406,7 +6412,7 @@ describe("server routing", () => {
           state_code: "TN",
           meta_conversion: {
             enabled: true,
-            pixel_id: "1465068051587670",
+            pixel_id: autoTennesseeMetaPixelId,
             event_name: "Lead",
             event_source_url: "https://example.test/auto/tn/consentimiento",
             fbp: "fb.1.1.abc",
@@ -8023,7 +8029,7 @@ describe("form rendering", () => {
       '"customVariables":{"areaCode":"TN","areaName":"Tennessee","product":"auto_insurance","advertiserName":"Liderna Inc y a sus socios, agentes y proveedores de seguros"}',
     );
     expect(html).toContain('"metaPixelProxy":true');
-    expect(html).toContain('"pixelId":"1465068051587670"');
+    expect(html).toContain(`"pixelId":"${autoTennesseeMetaPixelId}"`);
     expect(html).toContain('"eventName":"LeadProgress"');
     expect(html).not.toContain('"eventName":"Lead"');
     expect(html).not.toContain('"stateCode"');

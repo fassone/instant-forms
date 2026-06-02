@@ -12,7 +12,15 @@ type AreaCode = (typeof US_STATES)[number]["code"];
 export const autoAreaCodes = ["NC", "GA", "CA", "MD", "AZ", "WA", "TX", "OR", "TN"] as const satisfies readonly AreaCode[];
 
 const autoMetaPixelIds: AreaMetaPixelMap = defineAreaMetaPixelMap({
-  tn: "1465068051587670",
+  ca: "2458973931233184",
+  wa: "2077393396531838",
+  az: "1635608547544151",
+  ga: "1517247936797373",
+  nc: "1495714788306246",
+  md: "1390550429792530",
+  tx: "1297957409158074",
+  tn: "1025903583116475",
+  or: "1015581570992603",
 });
 
 const autoAreaCodeSet = new Set<string>(autoAreaCodes);

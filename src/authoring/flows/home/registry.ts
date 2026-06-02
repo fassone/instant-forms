@@ -11,7 +11,9 @@ type AreaCode = (typeof US_STATES)[number]["code"];
 
 export const homeAreaCodes = ["TX"] as const satisfies readonly AreaCode[];
 
-const homeMetaPixelIds: AreaMetaPixelMap = defineAreaMetaPixelMap({});
+const homeMetaPixelIds: AreaMetaPixelMap = defineAreaMetaPixelMap({
+  tx: "1430748765773171",
+});
 
 const homeAreaCodeSet = new Set<string>(homeAreaCodes);
 
