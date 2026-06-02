@@ -91,6 +91,9 @@ export function createHomeInsuranceSteps({ areaDisplayName }: CreateHomeInsuranc
         key: "property_use",
         slug: "uso-de-propiedad",
         label: "¿Cómo usa esta propiedad?",
+        presentation: {
+          choiceSize: "compact",
+        },
         options: [
           { key: "primary_residence", label: propertyUseLabels.primary_residence },
           { key: "secondary_home", label: propertyUseLabels.secondary_home },
@@ -111,6 +114,9 @@ export function createHomeInsuranceSteps({ areaDisplayName }: CreateHomeInsuranc
         key: "house_age_years",
         slug: "edad-de-la-vivienda",
         label: "¿Hace cuánto se construyó la vivienda?",
+        presentation: {
+          choiceSize: "compact",
+        },
         options: [
           { key: "0_5", label: ageRangeLabels["0_5"] },
           { key: "6_10", label: ageRangeLabels["6_10"] },
@@ -122,6 +128,9 @@ export function createHomeInsuranceSteps({ areaDisplayName }: CreateHomeInsuranc
         key: "roof_age_years",
         slug: "edad-del-techo",
         label: "¿Qué edad tiene el techo?",
+        presentation: {
+          choiceSize: "compact",
+        },
         options: [
           { key: "0_5", label: ageRangeLabels["0_5"] },
           { key: "6_10", label: ageRangeLabels["6_10"] },
