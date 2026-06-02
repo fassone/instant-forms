@@ -864,6 +864,14 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         justify-content: flex-end;
       }
 
+      .form-panel[data-form-view="post-submit"] .actions-single {
+        justify-content: stretch;
+      }
+
+      .form-panel[data-form-view="post-submit"] .actions-single .button {
+        width: 100%;
+      }
+
       .button:disabled {
         cursor: not-allowed;
         opacity: 0.45;

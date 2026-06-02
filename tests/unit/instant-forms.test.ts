@@ -6395,6 +6395,9 @@ describe("form rendering", () => {
     expect(html).toContain('style="width: 100%"');
     expect(html).toContain("Step 1 of 1");
     expect(html).toContain("<h1 class=\"question-title\">Done.</h1>");
+    expect(html).toContain('.form-panel[data-form-view="post-submit"] .actions-single');
+    expect(html).toContain('.form-panel[data-form-view="post-submit"] .actions-single .button');
+    expect(html).toContain("width: 100%");
     expect(html).toContain('<a class="button button-primary" href="/auto/tn">Start over</a>');
     expect(html).not.toContain('id="back-button"');
     expect(html).not.toContain('id="next-button"');
