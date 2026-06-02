@@ -5,10 +5,10 @@ export const formRoutes = defineFormRoutes({
   index: redirectTo("/tn"),
 
   folders: {
-    tn: {
-      custom: tnFlow,
-      notFound: redirectTo("/tn/custom"),
-    },
+    auto: {
+      tn: tnFlow
+    }
+    //       notFound: redirectTo("/tn/custom"),
   },
 
   notFound: unavailable({
