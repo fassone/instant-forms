@@ -15,6 +15,9 @@ import {
 import { googleTagManager } from "../../src/authoring/integrations/google-tag-manager";
 import { trustedFormCertify } from "../../src/authoring/integrations/trusted-form";
 import { defineAreaMetaPixelMap } from "../../src/authoring/flows/meta-pixels";
+import { US_STATES } from "../../src/shared/data/us-states";
+
+type AreaCode = (typeof US_STATES)[number]["code"];
 
 const contract = {
   context: z.object({}),
@@ -163,6 +166,14 @@ void defineAreaMetaPixelMap({
   // @ts-expect-error Meta Pixel map keys must be lowercase US state codes.
   zz: "1234567890",
 });
+
+void (["TN", "CA"] as const satisfies readonly AreaCode[]);
+
+void ([
+  "TN",
+  // @ts-expect-error Authored area filters must use known uppercase US state codes.
+  "ZZ",
+] as const satisfies readonly AreaCode[]);
 
 void googleTagManager({
   // @ts-expect-error GTM container IDs must start with GTM-.

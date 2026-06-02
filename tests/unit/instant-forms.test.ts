@@ -19,6 +19,7 @@ import {
   lidernaAreaCodeSchema as homeLidernaAreaCodeSchema,
 } from "../../src/authoring/templates/es-home-insurance/contracts";
 import { formRoutes } from "../../src/authoring/routes/registry";
+import { autoAreaCodes } from "../../src/authoring/flows/auto/registry";
 import {
   createAutoInsuranceFlow,
   defaultAutoInsuranceVariables,
@@ -27,6 +28,7 @@ import {
   createHomeInsuranceFlow,
   defaultHomeInsuranceVariables,
 } from "../../src/authoring/flows/home/shared";
+import { homeAreaCodes } from "../../src/authoring/flows/home/registry";
 import {
   defineAreaMetaPixelMap,
   type AreaMetaPixelKey,
@@ -335,7 +337,7 @@ describe("form registry", () => {
     ]);
   });
 
-  it("maps every US state under the public auto route folder", () => {
+  it("maps authored states under the public auto route folder", () => {
     const form = getRequiredTennesseeForm();
     const autoNode = formRoutes.folders.auto;
 
@@ -343,25 +345,29 @@ describe("form registry", () => {
     expect(autoNode?.type).toBe("group");
     if (autoNode?.type === "group") {
       expect(autoNode.notFound).toEqual({ type: "redirect", to: "/auto/tn" });
-      for (const state of US_STATES) {
-        expect(autoNode.children[state.code.toLowerCase()]?.type).toBe("flow");
+      for (const areaCode of autoAreaCodes) {
+        expect(autoNode.children[areaCode.toLowerCase()]?.type).toBe("flow");
       }
       expect(autoNode.children.tn).toEqual({ type: "flow", form });
+      expect(autoNode.children.ca).toBeUndefined();
+      expect(autoNode.children.dc).toBeUndefined();
     }
     expect(formRoutes.notFound).toEqual({ type: "unavailable", ...unavailableContent, status: 404 });
   });
 
-  it("maps every US state under the public home route folder", () => {
+  it("maps authored states under the public home route folder", () => {
     const homeRoute = getRequiredHomeTennesseeRoute();
     const homeNode = formRoutes.folders.home;
 
     expect(homeNode?.type).toBe("group");
     if (homeNode?.type === "group") {
       expect(homeNode.notFound).toEqual({ type: "redirect", to: "/home/tn" });
-      for (const state of US_STATES) {
-        expect(homeNode.children[state.code.toLowerCase()]?.type).toBe("flow");
+      for (const areaCode of homeAreaCodes) {
+        expect(homeNode.children[areaCode.toLowerCase()]?.type).toBe("flow");
       }
       expect(homeNode.children.tn).toEqual({ type: "flow", form: homeRoute.form });
+      expect(homeNode.children.ca).toBeUndefined();
+      expect(homeNode.children.dc).toBeUndefined();
     }
     expect(homeRoute.routeKey).toBe(homeRouteKey);
     expect(homeRoute.routeSegments).toEqual(["home", "tn"]);
@@ -372,7 +378,7 @@ describe("form registry", () => {
     });
   });
 
-  it("keeps Tennessee Meta config and leaves non-Tennessee auto flows without Meta pixel config", () => {
+  it("keeps Tennessee Meta config without mounting unauthored auto states", () => {
     const tnRoute = getRequiredTennesseeRoute();
     const caRoute = getFormRouteByRouteKey(formRoutes, "auto_ca");
 
@@ -381,24 +387,16 @@ describe("form registry", () => {
     expect(tnRoute.form.customVariables).toMatchObject({
       areaCode: "TN",
     });
-    expect(caRoute?.form.tracking?.googleTagManager?.containerId).toBe("GTM-MVJNX5DZ");
-    expect(JSON.stringify(caRoute?.form.tracking?.events)).not.toContain('"pixelId"');
-    expect(caRoute?.form.name).toBe("ES - CA - v1");
-    expect(caRoute?.form.customVariables).toMatchObject({
-      areaCode: "CA",
-      areaName: "California",
-    });
+    expect(caRoute).toBeUndefined();
   });
 
-  it("keeps home flows on shared GTM without a Meta pixel by default", () => {
+  it("keeps authored home flows on shared GTM without a Meta pixel by default", () => {
     const tnRoute = getRequiredHomeTennesseeRoute();
     const caRoute = getFormRouteByRouteKey(formRoutes, "home_ca");
 
     expect(tnRoute.form.tracking?.googleTagManager?.containerId).toBe("GTM-MVJNX5DZ");
     expect(JSON.stringify(tnRoute.form.tracking?.events)).not.toContain('"pixelId"');
-    expect(caRoute?.form.tracking?.googleTagManager?.containerId).toBe("GTM-MVJNX5DZ");
-    expect(JSON.stringify(caRoute?.form.tracking?.events)).not.toContain('"pixelId"');
-    expect(caRoute?.form.name).toBe("ES - CA Home - v1");
+    expect(caRoute).toBeUndefined();
   });
 
   it("centralizes optional Meta Pixel IDs by product and area", () => {
@@ -432,22 +430,24 @@ describe("form registry", () => {
   });
 
   it("renders sample non-Tennessee auto state copy from each area's variables", async () => {
-    const caRoute = getFormRouteByRouteKey(formRoutes, "auto_ca");
-    const dcRoute = getFormRouteByRouteKey(formRoutes, "auto_dc");
-
-    expect(caRoute?.routeSegments).toEqual(["auto", "ca"]);
-    expect(dcRoute?.routeSegments).toEqual(["auto", "dc"]);
-    if (!caRoute || !dcRoute) {
-      throw new Error("Expected sample auto routes to exist.");
-    }
-
-    const caHtml = await renderFormPage(caRoute.form, {
-      routeKey: "auto_ca",
-      stepUrlOverrides: createStepUrlOverridesForRoute(caRoute.routeSegments, caRoute.form),
+    const caFlow = createAutoInsuranceFlow({
+      flowName: "ES - CA - v1",
+      areaCode: "CA",
+      areaName: "California",
     });
-    const dcHtml = await renderFormPage(dcRoute.form, {
+    const dcFlow = createAutoInsuranceFlow({
+      flowName: "ES - DC - v1",
+      areaCode: "DC",
+      areaName: "District of Columbia",
+    });
+
+    const caHtml = await renderFormPage(caFlow, {
+      routeKey: "auto_ca",
+      stepUrlOverrides: createStepUrlOverridesForRoute(["auto", "ca"], caFlow),
+    });
+    const dcHtml = await renderFormPage(dcFlow, {
       routeKey: "auto_dc",
-      stepUrlOverrides: createStepUrlOverridesForRoute(dcRoute.routeSegments, dcRoute.form),
+      stepUrlOverrides: createStepUrlOverridesForRoute(["auto", "dc"], dcFlow),
     });
 
     expect(caHtml).toContain("¿Usted vive en California?");
@@ -455,22 +455,24 @@ describe("form registry", () => {
   });
 
   it("renders sample home state copy from each area's variables", async () => {
-    const caRoute = getFormRouteByRouteKey(formRoutes, "home_ca");
-    const dcRoute = getFormRouteByRouteKey(formRoutes, "home_dc");
-
-    expect(caRoute?.routeSegments).toEqual(["home", "ca"]);
-    expect(dcRoute?.routeSegments).toEqual(["home", "dc"]);
-    if (!caRoute || !dcRoute) {
-      throw new Error("Expected sample home routes to exist.");
-    }
-
-    const caHtml = await renderFormPage(caRoute.form, {
-      routeKey: "home_ca",
-      stepUrlOverrides: createStepUrlOverridesForRoute(caRoute.routeSegments, caRoute.form),
+    const caFlow = createHomeInsuranceFlow({
+      flowName: "ES - CA Home - v1",
+      areaCode: "CA",
+      areaName: "California",
     });
-    const dcHtml = await renderFormPage(dcRoute.form, {
+    const dcFlow = createHomeInsuranceFlow({
+      flowName: "ES - DC Home - v1",
+      areaCode: "DC",
+      areaName: "District of Columbia",
+    });
+
+    const caHtml = await renderFormPage(caFlow, {
+      routeKey: "home_ca",
+      stepUrlOverrides: createStepUrlOverridesForRoute(["home", "ca"], caFlow),
+    });
+    const dcHtml = await renderFormPage(dcFlow, {
       routeKey: "home_dc",
-      stepUrlOverrides: createStepUrlOverridesForRoute(dcRoute.routeSegments, dcRoute.form),
+      stepUrlOverrides: createStepUrlOverridesForRoute(["home", "dc"], dcFlow),
     });
 
     expect(caHtml).toContain("¿La propiedad que quiere asegurar está en California?");
@@ -3985,13 +3987,14 @@ describe("submission validation", () => {
   });
 
   it("builds the correct downstream payload for a non-Tennessee auto state", () => {
-    const caRoute = getFormRouteByRouteKey(formRoutes, "auto_ca");
-    if (!caRoute) {
-      throw new Error("Expected California form route to exist.");
-    }
+    const caFlow = createAutoInsuranceFlow({
+      flowName: "ES - CA - v1",
+      areaCode: "CA",
+      areaName: "California",
+    });
 
     const result = validateSubmission(
-      caRoute.form,
+      caFlow,
       "auto_ca",
       { answers: validAnswers, trustedFormCertUrl },
       "2026-05-13T00:00:00.000Z",
@@ -4619,26 +4622,40 @@ describe("server routing", () => {
     expect(response.headers.get("Cache-Control")).toBe("no-store");
   });
 
-  it("redirects sample auto state routes to their first unanswered step", async () => {
+  it("redirects authored auto state routes to their first unanswered step", async () => {
     const handler = createFetchHandler();
     const tnResponse = await handler(new Request("http://localhost/auto/tn"));
+
+    expect(tnResponse.headers.get("Location")).toBe("/auto/tn/vive-en-tennessee");
+  });
+
+  it("redirects unauthored auto state routes to Tennessee", async () => {
+    const handler = createFetchHandler();
     const caResponse = await handler(new Request("http://localhost/auto/ca"));
     const dcResponse = await handler(new Request("http://localhost/auto/dc"));
 
-    expect(tnResponse.headers.get("Location")).toBe("/auto/tn/vive-en-tennessee");
-    expect(caResponse.headers.get("Location")).toBe("/auto/ca/vive-en-california");
-    expect(dcResponse.headers.get("Location")).toBe("/auto/dc/vive-en-district-of-columbia");
+    expect(caResponse.status).toBe(302);
+    expect(caResponse.headers.get("Location")).toBe("/auto/tn");
+    expect(dcResponse.status).toBe(302);
+    expect(dcResponse.headers.get("Location")).toBe("/auto/tn");
   });
 
-  it("redirects sample home state routes to their first unanswered step", async () => {
+  it("redirects authored home state routes to their first unanswered step", async () => {
     const handler = createFetchHandler();
     const tnResponse = await handler(new Request("http://localhost/home/tn"));
+
+    expect(tnResponse.headers.get("Location")).toBe("/home/tn/propiedad-en-tennessee");
+  });
+
+  it("redirects unauthored home state routes to Tennessee", async () => {
+    const handler = createFetchHandler();
     const caResponse = await handler(new Request("http://localhost/home/ca"));
     const dcResponse = await handler(new Request("http://localhost/home/dc"));
 
-    expect(tnResponse.headers.get("Location")).toBe("/home/tn/propiedad-en-tennessee");
-    expect(caResponse.headers.get("Location")).toBe("/home/ca/propiedad-en-california");
-    expect(dcResponse.headers.get("Location")).toBe("/home/dc/propiedad-en-district-of-columbia");
+    expect(caResponse.status).toBe(302);
+    expect(caResponse.headers.get("Location")).toBe("/home/tn");
+    expect(dcResponse.status).toBe(302);
+    expect(dcResponse.headers.get("Location")).toBe("/home/tn");
   });
 
   it("redirects Tennessee custom to the next unanswered step from a checkpoint", async () => {

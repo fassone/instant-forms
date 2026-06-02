@@ -7,10 +7,16 @@ import {
 } from "../meta-pixels";
 import { createHomeInsuranceFlow } from "./shared";
 
+type AreaCode = (typeof US_STATES)[number]["code"];
+
+export const homeAreaCodes = ["TX"] as const satisfies readonly AreaCode[];
+
 const homeMetaPixelIds: AreaMetaPixelMap = defineAreaMetaPixelMap({});
 
+const homeAreaCodeSet = new Set<string>(homeAreaCodes);
+
 export const homeFlows = Object.fromEntries(
-  US_STATES.map((state) => {
+  US_STATES.filter((state) => homeAreaCodeSet.has(state.code)).map((state) => {
     const stateKey = state.code.toLowerCase() as AreaMetaPixelKey;
     const metaPixelId = homeMetaPixelIds[stateKey];
 

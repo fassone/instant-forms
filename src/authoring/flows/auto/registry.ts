@@ -7,12 +7,18 @@ import {
 } from "../meta-pixels";
 import { createAutoInsuranceFlow } from "./shared";
 
+type AreaCode = (typeof US_STATES)[number]["code"];
+
+export const autoAreaCodes = ["NC", "GA", "CA", "MD", "AZ", "WA", "TX", "OR", "TN"] as const satisfies readonly AreaCode[];
+
 const autoMetaPixelIds: AreaMetaPixelMap = defineAreaMetaPixelMap({
   tn: "1465068051587670",
 });
 
+const autoAreaCodeSet = new Set<string>(autoAreaCodes);
+
 export const autoFlows = Object.fromEntries(
-  US_STATES.map((state) => {
+  US_STATES.filter((state) => autoAreaCodeSet.has(state.code)).map((state) => {
     const stateKey = state.code.toLowerCase() as AreaMetaPixelKey;
     const metaPixelId = autoMetaPixelIds[stateKey];
 

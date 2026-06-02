@@ -94,12 +94,12 @@ Every source and test folder has its own `README.md` describing ownership and sa
 |---|---|
 | `GET /` | Redirects to `/auto/tn`. |
 | `GET /auto` | Redirects to the authored Tennessee auto form route at `/auto/tn`. |
-| `GET /auto/:state` | Redirects to the next unanswered state-specific auto step. |
-| `GET /auto/:state/:stepSlug` | Renders a guarded routed step, for example `/auto/tn/vive-en-tennessee` or `/auto/ca/vive-en-california`. |
+| `GET /auto/:state` | Redirects to the next unanswered step for an authored auto state. |
+| `GET /auto/:state/:stepSlug` | Renders a guarded routed step for an authored auto state, for example `/auto/tn/vive-en-tennessee`. |
 | `GET /auto/*` | Redirects unknown auto group paths back to `/auto/tn`. |
 | `GET /home` | Redirects to the authored Tennessee home form route at `/home/tn`. |
-| `GET /home/:state` | Redirects to the next unanswered state-specific home step. |
-| `GET /home/:state/:stepSlug` | Renders a guarded routed step, for example `/home/tn/propiedad-en-tennessee`. |
+| `GET /home/:state` | Redirects to the next unanswered step for an authored home state. |
+| `GET /home/:state/:stepSlug` | Renders a guarded routed step for an authored home state, for example `/home/tn/propiedad-en-tennessee`. |
 | `GET /home/*` | Redirects unknown home group paths back to `/home/tn`. |
 | `GET /__preview/auto/tn/:stepSlug` | No-store preview mirror for public form step visual iteration. |
 | `GET /_instant/scripts/:scriptKey.js` | Allowlisted first-party proxy for selected third-party scripts. |
@@ -112,9 +112,9 @@ Unavailable public routes use author-controlled title, message, CTA, and status 
 
 ## Form Flow
 
-Auto- and home-insurance flows are generated from `US_STATES` in `src/authoring/flows/auto/registry.ts` and `src/authoring/flows/home/registry.ts`. Both are built with the typed DSL in `src/platform/flow/dsl/`. Public route placement lives in `src/authoring/routes/registry.ts`, where every `US_STATES` code is mounted under `/auto/{state}` and `/home/{state}`. Runtime identity comes from that route mount, so `/auto/tn` uses the encoded route key `auto_tn` and `/home/tn` uses `home_tn`.
+Auto- and home-insurance flows are generated from the product-authored area filters in `src/authoring/flows/auto/registry.ts` and `src/authoring/flows/home/registry.ts`. Those filters must use codes from `US_STATES`, but only listed states are mounted under `/auto/{state}` and `/home/{state}`. Both products are built with the typed DSL in `src/platform/flow/dsl/`. Public route placement lives in `src/authoring/routes/registry.ts`. Runtime identity comes from that route mount, so `/auto/tn` uses the encoded route key `auto_tn` and `/home/tn` uses `home_tn`.
 
-Reusable flow shapes live in `src/authoring/templates/` and use `defineFormTemplate(...)`. A template declares a Zod `variables` contract and exposes `.create(input)`, which validates required, optional, and unknown variables before returning a normal `InstantForm` through `defineFormFlow(...)`. Each auto state is currently an instantiation of the reusable Spanish auto-insurance template; each home state is an instantiation of the reusable Spanish home-insurance template.
+Reusable flow shapes live in `src/authoring/templates/` and use `defineFormTemplate(...)`. A template declares a Zod `variables` contract and exposes `.create(input)`, which validates required, optional, and unknown variables before returning a normal `InstantForm` through `defineFormFlow(...)`. Each authored auto state is currently an instantiation of the reusable Spanish auto-insurance template; each authored home state is an instantiation of the reusable Spanish home-insurance template.
 
 Each flow declares a `locale`, an explicit `ui` copy block for platform-owned labels, progress text, modal copy, validation/failure messages, and native error pages, plus a neutral `postSubmit` page for the successful post-submission destination. There is no hidden Spanish fallback: a new language is authored by creating a flow whose step copy, `ui` copy, and `postSubmit` copy are in that language.
 

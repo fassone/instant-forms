@@ -2,8 +2,8 @@
 
 ## Purpose
 
-`src/authoring/flows/auto/` contains the generated Spanish auto-insurance flow family for every authored area in `US_STATES`.
-`registry.ts` creates one concrete flow mounted at `/auto/{state}` with a route key such as `auto_tn`, `auto_ca`, or `auto_dc`.
+`src/authoring/flows/auto/` contains the generated Spanish auto-insurance flow family for product-authored areas.
+`registry.ts` declares the active `autoAreaCodes` filter and creates one concrete flow mounted at `/auto/{state}` with a route key such as `auto_tn`.
 
 ```mermaid
 flowchart TD
@@ -34,4 +34,4 @@ flowchart TD
 
 ## Change Safely
 
-Keep public slugs stable once launched. New state coverage should come from `US_STATES`; do not add per-state auto folders unless a state truly needs a unique flow structure. Add state-specific Meta Pixel IDs to `autoMetaPixelIds` in `registry.ts`.
+Keep public slugs stable once launched. New state coverage should be added to `autoAreaCodes` with codes from `US_STATES`; do not add per-state auto folders unless a state truly needs a unique flow structure. Add state-specific Meta Pixel IDs to `autoMetaPixelIds` in `registry.ts`.
