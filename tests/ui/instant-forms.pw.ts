@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { encodeCheckpointAnswers, getCheckpointCookieName } from "../../src/platform/persistence/checkpoints";
 
-const routeKey = "tn_custom";
+const routeKey = "auto_tn";
 const appPort = Number(process.env.PLAYWRIGHT_PORT ?? 51234);
 const appUrl = `http://127.0.0.1:${appPort}`;
 const trustedFormCertUrl = "https://cert.trustedform.com/454a35b802f3e7b63ffabb4efedb7c6ebe67886c";
@@ -23,21 +23,21 @@ const seenMatchingAnswers = {
 
 test.describe("instant routed form UI", () => {
   test("choice auto-advance works with browser back and forward", async ({ page }) => {
-    await page.goto("/tn");
-    await expect(page).toHaveURL(/\/tn\/custom\/vive-en-tennessee$/u);
+    await page.goto("/auto");
+    await expect(page).toHaveURL(/\/auto\/tn\/vive-en-tennessee$/u);
 
     await clickActiveOption(page, "Si");
-    await expect(page).toHaveURL(/\/tn\/custom\/tiene-licencia$/u);
+    await expect(page).toHaveURL(/\/auto\/tn\/tiene-licencia$/u);
 
     await page.goBack();
-    await expect(page).toHaveURL(/\/tn\/custom\/vive-en-tennessee$/u);
+    await expect(page).toHaveURL(/\/auto\/tn\/vive-en-tennessee$/u);
 
     await page.goForward();
-    await expect(page).toHaveURL(/\/tn\/custom\/tiene-licencia$/u);
+    await expect(page).toHaveURL(/\/auto\/tn\/tiene-licencia$/u);
   });
 
   test("production transition asset swaps steps without a document navigation", async ({ page }) => {
-    await page.goto("/tn/custom/vive-en-tennessee");
+    await page.goto("/auto/tn/vive-en-tennessee");
     const transitionAssetUrl = await getTransitionAssetUrl(page);
 
     if (!transitionAssetUrl) {
@@ -58,15 +58,15 @@ test.describe("instant routed form UI", () => {
     });
 
     await clickActiveOption(page, "Si");
-    await expect(page).toHaveURL(/\/tn\/custom\/tiene-licencia$/u);
+    await expect(page).toHaveURL(/\/auto\/tn\/tiene-licencia$/u);
     await expectPanelHiddenAndUnfocused(page, '[data-step="0"]');
     await expectPanelVisibleAndInteractive(page, '[data-step="2"]');
-    expect(documentRequests.filter((url) => url.includes("/tn/custom/tiene-licencia"))).toHaveLength(0);
+    expect(documentRequests.filter((url) => url.includes("/auto/tn/tiene-licencia"))).toHaveLength(0);
   });
 
   test("preloaded dynamic consent content stays hidden on earlier steps", async ({ page }) => {
     let consentResolutionRequests = 0;
-    await page.route("**/api/forms/tn_custom/resolutions", async (route) => {
+    await page.route("**/api/forms/auto_tn/resolutions", async (route) => {
       const postData = route.request().postDataJSON() as { stepKey?: string } | undefined;
       if (postData?.stepKey === "trustedform_consent") {
         consentResolutionRequests += 1;
@@ -81,7 +81,7 @@ test.describe("instant routed form UI", () => {
       last_name: "Lopez",
       phone_number: "+16155551234",
     });
-    await page.goto("/tn/custom/vive-en-tennessee");
+    await page.goto("/auto/tn/vive-en-tennessee");
     const transitionAssetUrl = await getTransitionAssetUrl(page);
 
     if (!transitionAssetUrl) {
@@ -97,7 +97,7 @@ test.describe("instant routed form UI", () => {
 
   test("dynamic consent preload waits until route guards allow the consent step", async ({ page }) => {
     let consentResolutionRequests = 0;
-    await page.route("**/api/forms/tn_custom/resolutions", async (route) => {
+    await page.route("**/api/forms/auto_tn/resolutions", async (route) => {
       const postData = route.request().postDataJSON() as { stepKey?: string } | undefined;
       if (postData?.stepKey === "trustedform_consent") {
         consentResolutionRequests += 1;
@@ -110,7 +110,7 @@ test.describe("instant routed form UI", () => {
       last_name: "Lopez",
       phone_number: "+16155551234",
     });
-    await page.goto("/tn/custom/vive-en-tennessee");
+    await page.goto("/auto/tn/vive-en-tennessee");
     const transitionAssetUrl = await getTransitionAssetUrl(page);
 
     if (!transitionAssetUrl) {
@@ -155,7 +155,7 @@ test.describe("instant routed form UI", () => {
       });
     });
 
-    await page.goto("/tn/custom/vive-en-tennessee");
+    await page.goto("/auto/tn/vive-en-tennessee");
     await page.evaluate(`
       window.dataLayer = window.dataLayer || [];
       window.__GTM_DATALAYER_PUSH_WORKED__ = typeof window.dataLayer.push === "function";
@@ -200,7 +200,7 @@ test.describe("instant routed form UI", () => {
   });
 
   test("production optimistic transitions do not wait for slow checkpoint responses", async ({ page }) => {
-    await page.goto("/tn/custom/vive-en-tennessee");
+    await page.goto("/auto/tn/vive-en-tennessee");
     const transitionAssetUrl = await getTransitionAssetUrl(page);
 
     if (!transitionAssetUrl) {
@@ -210,7 +210,7 @@ test.describe("instant routed form UI", () => {
     await waitForTransitionAsset(page, transitionAssetUrl);
 
     let releasedCheckpoints = 0;
-    await page.route("**/api/forms/tn_custom/checkpoints", async (route) => {
+    await page.route("**/api/forms/auto_tn/checkpoints", async (route) => {
       await new Promise((resolve) => {
         setTimeout(resolve, 1000);
       });
@@ -219,18 +219,18 @@ test.describe("instant routed form UI", () => {
     });
 
     await clickActiveOption(page, "Si");
-    await expect(page).toHaveURL(/\/tn\/custom\/tiene-licencia$/u, { timeout: 700 });
+    await expect(page).toHaveURL(/\/auto\/tn\/tiene-licencia$/u, { timeout: 700 });
     expect(releasedCheckpoints).toBe(0);
 
     await clickActiveOption(page, "Si");
-    await expect(page).toHaveURL(/\/tn\/custom\/tiene-seguro$/u, { timeout: 700 });
+    await expect(page).toHaveURL(/\/auto\/tn\/tiene-seguro$/u, { timeout: 700 });
     expect(releasedCheckpoints).toBe(0);
 
     await expect.poll(() => releasedCheckpoints, { timeout: 2500 }).toBeGreaterThan(0);
   });
 
   test("checkpoint rejection rolls back the optimistic step and shows the modal", async ({ page }) => {
-    await page.goto("/tn/custom/vive-en-tennessee");
+    await page.goto("/auto/tn/vive-en-tennessee");
     const transitionAssetUrl = await getTransitionAssetUrl(page);
 
     if (!transitionAssetUrl) {
@@ -238,7 +238,7 @@ test.describe("instant routed form UI", () => {
     }
 
     await waitForTransitionAsset(page, transitionAssetUrl);
-    await page.route("**/api/forms/tn_custom/checkpoints", async (route) => {
+    await page.route("**/api/forms/auto_tn/checkpoints", async (route) => {
       await new Promise((resolve) => {
         setTimeout(resolve, 250);
       });
@@ -252,14 +252,14 @@ test.describe("instant routed form UI", () => {
     });
 
     await clickActiveOption(page, "Si");
-    await expect(page).toHaveURL(/\/tn\/custom\/tiene-licencia$/u, { timeout: 700 });
-    await expect(page).toHaveURL(/\/tn\/custom\/vive-en-tennessee$/u);
+    await expect(page).toHaveURL(/\/auto\/tn\/tiene-licencia$/u, { timeout: 700 });
+    await expect(page).toHaveURL(/\/auto\/tn\/vive-en-tennessee$/u);
     await expect(page.getByRole("alertdialog")).toBeVisible();
     await expect(page.getByText("No pudimos guardar esta respuesta.")).toBeVisible();
   });
 
   test("error modal appears without inline layout errors", async ({ page }) => {
-    await page.goto("/tn/custom/vive-en-tennessee");
+    await page.goto("/auto/tn/vive-en-tennessee");
     await expect(page.getByRole("button", { name: "Siguiente" })).toBeEnabled();
     await page.getByRole("button", { name: "Siguiente" }).click();
 
@@ -271,7 +271,7 @@ test.describe("instant routed form UI", () => {
 
   test("matching step uses the shared spinner while the offer is loading", async ({ page }) => {
     await seedCheckpoint(page, preContactAnswers);
-    await page.goto("/tn/custom/buscando-oferta");
+    await page.goto("/auto/tn/buscando-oferta");
 
     await assertSpinnerOnlyLoadingButton(page);
     await expect(page.getByRole("button", { name: "Siguiente" })).toBeEnabled({ timeout: 8000 });
@@ -282,8 +282,8 @@ test.describe("instant routed form UI", () => {
     await page.route("**/_instant/forms/**/transition.js", async (route) => {
       await route.abort();
     });
-    await page.goto("/tn/custom/vive-en-tennessee");
-    await page.route("**/api/forms/tn_custom/checkpoints", async (route) => {
+    await page.goto("/auto/tn/vive-en-tennessee");
+    await page.route("**/api/forms/auto_tn/checkpoints", async (route) => {
       await new Promise((resolve) => {
         setTimeout(resolve, 1000);
       });
@@ -292,12 +292,12 @@ test.describe("instant routed form UI", () => {
 
     await clickActiveOption(page, "Si");
     await assertSpinnerOnlyLoadingButton(page);
-    await expect(page).toHaveURL(/\/tn\/custom\/tiene-licencia$/u);
+    await expect(page).toHaveURL(/\/auto\/tn\/tiene-licencia$/u);
   });
 
   test("autocomplete suggestions scroll internally and select a normalized state", async ({ page }) => {
     await seedCheckpoint(page, { belongs_to_state: "no" });
-    await page.goto("/tn/custom/estado-donde-vive");
+    await page.goto("/auto/tn/estado-donde-vive");
 
     const stateInput = activeStep(page).getByPlaceholder("Escriba su estado aquí");
     await stateInput.fill("a");
@@ -328,7 +328,7 @@ test.describe("instant routed form UI", () => {
       element.dispatchEvent(new Event("scroll", { bubbles: true }));
     });
     await suggestions.locator("[data-autocomplete-suggestion]").first().click();
-    await expect(page).toHaveURL(/\/tn\/custom\/tiene-licencia$/u);
+    await expect(page).toHaveURL(/\/auto\/tn\/tiene-licencia$/u);
   });
 
   test("phone mask accepts +1 input and final submission succeeds", async ({ page }) => {
@@ -338,7 +338,7 @@ test.describe("instant routed form UI", () => {
       first_name: "Ana",
       last_name: "Lopez",
     });
-    await page.goto("/tn/custom/telefono");
+    await page.goto("/auto/tn/telefono");
 
     const phoneInput = activeStep(page).getByPlaceholder("Escriba su telefono aquí");
     await phoneInput.fill("+1 (615) 555-1234");
@@ -352,12 +352,12 @@ test.describe("instant routed form UI", () => {
     } else {
       await page.getByRole("button", { name: "Siguiente" }).click();
     }
-    await expect(page).toHaveURL(/\/tn\/custom\/consentimiento$/u);
+    await expect(page).toHaveURL(/\/auto\/tn\/consentimiento$/u);
 
     await continueTrustedFormReview(page);
     await activeStep(page).locator("[data-trusted-form-consent]").check();
     await expect(page.getByRole("button", { name: trustedFormSubmitLabel })).toBeEnabled();
-    const submissionRequest = page.waitForRequest(/\/api\/forms\/tn_custom\/native-submissions/u);
+    const submissionRequest = page.waitForRequest(/\/api\/forms\/auto_tn\/native-submissions/u);
     await page.getByRole("button", { name: trustedFormSubmitLabel }).click();
     expect((await submissionRequest).postData() ?? "").toContain(
       "trustedFormCertUrl=https%3A%2F%2Fcert.trustedform.com%2F454a35b802f3e7b63ffabb4efedb7c6ebe67886c",
@@ -373,7 +373,7 @@ test.describe("instant routed form UI", () => {
       last_name: "Lopez",
       phone_number: "+16155551234",
     });
-    await page.goto("/tn/custom/consentimiento");
+    await page.goto("/auto/tn/consentimiento");
 
     const step = activeStep(page);
     const description = step.locator("[data-question-description]");
@@ -441,7 +441,7 @@ test.describe("instant routed form UI", () => {
       last_name: "Lopez",
       phone_number: "+16155551234",
     });
-    await page.goto("/tn/custom/consentimiento");
+    await page.goto("/auto/tn/consentimiento");
     await continueTrustedFormReview(page);
 
     const consentPanel = activeStep(page).locator('[data-trusted-form-substep="consent"]');
@@ -467,7 +467,7 @@ test.describe("instant routed form UI", () => {
       last_name: "Lopez",
       phone_number: "+16155551234",
     });
-    await page.goto("/tn/custom/consentimiento");
+    await page.goto("/auto/tn/consentimiento");
 
     await expect(page.getByRole("button", { name: "Preparando..." })).toBeHidden();
     await expect(page.getByRole("button", { name: "Continuar" })).toBeEnabled();
@@ -502,7 +502,7 @@ test.describe("instant routed form UI", () => {
     const nativeSubmissionRequest = new Promise<string>((resolve) => {
       resolveNativeRequest = resolve;
     });
-    await page.route("**/api/forms/tn_custom/native-submissions", async (route) => {
+    await page.route("**/api/forms/auto_tn/native-submissions", async (route) => {
       resolveNativeRequest(route.request().postData() ?? "");
       await route.fulfill({ status: 204, body: "" });
     });
@@ -529,7 +529,7 @@ test.describe("instant routed form UI", () => {
       last_name: "Fassone",
       phone_number: "+17864746654",
     });
-    await page.goto("/tn/custom/consentimiento");
+    await page.goto("/auto/tn/consentimiento");
     await expect(page.locator('img[alt="Seguros Aseguranza"]')).toBeHidden();
     await expect(page.locator("[data-step-count]")).toBeHidden();
     await continueTrustedFormReview(page);
@@ -581,7 +581,7 @@ test.describe("instant routed form UI", () => {
 
     for (const width of widths) {
       await page.setViewportSize({ width, height: 700 });
-      await page.goto("/tn/custom/vive-en-tennessee");
+      await page.goto("/auto/tn/vive-en-tennessee");
       measurements.push(
         await page.evaluate(() => {
           type BrowserElement = {
@@ -627,11 +627,11 @@ test.describe("instant routed form UI", () => {
       phone_number: "+16155551234",
     });
     let submissionRequests = 0;
-    await page.route("**/api/forms/tn_custom/native-submissions", async (route) => {
+    await page.route("**/api/forms/auto_tn/native-submissions", async (route) => {
       submissionRequests += 1;
       await route.continue();
     });
-    await page.goto("/tn/custom/consentimiento");
+    await page.goto("/auto/tn/consentimiento");
     await continueTrustedFormReview(page);
 
     const submitButton = page.getByRole("button", { name: trustedFormSubmitLabel });
@@ -653,7 +653,7 @@ test.describe("instant routed form UI", () => {
       phone_number: "+16155551234",
     });
     let submissionRequests = 0;
-    await page.route("**/api/forms/tn_custom/native-submissions", async (route) => {
+    await page.route("**/api/forms/auto_tn/native-submissions", async (route) => {
       submissionRequests += 1;
       const postData = route.request().postData() ?? "";
       const fields = new URLSearchParams(postData);
@@ -669,13 +669,13 @@ test.describe("instant routed form UI", () => {
         }),
       });
     });
-    await page.goto("/tn/custom/consentimiento");
+    await page.goto("/auto/tn/consentimiento");
     await continueTrustedFormReview(page);
     await activeStep(page).locator("[data-trusted-form-consent]").check();
 
     await page.getByRole("button", { name: trustedFormSubmitLabel }).click();
 
-    await expect(page).toHaveURL(/\/tn\/custom\/consentimiento$/u);
+    await expect(page).toHaveURL(/\/auto\/tn\/consentimiento$/u);
     await expect(page.getByRole("alertdialog")).toBeVisible();
     await expect(page.getByText("No pudimos enviar el formulario.")).toBeVisible();
     await expect(page.getByRole("button", { name: trustedFormSubmitLabel })).toBeEnabled();
@@ -712,7 +712,7 @@ test.describe("instant routed form UI", () => {
       first_name: "Ana",
       last_name: "Lopez",
     });
-    await page.goto("/tn/custom/telefono");
+    await page.goto("/auto/tn/telefono");
     await page.waitForTimeout(300);
 
     await expect
@@ -734,7 +734,7 @@ test.describe("instant routed form UI", () => {
       await page.getByRole("button", { name: "Siguiente" }).click();
     }
 
-    await expect(page).toHaveURL(/\/tn\/custom\/consentimiento$/u);
+    await expect(page).toHaveURL(/\/auto\/tn\/consentimiento$/u);
     await continueTrustedFormReview(page);
     expect(partytownRequests).toBe(0);
     expect(trustedFormDirectRequests).toBe(0);
@@ -758,39 +758,39 @@ test.describe("instant routed form UI", () => {
       last_name: "Lopez",
       phone_number: "+16155551234",
     });
-    await page.goto("/tn/custom/consentimiento");
+    await page.goto("/auto/tn/consentimiento");
 
     await page.getByRole("button", { name: "Continuar" }).click();
     await expect(page.getByRole("button", { name: trustedFormSubmitLabel })).toBeEnabled({ timeout: 7000 });
     await expect(page.getByRole("alertdialog")).toBeHidden();
 
     await activeStep(page).locator("[data-trusted-form-consent]").check();
-    const submissionRequest = page.waitForRequest(/\/api\/forms\/tn_custom\/native-submissions/u);
+    const submissionRequest = page.waitForRequest(/\/api\/forms\/auto_tn\/native-submissions/u);
     await page.getByRole("button", { name: trustedFormSubmitLabel }).click();
     expect((await submissionRequest).postData() ?? "").not.toContain("trustedFormCertUrl=");
     await expect(page.getByRole("heading", { name: "Gracias." })).toBeVisible();
   });
 
   test("key visual states remain stable", async ({ page }) => {
-    await page.goto("/tn/custom/vive-en-tennessee");
+    await page.goto("/auto/tn/vive-en-tennessee");
     await expect(page).toHaveScreenshot("first-choice.png");
 
     await seedCheckpoint(page, { belongs_to_state: "no" });
-    await page.goto("/tn/custom/estado-donde-vive");
+    await page.goto("/auto/tn/estado-donde-vive");
     await activeStep(page).getByPlaceholder("Escriba su estado aquí").fill("a");
     await expect(page).toHaveScreenshot("autocomplete-suggestions.png");
 
     await seedCheckpoint(page, { ...preContactAnswers, matching_offer: "completed" });
-    await page.goto("/tn/custom/buscando-oferta");
+    await page.goto("/auto/tn/buscando-oferta");
     await expect(page.getByText("Encontramos agentes listos para cotizarle.")).toBeVisible();
     await expect(page).toHaveScreenshot("matching-success.png");
 
     await seedCheckpoint(page, seenMatchingAnswers);
-    await page.goto("/tn/custom/nombre");
+    await page.goto("/auto/tn/nombre");
     await expect(page).toHaveScreenshot("contact-name.png");
 
     await seedCheckpoint(page, { ...seenMatchingAnswers, first_name: "Ana", last_name: "Lopez" });
-    await page.goto("/tn/custom/telefono");
+    await page.goto("/auto/tn/telefono");
     await expect(page).toHaveScreenshot("phone-step.png");
   });
 });

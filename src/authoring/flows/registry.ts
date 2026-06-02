@@ -1,6 +1,6 @@
 import type { InstantForm } from "../../platform/flow/dsl/types";
-import { tnFlow } from "./tn/flow";
+import { autoFlows } from "./auto/registry";
 
 export const authoredFlows = {
-  tn: tnFlow,
+  ...autoFlows,
 } as const satisfies Record<string, InstantForm>;

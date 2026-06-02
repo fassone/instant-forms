@@ -23,7 +23,7 @@ export default defineConfig({
   },
   webServer: {
     command: `PORT=${port} bun run dev`,
-    url: `${baseURL}/tn`,
+    url: `${baseURL}/auto/tn`,
     reuseExistingServer: true,
     timeout: 15_000,
   },

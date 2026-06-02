@@ -6,8 +6,8 @@
 
 ## Belongs Here
 
-- Public form folder placement, such as `/tn/custom`.
-- Group-level fallbacks, such as redirecting `/tn` or `/tn/*` to `/tn/custom`.
+- Public form folder placement, such as `/auto/tn`.
+- Group-level fallbacks, such as redirecting `/auto` or `/auto/*` to `/auto/tn`.
 - The default root redirect for the public form experience.
 - Global public form fallback content and CTA configuration.
 

@@ -1,6 +1,6 @@
 # instant-forms
 
-Ultra-fast Bun + Hono + TypeScript progressive lead forms. The first flow is a Spanish Tennessee auto-insurance form for Seguros Aseguranza, rendered from the authored public route folder `/tn`.
+Ultra-fast Bun + Hono + TypeScript progressive lead forms. The first flow family is Spanish auto insurance for Seguros Aseguranza, rendered from authored public route folders such as `/auto/tn`.
 
 ## Purpose
 
@@ -58,7 +58,7 @@ Run the app:
 bun run dev
 ```
 
-Open `http://localhost:3000/tn`.
+Open `http://localhost:3000/auto/tn`.
 
 Build production form HTML:
 
@@ -92,12 +92,12 @@ Every source and test folder has its own `README.md` describing ownership and sa
 
 | Route | Purpose |
 |---|---|
-| `GET /` | Redirects to `/tn`. |
-| `GET /tn` | Redirects to the authored Tennessee form route at `/tn/custom`. |
-| `GET /tn/custom` | Redirects to the next unanswered Tennessee step. |
-| `GET /tn/custom/:stepSlug` | Renders a guarded routed step, for example `/tn/custom/vive-en-tennessee`. |
-| `GET /tn/*` | Redirects unknown Tennessee group paths back to `/tn/custom`. |
-| `GET /__preview/tn/custom/:stepSlug` | No-store preview mirror for public form step visual iteration. |
+| `GET /` | Redirects to `/auto/tn`. |
+| `GET /auto` | Redirects to the authored Tennessee auto form route at `/auto/tn`. |
+| `GET /auto/:state` | Redirects to the next unanswered state-specific auto step. |
+| `GET /auto/:state/:stepSlug` | Renders a guarded routed step, for example `/auto/tn/vive-en-tennessee` or `/auto/ca/vive-en-california`. |
+| `GET /auto/*` | Redirects unknown auto group paths back to `/auto/tn`. |
+| `GET /__preview/auto/tn/:stepSlug` | No-store preview mirror for public form step visual iteration. |
 | `GET /_instant/scripts/:scriptKey.js` | Allowlisted first-party proxy for selected third-party scripts. |
 | `GET /~partytown/*` | Partytown worker/runtime assets used after the small bootstrap has been inlined. |
 | `POST /api/forms/:routeKey/checkpoints` | Validates one answer, writes the checkpoint cookie, and returns the next URL. |
@@ -108,9 +108,9 @@ Unavailable public routes use author-controlled title, message, CTA, and status 
 
 ## Form Flow
 
-The Tennessee flow lives in `src/authoring/flows/tn/flow.ts` and is built with the typed DSL in `src/platform/flow/dsl/`. Public route placement lives in `src/authoring/routes/registry.ts`, where `/tn/custom` is mapped to the Tennessee flow and `/tn` is a small route group. Runtime identity comes from that route mount, so `/tn/custom` uses the encoded route key `tn_custom`.
+The auto-insurance flows live in `src/authoring/flows/auto/{state}/flow.ts` and are built with the typed DSL in `src/platform/flow/dsl/`. Public route placement lives in `src/authoring/routes/registry.ts`, where every `US_STATES` code is mounted under `/auto/{state}`. Runtime identity comes from that route mount, so `/auto/tn` uses the encoded route key `auto_tn`.
 
-Reusable flow shapes live in `src/authoring/templates/` and use `defineFormTemplate(...)`. A template declares a Zod `variables` contract and exposes `.create(input)`, which validates required, optional, and unknown variables before returning a normal `InstantForm` through `defineFormFlow(...)`. Tennessee is currently an instantiation of the reusable Spanish auto-insurance template.
+Reusable flow shapes live in `src/authoring/templates/` and use `defineFormTemplate(...)`. A template declares a Zod `variables` contract and exposes `.create(input)`, which validates required, optional, and unknown variables before returning a normal `InstantForm` through `defineFormFlow(...)`. Each auto state is currently an instantiation of the reusable Spanish auto-insurance template.
 
 Each flow declares a `locale`, an explicit `ui` copy block for platform-owned labels, progress text, modal copy, validation/failure messages, and native error pages, plus a neutral `postSubmit` page for the successful post-submission destination. There is no hidden Spanish fallback: a new language is authored by creating a flow whose step copy, `ui` copy, and `postSubmit` copy are in that language.
 
@@ -142,7 +142,7 @@ Flows can opt into Google Tag Manager through the typed `googleTagManager(...)` 
 
 For Meta Pixel testing, set the optional `META_TEST_EVENT_CODE` environment variable before starting the server or building forms. Tennessee passes it through the template as `meta.test_event_code` on authored Meta payloads, so GTM can forward it to Meta Test Events. Leave it unset for normal production traffic.
 
-Tennessee requires `LIDERNA_WEBLEADS_SUBMISSION_URL` before starting the server or building forms. It must be an absolute HTTPS URL and is authored into the template as the blocking downstream lead endpoint.
+Auto-insurance flows require `LIDERNA_WEBLEADS_SUBMISSION_URL` before starting the server or building forms. It must be an absolute HTTPS URL and is authored into the template as the blocking downstream lead endpoint.
 
 For Tennessee Meta Conversions API testing or production server-side delivery of progress events, set the optional `META_CONVERSIONS_ACCESS_TOKEN` environment variable before starting the server. When present, the Tennessee template attaches authored server callbacks to its Meta-enabled progress tracking events and sends the same event IDs used by GTM to Meta CAPI. Final `Lead` conversion responsibility is downstream: the submitted delivery payload includes an explicit `meta_conversion` object that the lead processor can use after the lead is processed.
 
@@ -154,7 +154,7 @@ Selected third-party scripts are declared in `src/authoring/scripts/registry.ts`
 
 ## Checkpoints
 
-Partial answers are saved in an HttpOnly cookie named `instant_forms_<routeKey>_answers` with a 7-day max age, `SameSite=Lax`, `Path=/`, and `Secure` on HTTPS. For the current Tennessee mount, that cookie is `instant_forms_tn_custom_answers`. Cookie values are base64url JSON and are sanitized before use.
+Partial answers are saved in an HttpOnly cookie named `instant_forms_<routeKey>_answers` with a 7-day max age, `SameSite=Lax`, `Path=/`, and `Secure` on HTTPS. For the current Tennessee mount, that cookie is `instant_forms_auto_tn_answers`. Cookie values are base64url JSON and are sanitized before use.
 
 Phone checkpoints preserve the visitor-visible value for resume. Final submissions normalize valid US numbers to E.164, for example `+16155551234`.
 
@@ -208,7 +208,7 @@ Example logged delivery block:
       "meta_conversion": {
         "enabled": true,
         "pixel_id": "1465068051587670",
-        "event_source_url": "https://dev3000.liderna.net/tn/custom/consentimiento",
+        "event_source_url": "https://dev3000.liderna.net/auto/tn/consentimiento",
         "event_id": "33333333-3333-4333-8333-333333333333",
         "event_name": "Lead",
         "fbp": "fb.1.1779717727926.wqp6t469ygm",

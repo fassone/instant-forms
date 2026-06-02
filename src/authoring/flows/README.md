@@ -26,6 +26,6 @@ Concrete market files may directly call `defineFormFlow(...)` or instantiate a r
 
 ## Change Safely
 
-Keep public slugs stable once launched. Register public placement in `src/authoring/routes/registry.ts`; route mounts define runtime route keys such as `tn_custom`. When adding business context, declare it in `contract.context` before using it in authored `context`, template variables, or `payload.mapping`. When adding an answer-producing step, declare the same key exactly once in `contract.answers`; for choice steps, keep option keys equal to the answer enum values. Conditions in `showWhen` may reference only answer-producing steps that appear earlier in the flow.
+Keep public slugs stable once launched. Register public placement in `src/authoring/routes/registry.ts`; route mounts define runtime route keys such as `auto_tn`. When adding business context, declare it in `contract.context` before using it in authored `context`, template variables, or `payload.mapping`. When adding an answer-producing step, declare the same key exactly once in `contract.answers`; for choice steps, keep option keys equal to the answer enum values. Conditions in `showWhen` may reference only answer-producing steps that appear earlier in the flow.
 
 When targeting a new language, author both the step text and the required flow-level `ui` block in that language. The platform reads modal copy, action labels, progress text, and fallback errors from `ui`; it does not provide a language-specific default.

@@ -1,14 +1,14 @@
 import { defineFormRoutes, redirectTo, unavailable } from "../../platform/routing";
-import { tnFlow } from "../flows/tn/flow";
+import { autoFlows } from "../flows/auto/registry";
 
 export const formRoutes = defineFormRoutes({
-  index: redirectTo("/tn"),
+  index: redirectTo("/auto/tn"),
 
   folders: {
     auto: {
-      tn: tnFlow
-    }
-    //       notFound: redirectTo("/tn/custom"),
+      ...autoFlows,
+      notFound: redirectTo("/auto/tn"),
+    },
   },
 
   notFound: unavailable({
@@ -18,7 +18,7 @@ export const formRoutes = defineFormRoutes({
     message: "Esta página no existe o ya no está disponible.",
     cta: {
       label: "Ir al formulario",
-      href: "/tn/custom",
+      href: "/auto/tn",
     },
   }),
 });
