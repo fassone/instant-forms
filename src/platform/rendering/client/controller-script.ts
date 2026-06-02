@@ -183,6 +183,8 @@ function getCoreRuntimeScript(): string {
       trackServerFormEvent,
       trackFormEvent,
       scheduleAfterLayout,
+      scheduleScrollHintRefresh,
+      updateScrollHintState,
       updateNextButton,
     };
   }
@@ -196,6 +198,20 @@ function getCoreRuntimeScript(): string {
     window.requestAnimationFrame(() => {
       window.requestAnimationFrame(callback);
     });
+  }
+
+  function updateScrollHintState(scrollTarget, shell) {
+    const canScroll = scrollTarget.scrollHeight > scrollTarget.clientHeight + 1;
+    shell.dataset.canScrollUp = String(canScroll && scrollTarget.scrollTop > 1);
+    shell.dataset.canScrollDown = String(
+      canScroll && scrollTarget.scrollTop + scrollTarget.clientHeight < scrollTarget.scrollHeight - 1,
+    );
+  }
+
+  function scheduleScrollHintRefresh(scrollTarget, shell) {
+    const refresh = () => updateScrollHintState(scrollTarget, shell);
+    scheduleAfterLayout(refresh);
+    window.setTimeout(refresh, 120);
   }
 
   function handleScrollMoreHintClick(event) {
@@ -1894,20 +1910,19 @@ function getChoiceBehaviorScript(registerExpression: string): string {
       return input instanceof HTMLInputElement ? input : undefined;
     }
 
-    function updateChoiceOptionsScrollHints(options) {
+    function updateChoiceOptionsScrollHints(ctx, options) {
       const shell = options.closest("[data-choice-options-shell]");
       if (!(shell instanceof HTMLElement)) return;
-      const canScroll = options.scrollHeight > options.clientHeight + 1;
-      shell.dataset.canScrollUp = String(canScroll && options.scrollTop > 1);
-      shell.dataset.canScrollDown = String(
-        canScroll && options.scrollTop + options.clientHeight < options.scrollHeight - 1,
-      );
+      ctx.updateScrollHintState(options, shell);
     }
 
     function refreshChoiceScrollHints(ctx, step) {
       const options = step.querySelector("[data-choice-options-scroll]");
       if (options instanceof HTMLElement) {
-        ctx.scheduleAfterLayout(() => updateChoiceOptionsScrollHints(options));
+        const shell = options.closest("[data-choice-options-shell]");
+        if (shell instanceof HTMLElement) {
+          ctx.scheduleScrollHintRefresh(options, shell);
+        }
       }
     }
 
@@ -1923,10 +1938,10 @@ function getChoiceBehaviorScript(registerExpression: string): string {
       },
       unmount: clearAutoAdvance,
       beforeBack: clearAutoAdvance,
-      onScroll(event) {
+      onScroll(event, ctx) {
         const target = event.target;
         if (target instanceof HTMLElement && target.matches("[data-choice-options-scroll]")) {
-          updateChoiceOptionsScrollHints(target);
+          updateChoiceOptionsScrollHints(ctx, target);
         }
       },
       onClick(event, ctx, question, step) {
@@ -2301,18 +2316,17 @@ function getAutocompleteBehaviorScript(registerExpression: string): string {
         .map((result) => result.item);
     }
 
-    function updateAutocompleteSuggestionScrollHints(suggestions) {
+    function updateAutocompleteSuggestionScrollHints(ctx, suggestions) {
       const shell = suggestions.closest("[data-autocomplete-suggestions-shell]");
       if (!(shell instanceof HTMLElement)) return;
-      const canScroll = suggestions.scrollHeight > suggestions.clientHeight + 1;
-      shell.dataset.canScrollUp = String(canScroll && suggestions.scrollTop > 1);
-      shell.dataset.canScrollDown = String(
-        canScroll && suggestions.scrollTop + suggestions.clientHeight < suggestions.scrollHeight - 1,
-      );
+      ctx.updateScrollHintState(suggestions, shell);
     }
 
     function scheduleAutocompleteSuggestionScrollHints(ctx, suggestions) {
-      ctx.scheduleAfterLayout(() => updateAutocompleteSuggestionScrollHints(suggestions));
+      const shell = suggestions.closest("[data-autocomplete-suggestions-shell]");
+      if (shell instanceof HTMLElement) {
+        ctx.scheduleScrollHintRefresh(suggestions, shell);
+      }
     }
 
     function refreshAutocompleteSuggestionScrollHints(ctx, step) {
@@ -2375,10 +2389,10 @@ function getAutocompleteBehaviorScript(registerExpression: string): string {
           updateAutocompleteSuggestions(ctx, target, question);
         }
       },
-      onScroll(event) {
+      onScroll(event, ctx) {
         const target = event.target;
         if (target instanceof HTMLElement && target.matches("[data-autocomplete-suggestions]")) {
-          updateAutocompleteSuggestionScrollHints(target);
+          updateAutocompleteSuggestionScrollHints(ctx, target);
         }
       },
       onClick(event, ctx) {
@@ -2657,6 +2671,7 @@ ${requestProxyRuntimeScript}
     let allowNativeSubmit = false;
     let nativeSubmitState;
     let nativeSubmitMessageListenerInstalled = false;
+    let trustedFormReviewScrollObserver;
 
     function getAnswer(_ctx, question, step) {
       const checked = step.querySelector("[data-trusted-form-consent]:checked");
@@ -2668,7 +2683,7 @@ ${requestProxyRuntimeScript}
       if (input instanceof HTMLInputElement) {
         input.checked = answer === question.acceptedAnswer;
       }
-      hydrateTrustedFormFieldBank(question, step);
+      hydrateTrustedFormFieldBank(ctx, question, step);
     }
 
     function validate(ctx, question, step) {
@@ -2702,6 +2717,7 @@ ${requestProxyRuntimeScript}
     }
 
     function unmount(ctx) {
+      disconnectTrustedFormReviewScrollObserver();
       clearNativeSubmitState();
       resetNativeSubmissionTarget(ctx);
       ctx.form.removeAttribute("data-tf-element-role");
@@ -2749,8 +2765,9 @@ ${requestProxyRuntimeScript}
         ctx.trackFormEvent("trustedFormSubstepView", trackingPayload);
       }
       if (activeSubstep === "review") {
-        scheduleTrustedFormReviewScrollHints(ctx, step);
+        observeTrustedFormReviewScrollHints(ctx, step);
       } else {
+        disconnectTrustedFormReviewScrollObserver();
         scheduleTrustedFormConsentScrollHints(ctx, step);
       }
     }
@@ -2782,39 +2799,64 @@ ${requestProxyRuntimeScript}
           delete input.dataset.tfElementRole;
         }
       });
-      scheduleTrustedFormReviewScrollHints(ctx, step);
+      observeTrustedFormReviewScrollHints(ctx, step);
     }
 
     function scheduleTrustedFormReviewScrollHints(ctx, step) {
       const reviewScroll = step.querySelector("[data-trusted-form-review-scroll]");
       if (!(reviewScroll instanceof HTMLElement)) return;
-      ctx.scheduleAfterLayout(() => updateTrustedFormReviewScrollHints(reviewScroll));
+      const shell = reviewScroll.closest("[data-trusted-form-review-scroll-shell]");
+      if (shell instanceof HTMLElement) {
+        ctx.scheduleScrollHintRefresh(reviewScroll, shell);
+      }
     }
 
-    function updateTrustedFormReviewScrollHints(reviewScroll) {
+    function observeTrustedFormReviewScrollHints(ctx, step) {
+      scheduleTrustedFormReviewScrollHints(ctx, step);
+      disconnectTrustedFormReviewScrollObserver();
+
+      const reviewScroll = step.querySelector("[data-trusted-form-review-scroll]");
+      if (!(reviewScroll instanceof HTMLElement) || typeof ResizeObserver !== "function") {
+        return;
+      }
+
+      const observer = new ResizeObserver(() => scheduleTrustedFormReviewScrollHints(ctx, step));
+      observer.observe(reviewScroll);
+      const reviewList = reviewScroll.querySelector(".trusted-form-review-list");
+      if (reviewList instanceof HTMLElement) {
+        observer.observe(reviewList);
+      }
+      const shell = reviewScroll.closest("[data-trusted-form-review-scroll-shell]");
+      if (shell instanceof HTMLElement) {
+        observer.observe(shell);
+      }
+      trustedFormReviewScrollObserver = observer;
+    }
+
+    function disconnectTrustedFormReviewScrollObserver() {
+      trustedFormReviewScrollObserver?.disconnect();
+      trustedFormReviewScrollObserver = undefined;
+    }
+
+    function updateTrustedFormReviewScrollHints(ctx, reviewScroll) {
       const shell = reviewScroll.closest("[data-trusted-form-review-scroll-shell]");
       if (!(shell instanceof HTMLElement)) return;
-      const canScroll = reviewScroll.scrollHeight > reviewScroll.clientHeight + 1;
-      shell.dataset.canScrollUp = String(canScroll && reviewScroll.scrollTop > 1);
-      shell.dataset.canScrollDown = String(
-        canScroll && reviewScroll.scrollTop + reviewScroll.clientHeight < reviewScroll.scrollHeight - 1,
-      );
+      ctx.updateScrollHintState(reviewScroll, shell);
     }
 
     function scheduleTrustedFormConsentScrollHints(ctx, step) {
       const consentScroll = step.querySelector("[data-trusted-form-consent-scroll]");
       if (!(consentScroll instanceof HTMLElement)) return;
-      ctx.scheduleAfterLayout(() => updateTrustedFormConsentScrollHints(consentScroll));
+      const shell = consentScroll.closest("[data-trusted-form-consent-scroll-shell]");
+      if (shell instanceof HTMLElement) {
+        ctx.scheduleScrollHintRefresh(consentScroll, shell);
+      }
     }
 
-    function updateTrustedFormConsentScrollHints(consentScroll) {
+    function updateTrustedFormConsentScrollHints(ctx, consentScroll) {
       const shell = consentScroll.closest("[data-trusted-form-consent-scroll-shell]");
       if (!(shell instanceof HTMLElement)) return;
-      const canScroll = consentScroll.scrollHeight > consentScroll.clientHeight + 1;
-      shell.dataset.canScrollUp = String(canScroll && consentScroll.scrollTop > 1);
-      shell.dataset.canScrollDown = String(
-        canScroll && consentScroll.scrollTop + consentScroll.clientHeight < consentScroll.scrollHeight - 1,
-      );
+      ctx.updateScrollHintState(consentScroll, shell);
     }
 
     function startTrustedFormStepReadiness(ctx, question) {
@@ -3333,18 +3375,18 @@ ${requestProxyRuntimeScript}
         }
         return false;
       },
-      onScroll(event) {
+      onScroll(event, ctx) {
         const target = event.target;
         if (target instanceof HTMLElement && target.matches("[data-trusted-form-review-scroll]")) {
-          updateTrustedFormReviewScrollHints(target);
+          updateTrustedFormReviewScrollHints(ctx, target);
         }
         if (target instanceof HTMLElement && target.matches("[data-trusted-form-consent-scroll]")) {
-          updateTrustedFormConsentScrollHints(target);
+          updateTrustedFormConsentScrollHints(ctx, target);
         }
       },
       onResize(ctx, _question, step) {
         if (activeSubstep === "review") {
-          scheduleTrustedFormReviewScrollHints(ctx, step);
+          observeTrustedFormReviewScrollHints(ctx, step);
         } else {
           scheduleTrustedFormConsentScrollHints(ctx, step);
         }

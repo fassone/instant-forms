@@ -437,6 +437,49 @@ test.describe("instant routed form UI", () => {
     await expectScrollShellToRespectFooter(page, shell);
   });
 
+  test("TrustedForm review shows Más before the first scroll on mobile", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 560 });
+    await mockTrustedFormCertify(page);
+    await seedCheckpointForRouteKey(page, homeRouteKey, {
+      property_in_state: "no",
+      property_state: "LA",
+      ownership_status: "rent",
+      property_type: "condo",
+      property_use: "secondary_home",
+      has_home_insurance: "no",
+      house_age_years: "21_plus",
+      roof_age_years: "11_20",
+      matching_offer: "seen",
+      first_name: "Michel",
+      last_name: "Fassone",
+      phone_number: "+14435707047",
+    });
+    await page.goto("/hogar/tx/consentimiento");
+
+    const step = activeStep(page);
+    const shell = step.locator("[data-trusted-form-review-scroll-shell]");
+    const reviewScroll = step.locator("[data-trusted-form-review-scroll]");
+    const hint = shell.locator(".scroll-more-hint");
+
+    await expect(step.getByRole("heading", { name: trustedFormReviewTitle })).toBeVisible();
+    await expect(shell).toBeVisible();
+    await shell.evaluate((element) => {
+      element.style.height = "150px";
+      element.style.maxHeight = "150px";
+    });
+    await expect(shell).toHaveAttribute("data-can-scroll-up", "false");
+    await expect(shell).toHaveAttribute("data-can-scroll-down", "true");
+    await expect(hint).toHaveText("Más");
+    await expect(hint).toHaveCSS("opacity", "1");
+
+    const maxScrollTop = await reviewScroll.evaluate((element) => element.scrollHeight - element.clientHeight);
+    await hint.click();
+    await expect.poll(() => reviewScroll.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+    if (maxScrollTop > 120) {
+      expect(await reviewScroll.evaluate((element) => element.scrollTop)).toBeLessThan(maxScrollTop);
+    }
+  });
+
   test("phone mask accepts +1 input and final submission succeeds", async ({ page }) => {
     await mockTrustedFormCertify(page);
     await seedCheckpoint(page, {

@@ -7362,14 +7362,17 @@ describe("form rendering", () => {
     expect(html).toContain("function scheduleAfterLayout(callback)");
     expect(html).toContain('window.addEventListener("resize"');
     expect(html).toContain('window.visualViewport?.addEventListener("resize"');
-    expect(html).toContain("function updateChoiceOptionsScrollHints(options)");
+    expect(html).toContain("function updateChoiceOptionsScrollHints(ctx, options)");
     expect(html).toContain("function refreshChoiceScrollHints(ctx, step)");
     expect(html).toContain("function handleScrollMoreHintClick(event)");
     expect(html).toContain("function scrollElementBySmartPage(scrollTarget)");
     expect(html).toContain("Math.floor(scrollTarget.clientHeight * 0.72)");
+    expect(html).toContain("function updateScrollHintState(scrollTarget, shell)");
+    expect(html).toContain("function scheduleScrollHintRefresh(scrollTarget, shell)");
+    expect(html).toContain("window.setTimeout(refresh, 120)");
     expect(html).toContain('target.closest("[data-scroll-more-hint]")');
     expect(html).toContain("scrollElementBySmartPage(scrollTarget)");
-    expect(html).toContain("ctx.scheduleAfterLayout(() => updateChoiceOptionsScrollHints(options))");
+    expect(html).toContain("ctx.scheduleScrollHintRefresh(options, shell)");
     expect(html).toContain("form.dataset.activeStepKind = question.kind");
     expect(html).toContain("function updateFocusedInputKind()");
     expect(html).toContain("form.dataset.focusedStepKind = question.kind");
@@ -7377,7 +7380,7 @@ describe("form rendering", () => {
     expect(html).toContain('options.closest("[data-choice-options-shell]")');
     expect(html).toContain('step.querySelector("[data-choice-options-scroll]")');
     expect(html).toContain('target.matches("[data-choice-options-scroll]")');
-    expect(html).toContain("updateChoiceOptionsScrollHints(target)");
+    expect(html).toContain("updateChoiceOptionsScrollHints(ctx, target)");
     expect(html).toContain("ctx.advanceOptimistically(question, answer)");
     expect(html).toContain("/checkpoints");
     expect(html).not.toContain('registerBehaviorModule("phone"');
@@ -7707,11 +7710,17 @@ describe("form rendering", () => {
     expect(html).toContain(".trusted-form-review-scroll-shell {");
     expect(html).toContain(".trusted-form-review-scroll-fade-bottom");
     expect(html).toContain('.trusted-form-review-scroll-shell[data-can-scroll-down="true"] .trusted-form-review-scroll-fade-bottom');
-    expect(html).toContain("function updateTrustedFormReviewScrollHints(reviewScroll)");
+    expect(html).toContain("function updateTrustedFormReviewScrollHints(ctx, reviewScroll)");
     expect(html).toContain("function scheduleTrustedFormReviewScrollHints(ctx, step)");
+    expect(html).toContain("function observeTrustedFormReviewScrollHints(ctx, step)");
+    expect(html).toContain("function disconnectTrustedFormReviewScrollObserver()");
+    expect(html).toContain('typeof ResizeObserver !== "function"');
+    expect(html).toContain("new ResizeObserver(() => scheduleTrustedFormReviewScrollHints(ctx, step))");
+    expect(html).toContain("observer.observe(reviewScroll)");
+    expect(html).toContain("observer.observe(reviewList)");
     expect(html).toContain("function scheduleTrustedFormConsentScrollHints(ctx, step)");
-    expect(html).toContain("ctx.scheduleAfterLayout(() => updateTrustedFormReviewScrollHints(reviewScroll))");
-    expect(html).toContain("ctx.scheduleAfterLayout(() => updateTrustedFormConsentScrollHints(consentScroll))");
+    expect(html).toContain("ctx.scheduleScrollHintRefresh(reviewScroll, shell)");
+    expect(html).toContain("ctx.scheduleScrollHintRefresh(consentScroll, shell)");
     expect(unsafeHtml).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
     expect(unsafeHtml).not.toContain("<script>");
     expect(unsafeHtml).not.toContain("<img");
@@ -7850,7 +7859,7 @@ describe("form rendering", () => {
     expect(html).not.toContain("function preloadTrustedFormSdk(trustedForm)");
     expect(html).toContain("function ensureTrustedFormReady(trustedForm)");
     expect(html).toContain("function waitForTrustedFormCertUrl(trustedForm)");
-    expect(html).toContain("function updateTrustedFormConsentScrollHints(consentScroll)");
+    expect(html).toContain("function updateTrustedFormConsentScrollHints(ctx, consentScroll)");
     expect(html).toContain("function setFormChrome(chrome)");
     expect(html).toContain("ctx.setFormChrome(getTrustedFormSubstepChrome(question, activeSubstep))");
     expect(html).toContain("ctx.setPanelHidden(panel, panel.dataset.trustedFormSubstep !== activeSubstep)");
@@ -8086,9 +8095,9 @@ describe("form rendering", () => {
     expect(html).toContain(
       '<button type="button" class="scroll-more-hint" data-scroll-more-hint>Más opciones</button>',
     );
-    expect(html).toContain("function updateAutocompleteSuggestionScrollHints(suggestions)");
+    expect(html).toContain("function updateAutocompleteSuggestionScrollHints(ctx, suggestions)");
     expect(html).toContain("function scheduleAutocompleteSuggestionScrollHints(ctx, suggestions)");
-    expect(html).toContain("ctx.scheduleAfterLayout(() => updateAutocompleteSuggestionScrollHints(suggestions))");
+    expect(html).toContain("ctx.scheduleScrollHintRefresh(suggestions, shell)");
     expect(html).toContain("data-can-scroll-up");
     expect(html).toContain("data-can-scroll-down");
     expect(html).toContain('target.matches("[data-autocomplete-suggestions]")');
