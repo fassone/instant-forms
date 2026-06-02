@@ -161,7 +161,7 @@ const validHomeAnswers = {
 
 const trustedFormCertUrl = "https://cert.trustedform.com/454a35b802f3e7b63ffabb4efedb7c6ebe67886c";
 const routeKey = "auto_tn";
-const homeRouteKey = "home_tn";
+const homeRouteKey = "hogar_tx";
 const expectedTennesseeTrustedFormReviewFields = [
   {
     name: "trusted_form_grantor_name",
@@ -315,6 +315,12 @@ const unavailableContent = {
   },
 };
 
+const unavailableContentWithoutCta = {
+  locale: "es",
+  title: "404",
+  message: "Esta página no existe o ya no está disponible.",
+};
+
 const repoRoot = join(import.meta.dir, "../..");
 
 describe("form registry", () => {
@@ -344,41 +350,42 @@ describe("form registry", () => {
     expect(formRoutes.index).toEqual({ type: "redirect", to: "/auto/tn" });
     expect(autoNode?.type).toBe("group");
     if (autoNode?.type === "group") {
-      expect(autoNode.notFound).toEqual({ type: "redirect", to: "/auto/tn" });
+      expect(autoNode.notFound).toBeUndefined();
       for (const areaCode of autoAreaCodes) {
         expect(autoNode.children[areaCode.toLowerCase()]?.type).toBe("flow");
       }
       expect(autoNode.children.tn).toEqual({ type: "flow", form });
-      expect(autoNode.children.ca).toBeUndefined();
+      expect(autoNode.children.ca?.type).toBe("flow");
       expect(autoNode.children.dc).toBeUndefined();
     }
-    expect(formRoutes.notFound).toEqual({ type: "unavailable", ...unavailableContent, status: 404 });
+    expect(formRoutes.notFound).toEqual({ type: "unavailable", ...unavailableContentWithoutCta, status: 404 });
   });
 
-  it("maps authored states under the public home route folder", () => {
-    const homeRoute = getRequiredHomeTennesseeRoute();
-    const homeNode = formRoutes.folders.home;
+  it("maps authored states under the public hogar route folder", () => {
+    const homeRoute = getRequiredHogarTexasRoute();
+    const homeNode = formRoutes.folders.hogar;
 
     expect(homeNode?.type).toBe("group");
     if (homeNode?.type === "group") {
-      expect(homeNode.notFound).toEqual({ type: "redirect", to: "/home/tn" });
+      expect(homeNode.notFound).toBeUndefined();
       for (const areaCode of homeAreaCodes) {
         expect(homeNode.children[areaCode.toLowerCase()]?.type).toBe("flow");
       }
-      expect(homeNode.children.tn).toEqual({ type: "flow", form: homeRoute.form });
+      expect(homeNode.children.tx).toEqual({ type: "flow", form: homeRoute.form });
+      expect(homeNode.children.tn).toBeUndefined();
       expect(homeNode.children.ca).toBeUndefined();
       expect(homeNode.children.dc).toBeUndefined();
     }
     expect(homeRoute.routeKey).toBe(homeRouteKey);
-    expect(homeRoute.routeSegments).toEqual(["home", "tn"]);
+    expect(homeRoute.routeSegments).toEqual(["hogar", "tx"]);
     expect(homeRoute.form.customVariables).toMatchObject({
-      areaCode: "TN",
-      areaName: "Tennessee",
+      areaCode: "TX",
+      areaName: "Texas",
       product: "home_insurance",
     });
   });
 
-  it("keeps Tennessee Meta config without mounting unauthored auto states", () => {
+  it("keeps Tennessee Meta config and mounts authored non-Tennessee auto states without pixels", () => {
     const tnRoute = getRequiredTennesseeRoute();
     const caRoute = getFormRouteByRouteKey(formRoutes, "auto_ca");
 
@@ -387,16 +394,22 @@ describe("form registry", () => {
     expect(tnRoute.form.customVariables).toMatchObject({
       areaCode: "TN",
     });
-    expect(caRoute).toBeUndefined();
+    expect(caRoute?.form.tracking?.googleTagManager?.containerId).toBe("GTM-MVJNX5DZ");
+    expect(JSON.stringify(caRoute?.form.tracking?.events)).not.toContain('"pixelId"');
+    expect(caRoute?.form.name).toBe("ES - CA - v1");
+    expect(caRoute?.form.customVariables).toMatchObject({
+      areaCode: "CA",
+      areaName: "California",
+    });
   });
 
   it("keeps authored home flows on shared GTM without a Meta pixel by default", () => {
-    const tnRoute = getRequiredHomeTennesseeRoute();
-    const caRoute = getFormRouteByRouteKey(formRoutes, "home_ca");
+    const txRoute = getRequiredHogarTexasRoute();
+    const tnRoute = getFormRouteByRouteKey(formRoutes, "hogar_tn");
 
-    expect(tnRoute.form.tracking?.googleTagManager?.containerId).toBe("GTM-MVJNX5DZ");
-    expect(JSON.stringify(tnRoute.form.tracking?.events)).not.toContain('"pixelId"');
-    expect(caRoute).toBeUndefined();
+    expect(txRoute.form.tracking?.googleTagManager?.containerId).toBe("GTM-MVJNX5DZ");
+    expect(JSON.stringify(txRoute.form.tracking?.events)).not.toContain('"pixelId"');
+    expect(tnRoute).toBeUndefined();
   });
 
   it("centralizes optional Meta Pixel IDs by product and area", () => {
@@ -467,12 +480,12 @@ describe("form registry", () => {
     });
 
     const caHtml = await renderFormPage(caFlow, {
-      routeKey: "home_ca",
-      stepUrlOverrides: createStepUrlOverridesForRoute(["home", "ca"], caFlow),
+      routeKey: "hogar_ca",
+      stepUrlOverrides: createStepUrlOverridesForRoute(["hogar", "ca"], caFlow),
     });
     const dcHtml = await renderFormPage(dcFlow, {
-      routeKey: "home_dc",
-      stepUrlOverrides: createStepUrlOverridesForRoute(["home", "dc"], dcFlow),
+      routeKey: "hogar_dc",
+      stepUrlOverrides: createStepUrlOverridesForRoute(["hogar", "dc"], dcFlow),
     });
 
     expect(caHtml).toContain("¿La propiedad que quiere asegurar está en California?");
@@ -4015,8 +4028,8 @@ describe("submission validation", () => {
     }
   });
 
-  it("builds the correct downstream payload for the Tennessee home flow", () => {
-    const homeRoute = getRequiredHomeTennesseeRoute();
+  it("builds the correct downstream payload for the Texas hogar flow", () => {
+    const homeRoute = getRequiredHogarTexasRoute();
     const result = validateSubmission(
       homeRoute.form,
       homeRouteKey,
@@ -4031,7 +4044,7 @@ describe("submission validation", () => {
         method: "POST",
         encoding: "json",
         payload: {
-          area: "TN",
+          area: "TX",
           source_channel: "unknown",
           acquisition_channel: "organic",
           ingress_channel: "website",
@@ -4040,7 +4053,7 @@ describe("submission validation", () => {
           last_name: "Lopez",
           phone_number: "+16155551234",
           created_time: "2026-05-13T00:00:00.000Z",
-          state_code: "TN",
+          state_code: "TX",
           ownership_status: "own",
           property_type: "single_family",
           property_use: "primary_residence",
@@ -4060,7 +4073,7 @@ describe("submission validation", () => {
   });
 
   it("uses the selected property state for home payload area when the property is outside the route state", () => {
-    const homeRoute = getRequiredHomeTennesseeRoute();
+    const homeRoute = getRequiredHogarTexasRoute();
     const result = validateSubmission(
       homeRoute.form,
       homeRouteKey,
@@ -4151,9 +4164,9 @@ describe("submission validation", () => {
     expect(defaultHomeInsuranceVariables).not.toHaveProperty("metaPixelId");
 
     const homeFlowWithSharedMetaEnv = createHomeInsuranceFlow({
-      flowName: "ES - TN Home - Shared Meta Env Test",
-      areaCode: "TN",
-      areaName: "Tennessee",
+      flowName: "ES - TX Home - Shared Meta Env Test",
+      areaCode: "TX",
+      areaName: "Texas",
       metaTestEventCode: "TESTHOME",
       metaConversionsAccessToken: "token-for-non-pixel-flow",
     });
@@ -4577,40 +4590,40 @@ describe("server routing", () => {
     expect(response.headers.get("Cache-Control")).toBe("no-store");
   });
 
-  it("redirects the auto group route to Tennessee", async () => {
+  it("returns unavailable for the auto group route without a group fallback", async () => {
     const handler = createFetchHandler();
     const response = await handler(new Request("http://localhost/auto"));
+    const html = await response.text();
 
-    expect(response.status).toBe(302);
-    expect(response.headers.get("Location")).toBe("/auto/tn");
-    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(response.status).toBe(404);
+    expect(html).toContain("Esta página no existe o ya no está disponible.");
   });
 
-  it("redirects unknown auto group paths to Tennessee", async () => {
+  it("returns unavailable for unknown auto group paths without a group fallback", async () => {
     const handler = createFetchHandler();
     const response = await handler(new Request("http://localhost/auto/not-real"));
+    const html = await response.text();
 
-    expect(response.status).toBe(302);
-    expect(response.headers.get("Location")).toBe("/auto/tn");
-    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(response.status).toBe(404);
+    expect(html).toContain("Esta página no existe o ya no está disponible.");
   });
 
-  it("redirects the home group route to Tennessee", async () => {
+  it("returns unavailable for legacy home group routes", async () => {
     const handler = createFetchHandler();
     const response = await handler(new Request("http://localhost/home"));
+    const html = await response.text();
 
-    expect(response.status).toBe(302);
-    expect(response.headers.get("Location")).toBe("/home/tn");
-    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(response.status).toBe(404);
+    expect(html).toContain("Esta página no existe o ya no está disponible.");
   });
 
-  it("redirects unknown home group paths to Tennessee", async () => {
+  it("returns unavailable for unknown legacy home group paths", async () => {
     const handler = createFetchHandler();
     const response = await handler(new Request("http://localhost/home/not-real"));
+    const html = await response.text();
 
-    expect(response.status).toBe(302);
-    expect(response.headers.get("Location")).toBe("/home/tn");
-    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(response.status).toBe(404);
+    expect(html).toContain("Esta página no existe o ya no está disponible.");
   });
 
   it("redirects Tennessee custom to the first unanswered step without a checkpoint", async () => {
@@ -4629,33 +4642,38 @@ describe("server routing", () => {
     expect(tnResponse.headers.get("Location")).toBe("/auto/tn/vive-en-tennessee");
   });
 
-  it("redirects unauthored auto state routes to Tennessee", async () => {
+  it("redirects authored non-Tennessee auto state routes to their first unanswered step", async () => {
     const handler = createFetchHandler();
     const caResponse = await handler(new Request("http://localhost/auto/ca"));
+
+    expect(caResponse.status).toBe(302);
+    expect(caResponse.headers.get("Location")).toBe("/auto/ca/vive-en-california");
+  });
+
+  it("returns unavailable for unauthored auto state routes", async () => {
+    const handler = createFetchHandler();
     const dcResponse = await handler(new Request("http://localhost/auto/dc"));
+    const html = await dcResponse.text();
 
-    expect(caResponse.status).toBe(302);
-    expect(caResponse.headers.get("Location")).toBe("/auto/tn");
-    expect(dcResponse.status).toBe(302);
-    expect(dcResponse.headers.get("Location")).toBe("/auto/tn");
+    expect(dcResponse.status).toBe(404);
+    expect(html).toContain("Esta página no existe o ya no está disponible.");
   });
 
-  it("redirects authored home state routes to their first unanswered step", async () => {
+  it("redirects authored hogar state routes to their first unanswered step", async () => {
     const handler = createFetchHandler();
-    const tnResponse = await handler(new Request("http://localhost/home/tn"));
+    const txResponse = await handler(new Request("http://localhost/hogar/tx"));
 
-    expect(tnResponse.headers.get("Location")).toBe("/home/tn/propiedad-en-tennessee");
+    expect(txResponse.status).toBe(302);
+    expect(txResponse.headers.get("Location")).toBe("/hogar/tx/propiedad-en-texas");
   });
 
-  it("redirects unauthored home state routes to Tennessee", async () => {
+  it("returns unavailable for unauthored hogar state routes", async () => {
     const handler = createFetchHandler();
-    const caResponse = await handler(new Request("http://localhost/home/ca"));
-    const dcResponse = await handler(new Request("http://localhost/home/dc"));
+    const tnResponse = await handler(new Request("http://localhost/hogar/tn"));
+    const caResponse = await handler(new Request("http://localhost/hogar/ca"));
 
-    expect(caResponse.status).toBe(302);
-    expect(caResponse.headers.get("Location")).toBe("/home/tn");
-    expect(dcResponse.status).toBe(302);
-    expect(dcResponse.headers.get("Location")).toBe("/home/tn");
+    expect(tnResponse.status).toBe(404);
+    expect(caResponse.status).toBe(404);
   });
 
   it("redirects Tennessee custom to the next unanswered step from a checkpoint", async () => {
@@ -4908,7 +4926,7 @@ describe("server routing", () => {
 
   it("carries query params through pre-flow redirects so flow attribution can capture them", async () => {
     const handler = createFetchHandler();
-    const groupResponse = await handler(new Request("http://localhost/auto?fbclid=CLICK123"));
+    const groupResponse = await handler(new Request("http://localhost/?fbclid=CLICK123"));
     const flowResponse = await handler(new Request(`http://localhost${groupResponse.headers.get("Location") ?? ""}`));
 
     expect(groupResponse.status).toBe(302);
@@ -5050,20 +5068,22 @@ describe("server routing", () => {
     expect(response.headers.get("Location")).toBe("/auto/tn/vive-en-tennessee");
   });
 
-  it("redirects unknown step slugs under valid route groups to the group fallback", async () => {
+  it("returns unavailable for unknown paths under route groups without group fallbacks", async () => {
     const handler = createFetchHandler();
     const response = await handler(new Request("http://localhost/auto/not-real"));
+    const html = await response.text();
 
-    expect(response.status).toBe(302);
-    expect(response.headers.get("Location")).toBe("/auto/tn");
+    expect(response.status).toBe(404);
+    expect(html).toContain("Esta página no existe o ya no está disponible.");
   });
 
-  it("redirects deeper unknown paths under valid route groups to the group fallback", async () => {
+  it("returns unavailable for deeper unknown paths under route groups without group fallbacks", async () => {
     const handler = createFetchHandler();
     const response = await handler(new Request("http://localhost/auto/not-real/extra"));
+    const html = await response.text();
 
-    expect(response.status).toBe(302);
-    expect(response.headers.get("Location")).toBe("/auto/tn");
+    expect(response.status).toBe(404);
+    expect(html).toContain("Esta página no existe o ya no está disponible.");
   });
 
   it("redirects unknown step slugs under nested form routes to the form route root", async () => {
@@ -5555,7 +5575,7 @@ describe("server routing", () => {
     expect(response.status).toBe(404);
     expect(html).toContain("404");
     expect(html).toContain("Esta página no existe o ya no está disponible.");
-    expect(html).toContain('href="/auto/tn"');
+    expect(html).not.toContain('href="/auto/tn"');
     expect(html).not.toContain("formulario de Tennessee");
   });
 
@@ -7823,11 +7843,11 @@ function getRequiredTennesseeRoute() {
   return routeEntry;
 }
 
-function getRequiredHomeTennesseeRoute() {
+function getRequiredHogarTexasRoute() {
   const routeEntry = getFormRouteByRouteKey(formRoutes, homeRouteKey);
 
   if (!routeEntry) {
-    throw new Error("Expected Tennessee home form route to exist.");
+    throw new Error("Expected Texas hogar form route to exist.");
   }
 
   return routeEntry;

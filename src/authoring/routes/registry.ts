@@ -10,7 +10,7 @@ export const formRoutes = defineFormRoutes({
       ...autoFlows,
       // notFound: redirectTo("/auto/tn"),
     },
-    home: {
+    hogar: {
       ...homeFlows,
       // notFound: redirectTo("/home/tn"),
     },
