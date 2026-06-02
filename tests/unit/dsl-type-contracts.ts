@@ -14,6 +14,7 @@ import {
 } from "../../src/platform/flow";
 import { googleTagManager } from "../../src/authoring/integrations/google-tag-manager";
 import { trustedFormCertify } from "../../src/authoring/integrations/trusted-form";
+import { defineAreaMetaPixelMap } from "../../src/authoring/flows/meta-pixels";
 
 const contract = {
   context: z.object({}),
@@ -152,6 +153,15 @@ void trustedFormCertify({
 
 void googleTagManager({
   containerId: "GTM-ABC123",
+});
+
+void defineAreaMetaPixelMap({
+  tn: "1234567890",
+});
+
+void defineAreaMetaPixelMap({
+  // @ts-expect-error Meta Pixel map keys must be lowercase US state codes.
+  zz: "1234567890",
 });
 
 void googleTagManager({

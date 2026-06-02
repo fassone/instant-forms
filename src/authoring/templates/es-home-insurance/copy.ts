@@ -37,7 +37,7 @@ export const esUiCopy = {
 
 export const esHomeInsurancePostSubmit = {
   slug: "gracias",
-  title: "¡Estamos listos para ayudarle con su seguro de vivienda!",
+  title: "¡Estamos listos para ayudarle con su seguro de hogar!",
   message: "Recibimos su información. Un agente se pondrá en contacto con usted pronto.",
   cta: {
     label: "¡Dele like a nuestra página!",

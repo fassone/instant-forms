@@ -2,8 +2,8 @@
 
 ## Purpose
 
-`src/authoring/flows/auto/` contains the Spanish auto-insurance flow instantiations for every authored area in `US_STATES`.
-Each state folder exports one concrete flow mounted at `/auto/{state}` with a route key such as `auto_tn`, `auto_ca`, or `auto_dc`.
+`src/authoring/flows/auto/` contains the generated Spanish auto-insurance flow family for every authored area in `US_STATES`.
+`registry.ts` creates one concrete flow mounted at `/auto/{state}` with a route key such as `auto_tn`, `auto_ca`, or `auto_dc`.
 
 ```mermaid
 flowchart TD
@@ -21,10 +21,9 @@ flowchart TD
 
 ## Belongs Here
 
-- One state folder per auto-insurance area, such as `tn/`, `ca/`, and `dc/`.
 - `shared.ts` for common template variables such as page name, advertiser name, product, GTM container, and required downstream submission URL.
-- `registry.ts` for the explicit state-code-to-flow map consumed by public routes.
-- State-specific variables, such as flow name, area code, area name, and optional Meta configuration.
+- `registry.ts` for the generated state-code-to-flow map consumed by public routes.
+- Product/state Meta Pixel IDs declared next to flow generation in `registry.ts`.
 
 ## Does Not Belong Here
 
@@ -35,5 +34,4 @@ flowchart TD
 
 ## Change Safely
 
-Keep public slugs stable once launched. New state folders should instantiate the shared Spanish auto-insurance template through `createAutoInsuranceFlow(...)` and be exported from `registry.ts`.
-Only add state-specific tracking, pixel, or CAPI settings to the state folder that owns them.
+Keep public slugs stable once launched. New state coverage should come from `US_STATES`; do not add per-state auto folders unless a state truly needs a unique flow structure. Add state-specific Meta Pixel IDs to `autoMetaPixelIds` in `registry.ts`.

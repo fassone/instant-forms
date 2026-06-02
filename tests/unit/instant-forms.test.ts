@@ -27,6 +27,11 @@ import {
   createHomeInsuranceFlow,
   defaultHomeInsuranceVariables,
 } from "../../src/authoring/flows/home/shared";
+import {
+  defineAreaMetaPixelMap,
+  type AreaMetaPixelKey,
+  type AreaMetaPixelMap,
+} from "../../src/authoring/flows/meta-pixels";
 import { createFetchHandler } from "../../src/platform/app/server";
 import { registerFormRoutes } from "../../src/platform/app/routes/forms";
 import { registerScriptRoutes } from "../../src/platform/app/routes/scripts";
@@ -316,6 +321,7 @@ describe("form registry", () => {
 
     expect(routeEntry.routeKey).toBe(routeKey);
     expect(routeEntry.routeSegments).toEqual(["auto", "tn"]);
+    expect(routeEntry.form.name).toBe("ES - TN - v6");
     expect(routeEntry.form.customVariables).toMatchObject({
       areaCode: "TN",
       areaName: "Tennessee",
@@ -377,6 +383,7 @@ describe("form registry", () => {
     });
     expect(caRoute?.form.tracking?.googleTagManager?.containerId).toBe("GTM-MVJNX5DZ");
     expect(JSON.stringify(caRoute?.form.tracking?.events)).not.toContain('"pixelId"');
+    expect(caRoute?.form.name).toBe("ES - CA - v1");
     expect(caRoute?.form.customVariables).toMatchObject({
       areaCode: "CA",
       areaName: "California",
@@ -391,6 +398,37 @@ describe("form registry", () => {
     expect(JSON.stringify(tnRoute.form.tracking?.events)).not.toContain('"pixelId"');
     expect(caRoute?.form.tracking?.googleTagManager?.containerId).toBe("GTM-MVJNX5DZ");
     expect(JSON.stringify(caRoute?.form.tracking?.events)).not.toContain('"pixelId"');
+    expect(caRoute?.form.name).toBe("ES - CA Home - v1");
+  });
+
+  it("centralizes optional Meta Pixel IDs by product and area", () => {
+    const testHomePixels: AreaMetaPixelMap = defineAreaMetaPixelMap({
+      tn: "1234567890",
+    });
+    const testHomeStateKey = "tn" satisfies AreaMetaPixelKey;
+    const homeTnPixelId = testHomePixels[testHomeStateKey];
+    const directTnAutoFlow = createAutoInsuranceFlow({
+      flowName: "ES - TN Direct Pixel Test",
+      areaCode: "TN",
+      areaName: "Tennessee",
+    });
+    const tnHomeFlow = createHomeInsuranceFlow({
+      flowName: "ES - TN Home - Pixel Test",
+      areaCode: "TN",
+      areaName: "Tennessee",
+      ...(homeTnPixelId ? { metaPixelId: homeTnPixelId } : {}),
+    });
+
+    expect(testHomePixels.tn).toBe("1234567890");
+    expect(testHomePixels.ca).toBeUndefined();
+    expect(JSON.stringify(directTnAutoFlow.tracking?.events)).not.toContain('"pixelId"');
+    expect(JSON.stringify(tnHomeFlow.tracking?.events)).toContain('"pixelId":"1234567890"');
+    expect(() => defineAreaMetaPixelMap({ zz: "1234567890" } as never)).toThrow(
+      'Unknown Meta Pixel area key "zz".',
+    );
+    expect(() => defineAreaMetaPixelMap({ tx: "not-a-pixel" } as never)).toThrow(
+      'Invalid Meta Pixel ID for area "tx".',
+    );
   });
 
   it("renders sample non-Tennessee auto state copy from each area's variables", async () => {
@@ -4012,7 +4050,7 @@ describe("submission validation", () => {
           },
         },
       });
-      expect(result.payload.delivery.payload.consent).toContain("seguro de vivienda");
+      expect(result.payload.delivery.payload.consent).toContain("seguro de hogar");
       expect(result.payload.delivery.payload.id).toBe(result.payload.submissionId);
       expectTrustedFormConsentAnswer(result.payload.answers.trustedform_consent);
     }

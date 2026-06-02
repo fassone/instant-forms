@@ -19,7 +19,7 @@ const propertyTypeLabels = {
 
 const propertyUseLabels = {
   primary_residence: "Residencia principal",
-  secondary_home: "Segunda vivienda",
+  secondary_home: "Segundo hogar",
   rental_property: "Propiedad de renta",
   vacant: "Vacante",
 } as const;
@@ -97,8 +97,8 @@ export function createHomeInsuranceSteps({ areaDisplayName }: CreateHomeInsuranc
       }),
       step.choice({
         key: "has_home_insurance",
-        slug: "tiene-seguro-de-vivienda",
-        label: "¿Actualmente tiene seguro de vivienda?",
+        slug: "tiene-seguro-de-hogar",
+        label: "¿Actualmente tiene seguro de hogar?",
         options: [
           { key: "yes", label: "Si" },
           { key: "no", label: "No" },
@@ -130,7 +130,7 @@ export function createHomeInsuranceSteps({ areaDisplayName }: CreateHomeInsuranc
         {
           key: "matching_offer",
           slug: "buscando-opciones",
-          label: "Estamos buscando opciones para su vivienda",
+          label: "Estamos buscando opciones para su hogar",
           countsAsStep: false,
           successLines: [
             { text: "¡Encontramos opciones para usted!", color: "brand-navy" },
@@ -276,7 +276,7 @@ export function createHomeInsuranceSteps({ areaDisplayName }: CreateHomeInsuranc
               tfTag("consent-advertiser-name", context.advertiserName),
               "** a contactarme al **",
               tfTag("consent-grantor-phone", phoneDisplay(answers.phone_number)),
-              "** sobre cotizaciones, productos y servicios de seguro de vivienda mediante",
+              "** sobre cotizaciones, productos y servicios de seguro de hogar mediante",
               tfTag("contact-method", " llamadas, mensajes de texto y correos electrónicos,"),
               tfTag(
                 "consent-grantor-waived-regulated-technologies",
