@@ -2496,7 +2496,7 @@ describe("form registry", () => {
     expect(() => createFlowWithScrollHints({ moreOptions: "More options", moreContent: "More" })).not.toThrow();
   });
 
-  it("accepts only absolute HTTPS payload submission URLs", () => {
+  it("accepts absolute HTTPS and Railway private payload submission URLs", () => {
     const createFlowWithPayloadUrl = (url: string) =>
       defineFormFlow({
         name: "Payload URL",
@@ -2524,21 +2524,36 @@ describe("form registry", () => {
           }),
         ],
       });
+    const payloadUrlError =
+      'payload.url must be an absolute "https://" URL or a Railway private "http://*.railway.internal:<port>" URL.';
 
     expect(createFlowWithPayloadUrl("https://example.test/lead-submissions").payload.url).toBe(
       "https://example.test/lead-submissions",
     );
-    expect(() => createFlowWithPayloadUrl("")).toThrow('payload.url must be an absolute "https://" URL.');
-    expect(() => createFlowWithPayloadUrl("/lead-submissions")).toThrow(
-      'payload.url must be an absolute "https://" URL.',
+    expect(
+      createFlowWithPayloadUrl("http://automations.railway.internal:3000/automations-v2/liderna-webleads").payload
+        .url,
+    ).toBe("http://automations.railway.internal:3000/automations-v2/liderna-webleads");
+    expect(() => createFlowWithPayloadUrl("")).toThrow(payloadUrlError);
+    expect(() => createFlowWithPayloadUrl("/lead-submissions")).toThrow(payloadUrlError);
+    expect(() =>
+      createFlowWithPayloadUrl("automations.railway.internal/automations-v2/liderna-webleads"),
+    ).toThrow(payloadUrlError);
+    expect(() =>
+      createFlowWithPayloadUrl("http://automations.railway.internal/automations-v2/liderna-webleads"),
+    ).toThrow(payloadUrlError);
+    expect(() =>
+      createFlowWithPayloadUrl("https://automations.railway.internal:3000/automations-v2/liderna-webleads"),
+    ).toThrow(payloadUrlError);
+    expect(() => createFlowWithPayloadUrl("http://railway.internal:3000/lead-submissions")).toThrow(
+      payloadUrlError,
     );
-    expect(() => createFlowWithPayloadUrl("http://example.test/lead-submissions")).toThrow(
-      'payload.url must be an absolute "https://" URL.',
+    expect(() => createFlowWithPayloadUrl("http://evilrailway.internal:3000/lead-submissions")).toThrow(
+      payloadUrlError,
     );
-    expect(() => createFlowWithPayloadUrl("javascript:alert(1)")).toThrow(
-      'payload.url must be an absolute "https://" URL.',
-    );
-    expect(() => createFlowWithPayloadUrl("not a url")).toThrow('payload.url must be an absolute "https://" URL.');
+    expect(() => createFlowWithPayloadUrl("http://example.test/lead-submissions")).toThrow(payloadUrlError);
+    expect(() => createFlowWithPayloadUrl("javascript:alert(1)")).toThrow(payloadUrlError);
+    expect(() => createFlowWithPayloadUrl("not a url")).toThrow(payloadUrlError);
   });
 
   it("rejects unsafe attribution query parameter names", () => {

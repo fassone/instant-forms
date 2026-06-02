@@ -299,7 +299,9 @@ function assertChoiceSizePresentation(stepKey: string, presentation: StepPresent
 
 function assertPayloadDelivery(payload: FormPayloadDelivery): void {
   if (!isSafePayloadUrl(payload.url)) {
-    throw new Error('payload.url must be an absolute "https://" URL.');
+    throw new Error(
+      'payload.url must be an absolute "https://" URL or a Railway private "http://*.railway.internal:<port>" URL.',
+    );
   }
 }
 
@@ -378,10 +380,27 @@ function isSafePayloadUrl(url: string): boolean {
   try {
     const parsedUrl = new URL(url);
 
+    if (isRailwayPrivateHostname(parsedUrl.hostname)) {
+      return isSafeRailwayPrivatePayloadUrl(parsedUrl);
+    }
+
     return parsedUrl.protocol === "https:";
   } catch {
     return false;
   }
+}
+
+function isSafeRailwayPrivatePayloadUrl(url: URL): boolean {
+  return (
+    url.protocol === "http:" &&
+    url.port !== "" &&
+    isRailwayPrivateHostname(url.hostname) &&
+    url.hostname !== "railway.internal"
+  );
+}
+
+function isRailwayPrivateHostname(hostname: string): boolean {
+  return hostname === "railway.internal" || hostname.endsWith(".railway.internal");
 }
 
 function assertTrackingContract(contract: FormContract, tracking: FormTracking | undefined): void {
