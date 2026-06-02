@@ -14,6 +14,10 @@ import { selectedScripts } from "../../src/authoring/scripts/registry";
 import { esAutoInsuranceTemplate } from "../../src/authoring/templates/es-auto-insurance";
 import { lidernaAreaCodeSchema } from "../../src/authoring/templates/es-auto-insurance/contracts";
 import { formRoutes } from "../../src/authoring/routes/registry";
+import {
+  createAutoInsuranceFlow,
+  defaultAutoInsuranceVariables,
+} from "../../src/authoring/flows/auto/shared";
 import { createFetchHandler } from "../../src/platform/app/server";
 import { registerFormRoutes } from "../../src/platform/app/routes/forms";
 import { registerScriptRoutes } from "../../src/platform/app/routes/scripts";
@@ -3842,6 +3846,46 @@ describe("submission validation", () => {
       expect((result.payload.answers.trustedform_consent as { consent: string }).consent).toContain(
         "Al marcar esta casilla",
       );
+    }
+  });
+
+  it("accepts shared auto Meta env values on non-Tennessee flows without enabling Meta pixel callbacks", () => {
+    expect(defaultAutoInsuranceVariables).toHaveProperty("metaTestEventCode");
+    expect(defaultAutoInsuranceVariables).toHaveProperty("metaConversionsAccessToken");
+    expect(defaultAutoInsuranceVariables).not.toHaveProperty("metaPixelId");
+
+    const caFlowWithSharedMetaEnv = createAutoInsuranceFlow({
+      flowName: "ES - CA - Shared Meta Env Test",
+      areaCode: "CA",
+      areaName: "California",
+      metaTestEventCode: "TESTSHARED",
+      metaConversionsAccessToken: "token-for-non-pixel-flow",
+    });
+    const trackingEvents = caFlowWithSharedMetaEnv.tracking?.events ?? [];
+    const result = validateSubmission(
+      caFlowWithSharedMetaEnv,
+      "auto_ca",
+      { answers: validAnswers, trustedFormCertUrl },
+      "2026-05-13T00:00:00.000Z",
+    );
+
+    expect(JSON.stringify(trackingEvents)).not.toContain('"pixelId"');
+    expect(trackingEvents.some((eventDefinition) => "server" in eventDefinition)).toBe(false);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.payload.delivery.payload).toMatchObject({
+        _mock_verification: {
+          searchbug: true,
+        },
+        _mock_dispatch: {
+          googleSheets: true,
+          leadManager: true,
+          ricochet: true,
+        },
+        meta_conversion: {
+          enabled: false,
+        },
+      });
     }
   });
 

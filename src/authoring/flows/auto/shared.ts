@@ -14,9 +14,18 @@ export const defaultAutoInsuranceVariables = {
   product: "auto_insurance",
   advertiserName: "Liderna Inc y a sus socios, agentes y proveedores de seguros",
   gtmContainerId: "GTM-MVJNX5DZ",
+  metaTestEventCode: process.env.META_TEST_EVENT_CODE,
+  metaConversionsAccessToken:
+    process.env.NODE_ENV === "test" ? undefined : process.env.META_CONVERSIONS_ACCESS_TOKEN || undefined,
 } as const satisfies Pick<
   EsAutoInsuranceVariables,
-  "advertiserName" | "gtmContainerId" | "pageName" | "product" | "submissionUrl"
+  | "advertiserName"
+  | "gtmContainerId"
+  | "metaConversionsAccessToken"
+  | "metaTestEventCode"
+  | "pageName"
+  | "product"
+  | "submissionUrl"
 >;
 
 export type CreateAutoInsuranceFlowInput = Pick<
