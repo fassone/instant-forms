@@ -303,7 +303,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         grid-template-rows: minmax(0, 1fr);
         height: 100%;
         min-height: 0;
-        overflow: hidden;
+        overflow: visible;
       }
 
       .step[data-step-kind="choice"] {
@@ -355,7 +355,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         height: 100%;
         min-height: 0;
         align-self: stretch;
-        overflow: hidden;
+        overflow: visible;
       }
 
       .step[data-step-kind="autocomplete"][aria-hidden="false"] {
@@ -373,7 +373,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         min-height: 0;
         align-self: stretch;
         gap: 20px;
-        overflow: hidden;
+        overflow: visible;
       }
 
       .step[data-step-kind="trusted_form_consent"][aria-hidden="false"] .question-title {
@@ -516,7 +516,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
       .choice-options-shell {
         position: relative;
         min-height: 0;
-        overflow: hidden;
+        overflow: visible;
       }
 
       .step[data-step-kind="choice"][aria-hidden="false"] .choice-options-shell {
@@ -566,7 +566,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         appearance: none;
         position: absolute;
         right: 50%;
-        bottom: 2px;
+        bottom: 0;
         z-index: 3;
         border: 1px solid rgba(6, 77, 246, 0.16);
         border-radius: 999px;
@@ -580,7 +580,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         opacity: 0;
         padding: 5px 10px;
         pointer-events: none;
-        transform: translateX(50%) translateY(4px);
+        transform: translateX(50%) translateY(calc(50% + 4px));
         transition: opacity 140ms ease, transform 140ms ease;
         white-space: nowrap;
       }
@@ -588,7 +588,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
       [data-can-scroll-down="true"] > .scroll-more-hint {
         opacity: 1;
         pointer-events: auto;
-        transform: translateX(50%) translateY(0);
+        transform: translateX(50%) translateY(50%);
       }
 
       .option {
@@ -678,6 +678,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         position: relative;
         min-height: 0;
         margin-top: 12px;
+        overflow: visible;
       }
 
       .step[data-step-kind="autocomplete"][aria-hidden="false"] .autocomplete-suggestions-shell {
@@ -757,7 +758,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         width: min(100%, 620px);
         height: 100%;
         min-height: 0;
-        overflow: hidden;
+        overflow: visible;
         gap: 14px;
       }
 
@@ -766,7 +767,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         height: 100%;
         min-height: 0;
         gap: 20px;
-        overflow: hidden;
+        overflow: visible;
       }
 
       .trusted-form-panel[aria-hidden="true"] {
@@ -777,13 +778,13 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         display: grid;
         grid-template-rows: minmax(0, 1fr);
         min-height: 0;
-        overflow: hidden;
+        overflow: visible;
       }
 
       .trusted-form-panel[data-trusted-form-substep="consent"][aria-hidden="false"] {
         display: grid;
         min-height: 0;
-        overflow: hidden;
+        overflow: visible;
       }
 
       .trusted-form-review-scroll-shell {
@@ -791,7 +792,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         align-self: stretch;
         height: 100%;
         min-height: 0;
-        overflow: hidden;
+        overflow: visible;
       }
 
       .trusted-form-review-scroll {
@@ -875,7 +876,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         gap: 14px;
         height: 100%;
         min-height: 0;
-        overflow: hidden;
+        overflow: visible;
         border: 1px solid var(--border);
         border-radius: 8px;
         background: #ffffff;
@@ -902,7 +903,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         flex: 1 1 auto;
         min-width: 0;
         min-height: 0;
-        overflow: hidden;
+        overflow: visible;
       }
 
       .consent-scroll {

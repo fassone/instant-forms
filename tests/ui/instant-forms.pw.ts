@@ -346,7 +346,7 @@ test.describe("instant routed form UI", () => {
     const shell = step.locator("[data-choice-options-shell]");
     const scroll = step.locator("[data-choice-options-scroll]");
     const bottomFade = step.locator(".choice-options-fade-bottom");
-    const hint = step.locator(".scroll-more-hint");
+    const hint = shell.locator(".scroll-more-hint");
 
     await expect(shell).toBeVisible();
     await expect(scroll).toBeVisible();
@@ -355,6 +355,7 @@ test.describe("instant routed form UI", () => {
     await expect(hint).toHaveCSS("opacity", "1");
     await expect(hint).toHaveText("Más opciones");
     await expectScrollShellToRespectFooter(page, shell);
+    await expectScrollHintToOverhangShellAndRespectFooter(page, shell, hint);
 
     const maxScrollTop = await scroll.evaluate((element) => element.scrollHeight - element.clientHeight);
     await hint.click();
@@ -405,12 +406,16 @@ test.describe("instant routed form UI", () => {
     await activeStep(page).getByPlaceholder("Escriba su estado aquí").fill("a");
     const shell = activeStep(page).locator("[data-autocomplete-suggestions-shell]");
     const suggestions = activeStep(page).locator("[data-autocomplete-suggestions]");
+    const hint = activeStep(page).locator(".scroll-more-hint");
 
     await expect(shell).toBeVisible();
     await expect
       .poll(() => suggestions.locator("[data-autocomplete-suggestion]").count())
       .toBeGreaterThan(3);
+    await expect(shell).toHaveAttribute("data-can-scroll-down", "true");
+    await expect(hint).toHaveCSS("opacity", "1");
     await expectScrollShellToRespectFooter(page, shell);
+    await expectScrollHintToOverhangShellAndRespectFooter(page, shell, hint);
   });
 
   test("TrustedForm review scroll affordance follows the footer boundary @cross-browser", async ({ page }) => {
@@ -641,17 +646,22 @@ test.describe("instant routed form UI", () => {
     const consentScroll = step.locator("[data-trusted-form-consent-scroll]");
     const topFade = step.locator("[data-trusted-form-consent-scroll-fade-top]");
     const bottomFade = step.locator("[data-trusted-form-consent-scroll-fade-bottom]");
+    const hint = consentShell.locator(".scroll-more-hint");
 
     await expect(consentShell).toBeVisible();
     await expect(consentScroll).toBeVisible();
+    await consentShell.evaluate((element) => {
+      element.style.height = "60px";
+      element.style.maxHeight = "60px";
+    });
     await consentScroll.evaluate((element) => {
-      element.style.height = "40px";
-      element.style.maxHeight = "40px";
       element.dispatchEvent(new Event("scroll", { bubbles: true }));
     });
     await expect(consentShell).toHaveAttribute("data-can-scroll-up", "false");
     await expect(consentShell).toHaveAttribute("data-can-scroll-down", "true");
     await expect(bottomFade).toHaveCSS("opacity", "1");
+    await expect(hint).toHaveCSS("opacity", "1");
+    await expectScrollHintToOverhangShellAndRespectFooter(page, consentShell, hint);
 
     const consentBox = await step.locator('[data-tf-element-role="consent-language"]').boundingBox();
     const submitBox = await page.getByRole("button", { name: trustedFormSubmitLabel }).boundingBox();
@@ -999,6 +1009,31 @@ async function expectScrollShellToRespectFooter(page: Page, shell: ReturnType<Pa
   expect(metrics.overlaps).toBe(false);
   expect(metrics.gap).toBeGreaterThanOrEqual(-1);
   expect(metrics.gap).toBeLessThanOrEqual(44);
+}
+
+async function expectScrollHintToOverhangShellAndRespectFooter(
+  page: Page,
+  shell: ReturnType<Page["locator"]>,
+  hint: ReturnType<Page["locator"]>,
+): Promise<void> {
+  const shellBox = await shell.boundingBox();
+  const hintBox = await hint.boundingBox();
+  const footerBox = await page.locator("footer").boundingBox();
+
+  expect(shellBox).not.toBeNull();
+  expect(hintBox).not.toBeNull();
+  expect(footerBox).not.toBeNull();
+
+  if (!shellBox || !hintBox || !footerBox) {
+    return;
+  }
+
+  const shellBottom = shellBox.y + shellBox.height;
+  const hintBottom = hintBox.y + hintBox.height;
+
+  expect(hintBox.y).toBeLessThanOrEqual(shellBottom + 1);
+  expect(hintBottom).toBeGreaterThanOrEqual(shellBottom - 1);
+  expect(hintBottom).toBeLessThanOrEqual(footerBox.y + 1);
 }
 
 async function mockTrustedFormCertify(page: Page, options: { delayMs?: number } = {}): Promise<void> {

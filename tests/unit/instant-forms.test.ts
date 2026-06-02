@@ -7276,7 +7276,15 @@ describe("form rendering", () => {
     expect(html).toContain(
       '<button type="button" class="scroll-more-hint" data-scroll-more-hint>Más opciones</button>',
     );
+    expect(html).toContain("bottom: 0;");
+    expect(html).toContain("transform: translateX(50%) translateY(calc(50% + 4px));");
+    expect(html).toContain("transform: translateX(50%) translateY(50%);");
     expect(html).toContain('[data-can-scroll-down="true"] > .scroll-more-hint');
+    expect(html).toContain("height: 100%;\n        min-height: 0;\n        overflow: visible;");
+    expect(html).toContain(".choice-options-shell {\n        position: relative;\n        min-height: 0;\n        overflow: visible;");
+    expect(html).toContain(".autocomplete-suggestions-shell {\n        position: relative;\n        min-height: 0;\n        margin-top: 12px;\n        overflow: visible;");
+    expect(html).toContain(".trusted-form-review-scroll-shell {\n        position: relative;\n        align-self: stretch;\n        height: 100%;\n        min-height: 0;\n        overflow: visible;");
+    expect(html).toContain(".consent-scroll-shell {\n        position: relative;\n        align-self: stretch;\n        flex: 1 1 auto;\n        min-width: 0;\n        min-height: 0;\n        overflow: visible;");
     expect(html).toContain("@supports (scrollbar-gutter: stable)");
     expect(html).toContain("@supports not selector(:has(*))");
     expect(html).toContain('data-choice-size="default"');
