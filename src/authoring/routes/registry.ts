@@ -8,11 +8,11 @@ export const formRoutes = defineFormRoutes({
   folders: {
     auto: {
       ...autoFlows,
-      notFound: redirectTo("/auto/tn"),
+      // notFound: redirectTo("/auto/tn"),
     },
     home: {
       ...homeFlows,
-      notFound: redirectTo("/home/tn"),
+      // notFound: redirectTo("/home/tn"),
     },
   },
 
@@ -21,9 +21,9 @@ export const formRoutes = defineFormRoutes({
     status: 404,
     title: "404",
     message: "Esta página no existe o ya no está disponible.",
-    cta: {
+    /*cta: {
       label: "Ir al formulario",
       href: "/auto/tn",
-    },
+    },*/
   }),
 });
