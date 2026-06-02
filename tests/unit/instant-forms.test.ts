@@ -61,6 +61,7 @@ import {
   createLifecycleTrackingPayload,
   renderFormPage,
 } from "../../src/platform/rendering";
+import { injectPrebuiltFormRequestState } from "../../src/platform/rendering/prebuilt-pages";
 import {
   applyProductionTokens,
   applyProductionTokensToScript,
@@ -7067,6 +7068,112 @@ describe("form rendering", () => {
     expect(tokenizedConsentHtml).toContain(".bk{opacity:1}");
     expect(tokenizedConsentHtml).toContain(".bh{font-size:0.8rem}");
     expect(tokenizedConsentHtml).toContain('class="bm bk bh"');
+  });
+
+  it("hydrates an active prebuilt choice step from request checkpoint answers", async () => {
+    const homeRoute = getRequiredHogarTexasRoute();
+    const propertyTypeIndex = homeRoute.form.steps.findIndex((stepDefinition) => stepDefinition.key === "property_type");
+
+    expect(propertyTypeIndex).toBeGreaterThan(-1);
+
+    const prebuiltHtml = await withNodeEnv("production", () =>
+      renderHogarTexasForm({
+        activeStepIndex: propertyTypeIndex,
+        answers: {},
+        formConfigExpression: FORM_CONFIG_PLACEHOLDER_EXPRESSION,
+      }),
+    );
+    const hydratedHtml = injectPrebuiltFormRequestState(prebuiltHtml, homeRoute.form, propertyTypeIndex, {
+      activeStepIndex: propertyTypeIndex,
+      answers: {
+        ...homePreContactAnswers,
+        property_type: "single_family",
+      },
+      routeKey: homeRouteKey,
+      routeSegments: homeRoute.routeSegments,
+      stepUrlOverrides: createStepUrlOverridesForRoute(homeRoute.routeSegments, homeRoute.form),
+    });
+
+    expect(prebuiltHtml).not.toContain('value="single_family" checked');
+    expect(hydratedHtml).toContain('value="single_family" checked');
+    expect(hydratedHtml).toContain('"property_type":"single_family"');
+    expect(hydratedHtml).not.toContain('"__FORM_CONFIG_JSON__"');
+  });
+
+  it("hydrates an active prebuilt text step from request checkpoint answers", async () => {
+    const form = getRequiredTennesseeForm();
+    const firstNameIndex = form.steps.findIndex((stepDefinition) => stepDefinition.key === "first_name");
+
+    expect(firstNameIndex).toBeGreaterThan(-1);
+
+    const prebuiltHtml = await withNodeEnv("production", () =>
+      renderTennesseeForm({
+        activeStepIndex: firstNameIndex,
+        answers: {},
+        formConfigExpression: FORM_CONFIG_PLACEHOLDER_EXPRESSION,
+      }),
+    );
+    const hydratedHtml = injectPrebuiltFormRequestState(prebuiltHtml, form, firstNameIndex, {
+      activeStepIndex: firstNameIndex,
+      answers: preConsentAnswers,
+      routeKey,
+      routeSegments: ["auto", "tn"],
+      stepUrlOverrides: createTennesseeStepUrlOverrides(form),
+    });
+
+    expect(prebuiltHtml).not.toContain('value="Ana"');
+    expect(hydratedHtml).toContain('value="Ana"');
+    expect(hydratedHtml).toContain('"first_name":"Ana"');
+  });
+
+  it("hydrates active prebuilt TrustedForm consent content from request checkpoint answers", async () => {
+    const homeRoute = getRequiredHogarTexasRoute();
+    const consentIndex = homeRoute.form.steps.findIndex((stepDefinition) => stepDefinition.key === "trustedform_consent");
+
+    expect(consentIndex).toBeGreaterThan(-1);
+
+    const prebuiltHtml = await withNodeEnv("production", () =>
+      renderHogarTexasForm({
+        activeStepIndex: consentIndex,
+        answers: {},
+        formConfigExpression: FORM_CONFIG_PLACEHOLDER_EXPRESSION,
+      }),
+    );
+    const hydratedHtml = injectPrebuiltFormRequestState(prebuiltHtml, homeRoute.form, consentIndex, {
+      activeStepIndex: consentIndex,
+      answers: homePreConsentAnswers,
+      routeKey: homeRouteKey,
+      routeSegments: homeRoute.routeSegments,
+      stepUrlOverrides: createStepUrlOverridesForRoute(homeRoute.routeSegments, homeRoute.form),
+    });
+
+    expect(prebuiltHtml).not.toContain("Ana Lopez");
+    expect(hydratedHtml).toContain("Ana Lopez");
+    expect(hydratedHtml).toContain("(615) 555-1234");
+    expect(hydratedHtml).toContain("Casa unifamiliar");
+    expect(hydratedHtml).toContain("Al marcar esta casilla");
+  });
+
+  it("keeps an active prebuilt first step empty when no checkpoint answers exist", async () => {
+    const homeRoute = getRequiredHogarTexasRoute();
+    const prebuiltHtml = await withNodeEnv("production", () =>
+      renderHogarTexasForm({
+        activeStepIndex: 0,
+        answers: {},
+        formConfigExpression: FORM_CONFIG_PLACEHOLDER_EXPRESSION,
+      }),
+    );
+    const hydratedHtml = injectPrebuiltFormRequestState(prebuiltHtml, homeRoute.form, 0, {
+      activeStepIndex: 0,
+      answers: {},
+      routeKey: homeRouteKey,
+      routeSegments: homeRoute.routeSegments,
+      stepUrlOverrides: createStepUrlOverridesForRoute(homeRoute.routeSegments, homeRoute.form),
+    });
+
+    expect(hydratedHtml).toContain('data-step="0"');
+    expect(hydratedHtml).not.toContain(" checked");
+    expect(hydratedHtml).not.toContain('"__FORM_CONFIG_JSON__"');
   });
 
   it("builds a static non-PII transition JS asset for snappy production step changes", async () => {

@@ -3,13 +3,16 @@ import path from "node:path";
 
 import { getStepSlug, getStepUrl, type FormStep, type InstantForm } from "../flow";
 import { createClientFormConfig } from "./client/config";
+import { applyProductionTokens } from "./inline-assets";
 import {
   FORM_CONFIG_JSON_PLACEHOLDER,
+  renderTransitionStepHtml,
   serializeForScript,
   type RenderFormPageOptions,
 } from "./render-form-page";
 
 const BUILT_FORM_CONFIG_TOKEN = JSON.stringify(FORM_CONFIG_JSON_PLACEHOLDER);
+const STEPS_SECTION_PATTERN = createStepsSectionPattern();
 
 export const DIST_ROOT = "_dist";
 export const DIST_FORMS_ROOT = path.join(DIST_ROOT, "forms");
@@ -47,14 +50,11 @@ export async function readPrebuiltFormPage(
     return undefined;
   }
 
-  return injectFormConfig(
-    html,
-    createRequestFormConfig(form, activeStepIndex, {
-      ...options,
-      routeKey: options.routeKey,
-      transitionAssetUrl: options.transitionAssetUrl ?? (await getPrebuiltTransitionAssetUrl(options.routeSegments)),
-    }),
-  );
+  return injectPrebuiltFormRequestState(html, form, activeStepIndex, {
+    ...options,
+    routeKey: options.routeKey,
+    transitionAssetUrl: options.transitionAssetUrl ?? (await getPrebuiltTransitionAssetUrl(options.routeSegments)),
+  });
 }
 
 export async function readPrebuiltUnavailablePage(name = "not-found"): Promise<string | undefined> {
@@ -67,6 +67,26 @@ export async function readPrebuiltUnavailablePage(name = "not-found"): Promise<s
 
 export function injectFormConfig(html: string, formConfig: unknown): string {
   return html.replace(BUILT_FORM_CONFIG_TOKEN, serializeForScript(formConfig));
+}
+
+export function injectPrebuiltFormRequestState(
+  html: string,
+  form: InstantForm,
+  activeStepIndex: number,
+  options: PrebuiltFormPageOptions,
+): string {
+  const activeStep = form.steps[activeStepIndex];
+  const formConfig = createRequestFormConfig(form, activeStepIndex, options);
+
+  if (!activeStep) {
+    return injectFormConfig(html, formConfig);
+  }
+
+  const activeStepHtml = applyProductionTokens(
+    renderTransitionStepHtml(activeStep, activeStepIndex, options.answers ?? {}, form),
+  );
+
+  return injectFormConfig(injectActiveStepHtml(html, activeStepHtml), formConfig);
 }
 
 export function getPrebuiltFormStepHtmlPath(routeSegments: readonly string[], stepSlug: string): string {
@@ -140,6 +160,27 @@ function createStepUrlOverrides(routeSegments: readonly string[], form: InstantF
       `/${[...routeSegments, getStepSlug(stepDefinition)].join("/")}`,
     ]),
   );
+}
+
+function injectActiveStepHtml(html: string, activeStepHtml: string): string {
+  return html.replace(STEPS_SECTION_PATTERN, (_match, open, close) => {
+    return `${String(open)}${activeStepHtml}${String(close)}`;
+  });
+}
+
+function createStepsSectionPattern(): RegExp {
+  const productionStepsId =
+    applyProductionTokens('<section id="steps"></section>').match(/<section id="([^"]+)"/u)?.[1] ?? "steps";
+  const stepIds = Array.from(new Set(["steps", productionStepsId])).map(escapeRegExp).join("|");
+
+  return new RegExp(
+    `(<section\\b(?=[^>]*(?:\\bdata-form-steps\\b|\\bid="(?:${stepIds})"))[^>]*>)[\\s\\S]*?(<\\/section>)`,
+    "u",
+  );
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function clampStepIndex(form: InstantForm, stepIndex: number): number {

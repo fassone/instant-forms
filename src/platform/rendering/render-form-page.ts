@@ -1561,7 +1561,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
             <div class="progress-bar" id="progress-bar" style="width: ${initialProgressPercent}%"></div>
           </div>
         </div>
-        <section id="steps">
+        <section id="steps" data-form-steps>
           ${renderedStepContent}
         </section>
         ${renderedFooter}
