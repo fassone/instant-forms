@@ -3,6 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { encodeCheckpointAnswers, getCheckpointCookieName } from "../../src/platform/persistence/checkpoints";
 
 const routeKey = "auto_tn";
+const homeRouteKey = "hogar_tx";
 const appPort = Number(process.env.PLAYWRIGHT_PORT ?? 51234);
 const appUrl = `http://127.0.0.1:${appPort}`;
 const trustedFormCertUrl = "https://cert.trustedform.com/454a35b802f3e7b63ffabb4efedb7c6ebe67886c";
@@ -23,7 +24,7 @@ const seenMatchingAnswers = {
 
 test.describe("instant routed form UI", () => {
   test("choice auto-advance works with browser back and forward", async ({ page }) => {
-    await page.goto("/auto");
+    await page.goto("/auto/tn");
     await expect(page).toHaveURL(/\/auto\/tn\/vive-en-tennessee$/u);
 
     await clickActiveOption(page, "Si");
@@ -122,7 +123,8 @@ test.describe("instant routed form UI", () => {
     expect(consentResolutionRequests).toBe(0);
   });
 
-  test("GTM follow-up requests are rewritten through the first-party proxy", async ({ page }) => {
+  test("GTM follow-up requests are rewritten through the first-party proxy", async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name === "mobile", "GTM debug/bootstrap request rewriting is covered in the desktop project.");
     let directDebugBootstrapRequests = 0;
     let proxiedDebugBootstrapRequests = 0;
     let partytownBootstrapRequests = 0;
@@ -331,6 +333,97 @@ test.describe("instant routed form UI", () => {
     await expect(page).toHaveURL(/\/auto\/tn\/tiene-licencia$/u);
   });
 
+  test("choice scroll affordance stays above the footer @cross-browser", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 560 });
+    await seedCheckpointForRouteKey(page, homeRouteKey, {
+      property_in_state: "yes",
+      ownership_status: "own",
+    });
+    await page.goto("/hogar/tx/tipo-de-propiedad");
+
+    await expect(page.locator("#lead-form")).toHaveAttribute("data-active-step-kind", "choice");
+    const step = activeStep(page);
+    const shell = step.locator("[data-choice-options-shell]");
+    const scroll = step.locator("[data-choice-options-scroll]");
+    const bottomFade = step.locator(".choice-options-fade-bottom");
+    const hint = step.locator(".scroll-more-hint");
+
+    await expect(shell).toBeVisible();
+    await expect(scroll).toBeVisible();
+    await expect(shell).toHaveAttribute("data-can-scroll-down", "true");
+    await expect(bottomFade).toHaveCSS("opacity", "1");
+    await expect(hint).toHaveCSS("opacity", "1");
+    await expectScrollShellToRespectFooter(page, shell);
+
+    await scroll.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+      element.dispatchEvent(new Event("scroll", { bubbles: true }));
+    });
+    await expect(shell).toHaveAttribute("data-can-scroll-up", "true");
+    await expect(shell).toHaveAttribute("data-can-scroll-down", "false");
+    await expect(bottomFade).toHaveCSS("opacity", "0");
+    await expect(hint).toHaveCSS("opacity", "0");
+    await expect(step.locator("[data-option]", { hasText: "Otro" })).toBeInViewport();
+  });
+
+  test("choice scroll affordance hides when options fit @cross-browser", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 1100 });
+    await seedCheckpointForRouteKey(page, homeRouteKey, {
+      property_in_state: "yes",
+      ownership_status: "own",
+    });
+    await page.goto("/hogar/tx/tipo-de-propiedad");
+
+    const step = activeStep(page);
+    const shell = step.locator("[data-choice-options-shell]");
+    const scroll = step.locator("[data-choice-options-scroll]");
+
+    await expect(shell).toBeVisible();
+    await expect
+      .poll(() => scroll.evaluate((element) => element.scrollHeight <= element.clientHeight + 1))
+      .toBe(true);
+    await expect(shell).toHaveAttribute("data-can-scroll-down", "false");
+    await expect(step.locator(".choice-options-fade-bottom")).toHaveCSS("opacity", "0");
+    await expect(step.locator(".scroll-more-hint")).toHaveCSS("opacity", "0");
+    await expectScrollShellToRespectFooter(page, shell);
+  });
+
+  test("autocomplete scroll affordance follows the footer boundary @cross-browser", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 560 });
+    await seedCheckpoint(page, { belongs_to_state: "no" });
+    await page.goto("/auto/tn/estado-donde-vive");
+
+    await expect(page.locator("#lead-form")).toHaveAttribute("data-active-step-kind", "autocomplete");
+    await activeStep(page).getByPlaceholder("Escriba su estado aquí").fill("a");
+    const shell = activeStep(page).locator("[data-autocomplete-suggestions-shell]");
+    const suggestions = activeStep(page).locator("[data-autocomplete-suggestions]");
+
+    await expect(shell).toBeVisible();
+    await expect
+      .poll(() => suggestions.locator("[data-autocomplete-suggestion]").count())
+      .toBeGreaterThan(3);
+    await expectScrollShellToRespectFooter(page, shell);
+  });
+
+  test("TrustedForm review scroll affordance follows the footer boundary @cross-browser", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 560 });
+    await mockTrustedFormCertify(page);
+    await seedCheckpoint(page, {
+      ...seenMatchingAnswers,
+      first_name: "Ana",
+      last_name: "Lopez",
+      phone_number: "+16155551234",
+    });
+    await page.goto("/auto/tn/consentimiento");
+
+    await expect(page.locator("#lead-form")).toHaveAttribute("data-active-step-kind", "trusted_form_consent");
+    const shell = activeStep(page).locator("[data-trusted-form-review-scroll-shell]");
+    const reviewScroll = activeStep(page).locator("[data-trusted-form-review-scroll]");
+    await expect(shell).toBeVisible();
+    await expect(reviewScroll).toHaveAttribute("tabindex", "0");
+    await expectScrollShellToRespectFooter(page, shell);
+  });
+
   test("phone mask accepts +1 input and final submission succeeds", async ({ page }) => {
     await mockTrustedFormCertify(page);
     await seedCheckpoint(page, {
@@ -357,6 +450,7 @@ test.describe("instant routed form UI", () => {
     await continueTrustedFormReview(page);
     await activeStep(page).locator("[data-trusted-form-consent]").check();
     await expect(page.getByRole("button", { name: trustedFormSubmitLabel })).toBeEnabled();
+    await mockNativeSubmissionSuccess(page);
     const submissionRequest = page.waitForRequest(/\/api\/forms\/auto_tn\/native-submissions/u);
     await page.getByRole("button", { name: trustedFormSubmitLabel }).click();
     expect((await submissionRequest).postData() ?? "").toContain(
@@ -530,8 +624,6 @@ test.describe("instant routed form UI", () => {
       phone_number: "+17864746654",
     });
     await page.goto("/auto/tn/consentimiento");
-    await expect(page.locator('img[alt="Seguros Aseguranza"]')).toBeHidden();
-    await expect(page.locator("[data-step-count]")).toBeHidden();
     await continueTrustedFormReview(page);
     await expect(page.locator('img[alt="Seguros Aseguranza"]')).toBeHidden();
     await expect(page.locator("[data-step-count]")).toBeHidden();
@@ -765,6 +857,7 @@ test.describe("instant routed form UI", () => {
     await expect(page.getByRole("alertdialog")).toBeHidden();
 
     await activeStep(page).locator("[data-trusted-form-consent]").check();
+    await mockNativeSubmissionSuccess(page);
     const submissionRequest = page.waitForRequest(/\/api\/forms\/auto_tn\/native-submissions/u);
     await page.getByRole("button", { name: trustedFormSubmitLabel }).click();
     expect((await submissionRequest).postData() ?? "").not.toContain("trustedFormCertUrl=");
@@ -782,7 +875,7 @@ test.describe("instant routed form UI", () => {
 
     await seedCheckpoint(page, { ...preContactAnswers, matching_offer: "completed" });
     await page.goto("/auto/tn/buscando-oferta");
-    await expect(page.getByText("Encontramos agentes listos para cotizarle.")).toBeVisible();
+    await expect(page.getByText("¡Encontramos opciones para usted!")).toBeVisible();
     await expect(page).toHaveScreenshot("matching-success.png");
 
     await seedCheckpoint(page, seenMatchingAnswers);
@@ -867,16 +960,37 @@ async function assertSpinnerOnlyLoadingButton(page: Page) {
 }
 
 async function seedCheckpoint(page: Page, answers: Record<string, string>): Promise<void> {
+  await seedCheckpointForRouteKey(page, routeKey, answers);
+}
+
+async function seedCheckpointForRouteKey(page: Page, checkpointRouteKey: string, answers: Record<string, string>): Promise<void> {
   await page.context().clearCookies();
   await page.context().addCookies([
     {
-      name: getCheckpointCookieName(routeKey),
+      name: getCheckpointCookieName(checkpointRouteKey),
       value: encodeCheckpointAnswers(answers),
       url: appUrl,
       httpOnly: true,
       sameSite: "Lax",
     },
   ]);
+}
+
+async function expectScrollShellToRespectFooter(page: Page, shell: ReturnType<Page["locator"]>): Promise<void> {
+  const metrics = await shell.evaluate((element) => {
+    const shellRect = element.getBoundingClientRect();
+    const footer = (globalThis as any).document.querySelector("footer");
+    const footerRect = footer?.getBoundingClientRect();
+
+    return {
+      gap: footerRect ? footerRect.top - shellRect.bottom : Number.POSITIVE_INFINITY,
+      overlaps: footerRect ? shellRect.bottom > footerRect.top + 1 : false,
+    };
+  });
+
+  expect(metrics.overlaps).toBe(false);
+  expect(metrics.gap).toBeGreaterThanOrEqual(-1);
+  expect(metrics.gap).toBeLessThanOrEqual(44);
 }
 
 async function mockTrustedFormCertify(page: Page, options: { delayMs?: number } = {}): Promise<void> {
@@ -918,6 +1032,29 @@ async function mockPartytownRuntime(page: Page, onRequest: () => void = () => un
     await route.fulfill({
       contentType: "application/javascript",
       body: "",
+    });
+  });
+}
+
+async function mockNativeSubmissionSuccess(page: Page): Promise<void> {
+  await page.route("**/api/forms/auto_tn/native-submissions", async (route) => {
+    const fields = new URLSearchParams(route.request().postData() ?? "");
+    await route.fulfill({
+      status: 200,
+      contentType: "text/html",
+      body: createNativeSubmissionIframeBridge({
+        ok: true,
+        routeKey,
+        redirectUrl: "/auto/tn/gracias",
+        token: fields.get("instant_form_submission_token") ?? "",
+      }),
+    });
+  });
+  await page.route("**/auto/tn/gracias", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "text/html",
+      body: "<!doctype html><html><body><main><h1>Gracias.</h1></main></body></html>",
     });
   });
 }

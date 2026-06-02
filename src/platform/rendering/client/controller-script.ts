@@ -285,11 +285,13 @@ function getCoreRuntimeScript(): string {
     });
 
     form.addEventListener("focusin", (event) => {
+      updateFocusedInputKind();
       getActiveBehavior()?.onFocusIn?.(event, getContext(), getQuestion(), getStepElement());
     });
 
     form.addEventListener("focusout", (event) => {
       getActiveBehavior()?.onFocusOut?.(event, getContext(), getQuestion(), getStepElement());
+      window.setTimeout(updateFocusedInputKind, 0);
     });
 
     form.addEventListener("change", (event) => {
@@ -392,7 +394,8 @@ function getCoreRuntimeScript(): string {
       setPanelHidden(step, index !== currentStep);
     });
 
-    form.dataset.activeKind = question.kind;
+    form.dataset.activeStepKind = question.kind;
+    updateFocusedInputKind();
     setFormChrome(getStepFormChrome(question));
     if (stepCount) {
       stepCount.textContent = formatStepCountLabel(countedStepNumber, countedStepCount);
@@ -430,6 +433,22 @@ function getCoreRuntimeScript(): string {
     if (activeElement instanceof HTMLElement && panel.contains(activeElement)) {
       activeElement.blur();
     }
+  }
+
+  function updateFocusedInputKind() {
+    const question = getQuestion();
+    const activeElement = document.activeElement;
+    if (
+      (question.kind === "text" || question.kind === "phone") &&
+      activeElement instanceof HTMLInputElement &&
+      activeElement.classList.contains("text-input") &&
+      getStepElement().contains(activeElement)
+    ) {
+      form.dataset.focusedStepKind = question.kind;
+      return;
+    }
+
+    delete form.dataset.focusedStepKind;
   }
 
   function mountCurrentBehavior() {

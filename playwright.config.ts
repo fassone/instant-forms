@@ -45,5 +45,28 @@ export default defineConfig({
         isMobile: true,
       },
     },
+    {
+      name: "firefox-desktop",
+      grep: /@cross-browser/u,
+      use: {
+        ...devices["Desktop Firefox"],
+        viewport: { width: 1280, height: 900 },
+      },
+    },
+    {
+      name: "webkit-desktop",
+      grep: /@cross-browser/u,
+      use: {
+        ...devices["Desktop Safari"],
+        viewport: { width: 1280, height: 900 },
+      },
+    },
+    {
+      name: "webkit-mobile",
+      grep: /@cross-browser/u,
+      use: {
+        ...devices["iPhone 13"],
+      },
+    },
   ],
 });

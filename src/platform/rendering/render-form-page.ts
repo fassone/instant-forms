@@ -85,9 +85,11 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
       : "";
   const renderedFooter = isPostSubmit ? renderPostSubmitFooter(form) : renderFormFooter(form, initialNextButtonLabel);
   const formStyleAttribute = getFormPanelStyleAttribute(form);
+  const initialActiveStepKind = isPostSubmit ? "post_submit" : activeStepKind;
+  const sharedFormAttributes = ` data-form-chrome="${escapeHtml(initialFormChrome)}" data-active-step-kind="${escapeHtml(initialActiveStepKind)}"${renderedFooter.trim() ? ' data-has-footer="true"' : ""}`;
   const formAttributes = usesNativeTrustedFormSubmit
-    ? ` data-form-chrome="${escapeHtml(initialFormChrome)}" method="post" action="/api/forms/${escapeHtml(routeKey)}/native-submissions" enctype="application/x-www-form-urlencoded" data-tf-element-role="offer"`
-    : ` data-form-chrome="${escapeHtml(initialFormChrome)}"${isPostSubmit ? ' data-form-view="post-submit"' : ""} novalidate`;
+    ? `${sharedFormAttributes} method="post" action="/api/forms/${escapeHtml(routeKey)}/native-submissions" enctype="application/x-www-form-urlencoded" data-tf-element-role="offer"`
+    : `${sharedFormAttributes}${isPostSubmit ? ' data-form-view="post-submit"' : ""} novalidate`;
   const clientConfig = createClientFormConfig(
     form,
     activeStepIndex,
@@ -204,7 +206,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         grid-template-rows: auto auto minmax(0, 1fr);
       }
 
-      .form-panel[data-form-view="post-submit"]:has(footer) {
+      .form-panel[data-form-view="post-submit"][data-has-footer="true"] {
         grid-template-rows: auto auto minmax(0, 1fr) auto;
       }
 
@@ -290,13 +292,13 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         min-height: 0;
       }
 
-      #steps:has(.step[data-step-kind="interstitial"][aria-hidden="false"]) {
+      .form-panel[data-active-step-kind="interstitial"] #steps {
         display: grid;
       }
 
-      #steps:has(.step[data-step-kind="autocomplete"][aria-hidden="false"]),
-      #steps:has(.step[data-step-kind="choice"][aria-hidden="false"]),
-      #steps:has(.step[data-step-kind="trusted_form_consent"][aria-hidden="false"]) {
+      .form-panel[data-active-step-kind="autocomplete"] #steps,
+      .form-panel[data-active-step-kind="choice"] #steps,
+      .form-panel[data-active-step-kind="trusted_form_consent"] #steps {
         display: grid;
         grid-template-rows: minmax(0, 1fr);
         height: 100%;
@@ -531,7 +533,6 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         overflow-y: auto;
         overscroll-behavior: contain;
         padding: 2px 4px 2px 0;
-        scrollbar-gutter: stable;
         -webkit-overflow-scrolling: touch;
       }
 
@@ -559,6 +560,31 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
       .choice-options-shell[data-can-scroll-up="true"] .choice-options-fade-top,
       .choice-options-shell[data-can-scroll-down="true"] .choice-options-fade-bottom {
         opacity: 1;
+      }
+
+      .scroll-more-hint {
+        position: absolute;
+        right: 50%;
+        bottom: 10px;
+        z-index: 3;
+        border: 1px solid rgba(6, 77, 246, 0.16);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.92);
+        box-shadow: 0 10px 28px rgba(7, 59, 142, 0.14);
+        color: var(--brand-navy);
+        font-size: 0.78rem;
+        font-weight: 800;
+        opacity: 0;
+        padding: 5px 10px;
+        pointer-events: none;
+        transform: translateX(50%) translateY(4px);
+        transition: opacity 140ms ease, transform 140ms ease;
+        white-space: nowrap;
+      }
+
+      [data-can-scroll-down="true"][data-can-scroll-up="false"] > .scroll-more-hint {
+        opacity: 1;
+        transform: translateX(50%) translateY(0);
       }
 
       .option {
@@ -669,7 +695,6 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         overscroll-behavior: contain;
         padding: 2px 4px 2px 0;
         -webkit-overflow-scrolling: touch;
-        scrollbar-gutter: stable;
       }
 
       .autocomplete-scroll-fade {
@@ -771,7 +796,6 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         overflow-y: auto;
         overscroll-behavior: contain;
         padding: 0 4px 8px 0;
-        scrollbar-gutter: stable;
         -webkit-overflow-scrolling: touch;
       }
 
@@ -884,8 +908,51 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         overflow-y: auto;
         overscroll-behavior: contain;
         padding: 0 4px 6px 0;
-        scrollbar-gutter: stable;
         -webkit-overflow-scrolling: touch;
+      }
+
+      @supports (scrollbar-gutter: stable) {
+        .options,
+        .autocomplete-suggestions,
+        .trusted-form-review-scroll,
+        .consent-scroll {
+          scrollbar-gutter: stable;
+        }
+      }
+
+      @media (hover: hover) and (pointer: fine) {
+        .options,
+        .autocomplete-suggestions,
+        .trusted-form-review-scroll,
+        .consent-scroll {
+          scrollbar-color: rgba(6, 77, 246, 0.42) transparent;
+          scrollbar-width: thin;
+        }
+
+        .options::-webkit-scrollbar,
+        .autocomplete-suggestions::-webkit-scrollbar,
+        .trusted-form-review-scroll::-webkit-scrollbar,
+        .consent-scroll::-webkit-scrollbar {
+          width: 10px;
+        }
+
+        .options::-webkit-scrollbar-thumb,
+        .autocomplete-suggestions::-webkit-scrollbar-thumb,
+        .trusted-form-review-scroll::-webkit-scrollbar-thumb,
+        .consent-scroll::-webkit-scrollbar-thumb {
+          border: 3px solid transparent;
+          border-radius: 999px;
+          background: rgba(6, 77, 246, 0.42);
+          background-clip: content-box;
+        }
+      }
+
+      @supports not selector(:has(*)) {
+        .option input:focus-visible,
+        .consent-checkbox:focus-visible {
+          outline: 3px solid rgba(6, 77, 246, 0.3);
+          outline-offset: 3px;
+        }
       }
 
       .consent-scroll-fade {
@@ -1226,8 +1293,8 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
           gap: var(--mfs-28);
         }
 
-        .form-panel:has(.step[aria-hidden="false"][data-step-kind="text"] .text-input:focus),
-        .form-panel:has(.step[aria-hidden="false"][data-step-kind="phone"] .text-input:focus) {
+        .form-panel[data-focused-step-kind="text"],
+        .form-panel[data-focused-step-kind="phone"] {
           grid-template-rows: auto auto auto auto;
           align-content: start;
           overflow: hidden;
@@ -1857,6 +1924,7 @@ function renderOptions(stepDefinition: ChoiceStep, answers: Record<string, strin
         .join("")}
     </div>
     <span class="choice-options-fade choice-options-fade-bottom" aria-hidden="true"></span>
+    <span class="scroll-more-hint" aria-hidden="true">Más opciones</span>
   </div>`;
 }
 
@@ -1899,11 +1967,12 @@ function renderTrustedFormConsent(
             data-can-scroll-down="false"
           >
             <span class="consent-scroll-fade consent-scroll-fade-top" data-trusted-form-consent-scroll-fade-top aria-hidden="true"></span>
-            <span class="consent-copy consent-scroll" data-trusted-form-consent-scroll>
+            <span class="consent-copy consent-scroll" data-trusted-form-consent-scroll tabindex="0" aria-label="Texto de consentimiento">
               <span class="consent-disclosure">${renderConsentDisplayCopyHtml(stepDefinition.consent.disclosure)}</span>
               <span class="consent-acceptance">${escapeHtml(stepDefinition.consent.checkboxLabel)}</span>
             </span>
             <span class="consent-scroll-fade consent-scroll-fade-bottom" data-trusted-form-consent-scroll-fade-bottom aria-hidden="true"></span>
+            <span class="scroll-more-hint" aria-hidden="true">Más</span>
           </span>
         </label>
       </div>
@@ -1961,7 +2030,7 @@ function renderTrustedFormReviewList(stepDefinition: TrustedFormConsentStep): st
       data-trusted-form-review-scroll-fade-top
       aria-hidden="true"
     ></div>
-    <div class="trusted-form-review-scroll" data-trusted-form-review-scroll>
+    <div class="trusted-form-review-scroll" data-trusted-form-review-scroll tabindex="0" aria-label="Resumen de información">
       <dl class="trusted-form-review-list">
       ${reviewItems
         .map(
@@ -1978,6 +2047,7 @@ function renderTrustedFormReviewList(stepDefinition: TrustedFormConsentStep): st
       data-trusted-form-review-scroll-fade-bottom
       aria-hidden="true"
     ></div>
+    <span class="scroll-more-hint" aria-hidden="true">Más</span>
   </div>`;
 }
 
@@ -2042,6 +2112,7 @@ function renderAutocompleteInput(stepDefinition: AutocompleteStep, answers: Reco
       <div class="autocomplete-scroll-fade autocomplete-scroll-fade-top" aria-hidden="true"></div>
       <div class="autocomplete-suggestions" data-autocomplete-suggestions></div>
       <div class="autocomplete-scroll-fade autocomplete-scroll-fade-bottom" aria-hidden="true"></div>
+      <span class="scroll-more-hint" aria-hidden="true">Más opciones</span>
     </div>
   </div>`;
 }

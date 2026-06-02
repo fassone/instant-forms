@@ -7208,7 +7208,10 @@ describe("form rendering", () => {
     expect(html).toContain("panel.inert = true;");
     expect(html).toContain("panel.inert = false;");
     expect(html).toContain("activeElement.blur();");
-    expect(html).toContain('#steps:has(.step[data-step-kind="choice"][aria-hidden="false"])');
+    expect(html).toContain('data-active-step-kind="choice"');
+    expect(html).toContain(".form-panel[data-active-step-kind=\"choice\"] #steps");
+    expect(html).toContain(".form-panel[data-active-step-kind=\"autocomplete\"] #steps");
+    expect(html).toContain(".form-panel[data-active-step-kind=\"trusted_form_consent\"] #steps");
     expect(html).toContain('.step[data-step-kind="choice"][aria-hidden="false"]');
     expect(html).toContain("grid-template-rows: minmax(0, 1fr);");
     expect(html).toContain("grid-template-rows: auto minmax(0, 1fr);");
@@ -7219,12 +7222,16 @@ describe("form rendering", () => {
     expect(html).toContain(".choice-options-fade-bottom");
     expect(html).toContain('.choice-options-shell[data-can-scroll-up="true"] .choice-options-fade-top');
     expect(html).toContain('.choice-options-shell[data-can-scroll-down="true"] .choice-options-fade-bottom');
+    expect(html).toContain('<span class="scroll-more-hint" aria-hidden="true">Más opciones</span>');
+    expect(html).toContain('[data-can-scroll-down="true"][data-can-scroll-up="false"] > .scroll-more-hint');
+    expect(html).toContain("@supports (scrollbar-gutter: stable)");
+    expect(html).toContain("@supports not selector(:has(*))");
     expect(html).toContain('data-choice-size="default"');
     expect(html).toContain('class="choice-options-shell" data-choice-options-shell');
     expect(html).toContain('class="options" data-choice-options-scroll');
     expect(html).toContain("--choice-option-min-height: 78px;");
     expect(html).toContain("min-height: var(--choice-option-min-height);");
-    expect(html).toContain('#steps:has(.step[data-step-kind="interstitial"][aria-hidden="false"])');
+    expect(html).toContain('.form-panel[data-active-step-kind="interstitial"] #steps');
     expect(html).toContain('.step[data-step-kind="interstitial"][aria-hidden="false"]');
     expect(html).toContain("grid-template-rows: auto minmax(0, 1fr);");
     expect(html).toContain('.step[data-step-kind="trusted_form_consent"][aria-hidden="false"]');
@@ -7255,7 +7262,8 @@ describe("form rendering", () => {
     expect(html).toContain("calc(var(--mfs-40) + env(safe-area-inset-top))");
     expect(html).toContain("var(--mfs-24)");
     expect(html).toContain("calc(var(--mfs-32) + env(safe-area-inset-bottom))");
-    expect(html).toContain('.form-panel:has(.step[aria-hidden="false"][data-step-kind="text"] .text-input:focus)');
+    expect(html).toContain('.form-panel[data-focused-step-kind="text"]');
+    expect(html).toContain('.form-panel[data-focused-step-kind="phone"]');
     expect(html).not.toContain('.form-panel:has(.step[aria-hidden="false"][data-step-kind="text"] .text-input) {');
     expect(html).not.toContain('.form-panel:has(.step[aria-hidden="false"] .text-input)');
     expect(html).toContain("grid-template-rows: auto auto auto auto;");
@@ -7296,6 +7304,9 @@ describe("form rendering", () => {
     expect(html).toContain("function updateChoiceOptionsScrollHints(options)");
     expect(html).toContain("function refreshChoiceScrollHints(ctx, step)");
     expect(html).toContain("ctx.scheduleAfterLayout(() => updateChoiceOptionsScrollHints(options))");
+    expect(html).toContain("form.dataset.activeStepKind = question.kind");
+    expect(html).toContain("function updateFocusedInputKind()");
+    expect(html).toContain("form.dataset.focusedStepKind = question.kind");
     expect(html).toContain("onResize(ctx, _question, step)");
     expect(html).toContain('options.closest("[data-choice-options-shell]")');
     expect(html).toContain('step.querySelector("[data-choice-options-scroll]")');
@@ -7344,6 +7355,7 @@ describe("form rendering", () => {
     expect(html).toContain('class="options" data-choice-options-scroll');
     expect(html).toContain('class="choice-options-fade choice-options-fade-top"');
     expect(html).toContain('class="choice-options-fade choice-options-fade-bottom"');
+    expect(html).toContain('<span class="scroll-more-hint" aria-hidden="true">Más opciones</span>');
     expect(html).toContain("--choice-option-min-height: 62px;");
     expect(html).toContain("--choice-option-min-height: var(--mfs-56);");
     expect(optionsIndex).toBeGreaterThan(-1);
@@ -7618,8 +7630,10 @@ describe("form rendering", () => {
     expect(html).toContain('data-can-scroll-up="false"');
     expect(html).toContain('data-can-scroll-down="false"');
     expect(html).toContain('data-trusted-form-review-scroll');
+    expect(html).toContain('data-trusted-form-review-scroll tabindex="0" aria-label="Resumen de información"');
     expect(html).toContain('data-trusted-form-review-scroll-fade-top');
     expect(html).toContain('data-trusted-form-review-scroll-fade-bottom');
+    expect(html).toContain('<span class="scroll-more-hint" aria-hidden="true">Más</span>');
     expect(html).toContain('data-trusted-form-substep="consent" aria-hidden="true"');
     expect(html).toContain('data-trusted-form-substep="consent" aria-hidden="true" inert');
     expect(html).toContain('data-trusted-form-field-bank');
@@ -7636,6 +7650,7 @@ describe("form rendering", () => {
     expect(html).toContain(".consent-disclosure {\n        font-size: 0.8rem;\n      }");
     expect(html).toContain('data-trusted-form-consent-scroll-shell');
     expect(html).toContain('data-trusted-form-consent-scroll');
+    expect(html).toContain('data-trusted-form-consent-scroll tabindex="0" aria-label="Texto de consentimiento"');
     expect(html).toContain('data-trusted-form-consent-scroll-fade-top');
     expect(html).toContain('data-trusted-form-consent-scroll-fade-bottom');
     expect(html).toContain('.trusted-form-panel[data-trusted-form-substep="consent"][aria-hidden="false"]');
@@ -7898,7 +7913,7 @@ describe("form rendering", () => {
     expect(html).toContain("Number.POSITIVE_INFINITY");
     expect(html).toContain("autocompleteConfig.getLabel(left.item).localeCompare(autocompleteConfig.getLabel(right.item))");
     expect(html).not.toContain(".slice(0, 3);");
-    expect(html).toContain('#steps:has(.step[data-step-kind="autocomplete"][aria-hidden="false"])');
+    expect(html).toContain('.form-panel[data-active-step-kind="autocomplete"] #steps');
     expect(html).toContain('.step[data-step-kind="autocomplete"][aria-hidden="false"]');
     expect(html).toContain('.step[data-step-kind="autocomplete"][aria-hidden="false"] .autocomplete-field');
     expect(html).toContain("grid-template-rows: auto minmax(0, 1fr);");
@@ -7910,6 +7925,7 @@ describe("form rendering", () => {
     expect(html).toContain("overscroll-behavior: contain;");
     expect(html).toContain("autocomplete-scroll-fade-top");
     expect(html).toContain("autocomplete-scroll-fade-bottom");
+    expect(html).toContain('<span class="scroll-more-hint" aria-hidden="true">Más opciones</span>');
     expect(html).toContain("function updateAutocompleteSuggestionScrollHints(suggestions)");
     expect(html).toContain("function scheduleAutocompleteSuggestionScrollHints(ctx, suggestions)");
     expect(html).toContain("ctx.scheduleAfterLayout(() => updateAutocompleteSuggestionScrollHints(suggestions))");
