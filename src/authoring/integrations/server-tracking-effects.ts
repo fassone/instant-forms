@@ -1,6 +1,8 @@
 import type { FormContract, TrackingServerEventInput } from "../../platform/flow";
 import { logInstantFormEvent } from "../../platform/logging";
 
+type SafePostHogAnswerValue = string | number | boolean;
+
 export type TrackingServerEffectResult = {
   status?: number;
   skipped?: boolean;
@@ -111,12 +113,19 @@ export type PostHogCaptureEffectInput<TContract extends FormContract = FormContr
   projectApiKey: string;
   apiHost: string;
   getProperties?: (input: TrackingServerEventInput<TContract>) => Record<string, string | number | boolean | undefined>;
+  getSafeAnswerValue?: (input: {
+    answerKey: string;
+    answers: TrackingServerEventInput<TContract>["answers"];
+    step?: TrackingServerEventInput<TContract>["step"];
+    event: TrackingServerEventInput<TContract>["event"];
+  }) => SafePostHogAnswerValue | undefined;
 };
 
 export function createPostHogCaptureEffect<TContract extends FormContract>({
   projectApiKey,
   apiHost,
   getProperties,
+  getSafeAnswerValue,
 }: PostHogCaptureEffectInput<TContract>): TrackingServerEffect<TContract> {
   const captureUrl = new URL("/i/v0/e/", apiHost);
 
@@ -138,6 +147,7 @@ export function createPostHogCaptureEffect<TContract extends FormContract>({
           timestamp: new Date().toISOString(),
           properties: removeUndefinedValues({
             ...createSafePostHogProperties(input),
+            ...createAnswerProperties(input, getSafeAnswerValue),
             ...(getProperties?.(input) ?? {}),
             $process_person_profile: false,
           }),
@@ -164,12 +174,35 @@ function createSafePostHogProperties(input: TrackingServerEventInput): Record<st
     step_slug: getStringProperty(input.event.step_slug) ?? input.step?.slug,
     step_index: getNumberProperty(input.event.step_index) ?? input.step?.index,
     step_kind: getStringProperty(input.event.step_kind) ?? input.step?.kind,
+    answer_key: getStringProperty(input.event.answer_key),
     trusted_form_substep: getStringProperty(input.event.trusted_form_substep),
     submission_id: input.submission?.id,
     $current_url: getStringProperty(input.event.event_source_url) ?? input.request.url,
     $ip: input.request.ip,
     $user_agent: input.request.userAgent,
   };
+}
+
+function createAnswerProperties<TContract extends FormContract>(
+  input: TrackingServerEventInput<TContract>,
+  getSafeAnswerValue: PostHogCaptureEffectInput<TContract>["getSafeAnswerValue"],
+): Record<string, SafePostHogAnswerValue | undefined> {
+  const answerKey = getStringProperty(input.event.answer_key);
+  if (input.event.event !== "instant_form_step_answer" || !answerKey) {
+    return {};
+  }
+
+  const safeAnswerValue = getSafeAnswerValue?.({
+    answerKey,
+    answers: input.answers,
+    step: input.step,
+    event: input.event,
+  });
+  if (safeAnswerValue !== undefined) {
+    return { answer_value: safeAnswerValue };
+  }
+
+  return hasAnswerValue((input.answers as Record<string, unknown>)[answerKey]) ? { answer_present: true } : {};
 }
 
 function logTrackingEffect(
@@ -215,4 +248,12 @@ function getStringProperty(value: unknown): string | undefined {
 
 function getNumberProperty(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function hasAnswerValue(value: unknown): boolean {
+  if (value === undefined || value === null) {
+    return false;
+  }
+
+  return typeof value !== "string" || value.trim().length > 0;
 }

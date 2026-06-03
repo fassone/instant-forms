@@ -1790,6 +1790,7 @@ describe("form registry", () => {
           step_slug: "telefono",
           step_index: 9,
           step_kind: "phone",
+          answer_key: "phone_number",
           event_source_url: "https://cotiza.example/hogar/tx/telefono",
         },
         context: { areaCode: "TX" },
@@ -1825,6 +1826,8 @@ describe("form registry", () => {
           step_slug: "telefono",
           step_index: 9,
           step_kind: "phone",
+          answer_key: "phone_number",
+          answer_present: true,
           $current_url: "https://cotiza.example/hogar/tx/telefono",
           $ip: "203.0.113.10",
           $user_agent: "PostHog Test Browser",
@@ -1834,9 +1837,63 @@ describe("form registry", () => {
           $process_person_profile: false,
         },
       });
+      expect(request?.body.properties).not.toHaveProperty("answer_value");
       expect(serializedBody).not.toContain("+14435707047");
       expect(serializedBody).not.toContain("michel@example.test");
       expect(serializedBody).not.toContain("private-cookie");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("adds PostHog answer values only through an authored safe answer callback", async () => {
+    const requests: Array<{ body: any }> = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (_input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+      requests.push({ body: JSON.parse(String(init?.body)) });
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+
+    try {
+      const effect = createPostHogCaptureEffect({
+        projectApiKey: "phc_test_key",
+        apiHost: "https://us.i.posthog.com",
+        getSafeAnswerValue: ({ answerKey, answers }) =>
+          answerKey === "property_type" && typeof (answers as Record<string, unknown>)[answerKey] === "string"
+            ? ((answers as Record<string, string>)[answerKey])
+            : undefined,
+      });
+
+      await effect.run({
+        event: {
+          event: "instant_form_step_answer",
+          id: "evt_safe_answer",
+          route_key: "hogar_tx",
+          form_name: "ES - TX Home - v1",
+          page_name: "Seguros Aseguranza",
+          step_key: "property_type",
+          step_slug: "tipo-de-propiedad",
+          step_index: 2,
+          step_kind: "choice",
+          answer_key: "property_type",
+        },
+        context: { areaCode: "TX" },
+        answers: {
+          property_type: "condo",
+        },
+        cookies: { get: () => undefined },
+        request: {
+          url: "https://cotiza.example/hogar/tx/tipo-de-propiedad",
+          headers: new Headers(),
+        },
+        visitor: { id: "AbC123xYz789LmN456OpQrSt" },
+      } as any);
+
+      expect(requests[0]?.body.properties).toMatchObject({
+        answer_key: "property_type",
+        answer_value: "condo",
+      });
+      expect(requests[0]?.body.properties).not.toHaveProperty("answer_present");
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -6373,6 +6430,7 @@ describe("server routing", () => {
           context: z.object({ areaCode: z.string() }),
           answers: z.object({
             wants_quote: z.enum(["yes", "no"]),
+            first_name: z.string(),
           }),
           payload: z.object({ wantsQuote: z.string() }),
         },
@@ -6399,6 +6457,8 @@ describe("server routing", () => {
                 createPostHogCaptureEffect({
                   projectApiKey: "phc_test_key",
                   apiHost: "https://us.i.posthog.com",
+                  getSafeAnswerValue: ({ answerKey, answers }) =>
+                    answerKey === "wants_quote" ? (answers as Record<string, string>)[answerKey] : undefined,
                 }),
               ]),
             }),
@@ -6413,6 +6473,12 @@ describe("server routing", () => {
               { key: "yes", label: "Yes" },
               { key: "no", label: "No" },
             ],
+          }),
+          step.text({
+            key: "first_name",
+            slug: "first-name",
+            label: "First name",
+            autocomplete: "given-name",
           }),
         ],
       });
@@ -6439,11 +6505,25 @@ describe("server routing", () => {
       const body = await response.json() as { trackingEvents?: Array<{ id: string }> };
       const setCookie = response.headers.get("Set-Cookie") ?? "";
       const visitorId = /instant_forms_visitor_id=([0-9A-Za-z]{24})/u.exec(setCookie)?.[1];
+      const contactResponse = await app.fetch(
+        new Request("http://localhost/api/forms/posthog/checkpoints", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            questionKey: "first_name",
+            answer: "Michel",
+            tracking: { eventSourceUrl: "https://cotiza.example/posthog/first-name" },
+          }),
+        }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const unsafeRequestBody = JSON.stringify(postHogRequests[1]);
 
       expect(response.status).toBe(200);
+      expect(contactResponse.status).toBe(200);
       expect(visitorId).toBeTruthy();
       expect(setCookie).toContain("Max-Age=12345");
-      expect(postHogRequests).toHaveLength(1);
+      expect(postHogRequests).toHaveLength(2);
       expect(postHogRequests[0]).toMatchObject({
         api_key: "phc_test_key",
         event: "instant_form_step_answer",
@@ -6457,10 +6537,32 @@ describe("server routing", () => {
           step_slug: "quote",
           step_index: 0,
           step_kind: "choice",
+          answer_key: "wants_quote",
+          answer_value: "yes",
           $current_url: "https://cotiza.example/posthog/quote",
           $process_person_profile: false,
         },
       });
+      expect(postHogRequests[0].properties).not.toHaveProperty("answer_present");
+      expect(postHogRequests[1]).toMatchObject({
+        api_key: "phc_test_key",
+        event: "instant_form_step_answer",
+        properties: {
+          route_key: "posthog",
+          form_name: "PostHog Checkpoint Test",
+          page_name: "PostHog Checkpoint Test",
+          step_key: "first_name",
+          step_slug: "first-name",
+          step_index: 1,
+          step_kind: "text",
+          answer_key: "first_name",
+          answer_present: true,
+          $current_url: "https://cotiza.example/posthog/first-name",
+          $process_person_profile: false,
+        },
+      });
+      expect(postHogRequests[1].properties).not.toHaveProperty("answer_value");
+      expect(unsafeRequestBody).not.toContain("Michel");
     } finally {
       globalThis.fetch = originalFetch;
     }

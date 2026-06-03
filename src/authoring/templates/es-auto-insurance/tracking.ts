@@ -13,6 +13,15 @@ import {
 import { getCapturedLeadAttribution } from "./attribution";
 import type { AutoInsuranceContract } from "./contracts";
 
+const safePostHogAnswerKeys = new Set<string>([
+  "belongs_to_state",
+  "residence_state",
+  "has_license",
+  "has_insurance",
+  "is_clean_title",
+  "number_of_registered_cars",
+]);
+
 type CreateAutoInsuranceTrackingInput = {
   gtmContainerId?: GoogleTagManagerContainerId;
   metaPixelId?: MetaPixelId;
@@ -52,6 +61,8 @@ export function createAutoInsuranceTracking({
                 platform: attribution.platform,
               };
             },
+            getSafeAnswerValue: ({ answerKey, answers }) =>
+              safePostHogAnswerKeys.has(answerKey) ? getStringAnswerValue(answers, answerKey) : undefined,
           }),
         ]
       : []),
@@ -181,4 +192,10 @@ export function createAutoInsuranceTracking({
       }),
     ],
   });
+}
+
+function getStringAnswerValue(answers: Record<string, unknown>, answerKey: string): string | undefined {
+  const value = answers[answerKey];
+
+  return typeof value === "string" && value.trim() ? value : undefined;
 }

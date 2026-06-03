@@ -13,6 +13,17 @@ import {
 import { getCapturedLeadAttribution } from "./attribution";
 import type { HomeInsuranceContract } from "./contracts";
 
+const safePostHogAnswerKeys = new Set<string>([
+  "property_in_state",
+  "property_state",
+  "ownership_status",
+  "property_type",
+  "property_use",
+  "has_home_insurance",
+  "house_age_years",
+  "roof_age_years",
+]);
+
 type CreateHomeInsuranceTrackingInput = {
   gtmContainerId?: GoogleTagManagerContainerId;
   metaPixelId?: MetaPixelId;
@@ -52,6 +63,8 @@ export function createHomeInsuranceTracking({
                 platform: attribution.platform,
               };
             },
+            getSafeAnswerValue: ({ answerKey, answers }) =>
+              safePostHogAnswerKeys.has(answerKey) ? getStringAnswerValue(answers, answerKey) : undefined,
           }),
         ]
       : []),
@@ -185,4 +198,10 @@ export function createHomeInsuranceTracking({
       }),
     ],
   });
+}
+
+function getStringAnswerValue(answers: Record<string, unknown>, answerKey: string): string | undefined {
+  const value = answers[answerKey];
+
+  return typeof value === "string" && value.trim() ? value : undefined;
 }
