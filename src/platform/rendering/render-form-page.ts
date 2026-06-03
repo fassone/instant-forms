@@ -216,8 +216,8 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
 
       .brand-logo {
         display: block;
-        aspect-ratio: 220 / 63;
-        width: clamp(160px, 34vw, 220px);
+        aspect-ratio: 236 / 73;
+        width: clamp(160px, 34vw, 236px);
         height: auto;
       }
 
@@ -1548,7 +1548,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
       <form class="form-panel" id="lead-form"${formStyleAttribute}${formAttributes}>
         <header class="brand">
           <div class="brand-identity">
-            <img class="brand-logo" src="/assets/logo.webp" alt="${escapeHtml(form.page.name)}" width="220" height="63">
+            <img class="brand-logo" src="/assets/logo.webp" alt="${escapeHtml(form.page.name)}" width="236" height="73">
             
           </div>
           <span class="area-pill">${escapeHtml(displayAreaCode)}</span>

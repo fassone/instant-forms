@@ -7143,7 +7143,7 @@ describe("form rendering", () => {
 
     expect(devHtml).toContain("--brand-navy: #073b8e");
     expect(devHtml).toContain("\n      :root");
-    expect(devHtml).toContain("aspect-ratio: 220 / 63");
+    expect(devHtml).toContain("aspect-ratio: 236 / 73");
     expect(productionHtml).toContain("<style>");
     expect(productionHtml).toContain("--a:#073b8e");
     expect(productionHtml).toContain("var(--a)");
@@ -7403,6 +7403,7 @@ describe("form rendering", () => {
     const html = await renderTennesseeForm();
 
     expect(html).toContain('src="/assets/logo.webp"');
+    expect(html).toContain('width="236" height="73"');
     expect(html).not.toContain("Seguro para Latinos en Tennessee");
     expect(html).toContain("--brand-navy: #073b8e");
     expect(html).toContain("--brand-blue: #064df6");
