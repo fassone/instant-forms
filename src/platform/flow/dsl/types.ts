@@ -68,6 +68,10 @@ export type FormPostSubmit = {
   cta?: {
     label: string;
     href: string;
+    appLink?: {
+      ios?: string;
+      android?: string;
+    };
   };
 };
 

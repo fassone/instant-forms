@@ -169,6 +169,9 @@ const autoCaliforniaMetaPixelId = "2458973931233184";
 const hogarTexasMetaPixelId = "1430748765773171";
 const expectedNoindexRobotsPolicy =
   "noindex,nofollow,nosnippet,noarchive,noimageindex,max-snippet:0,max-image-preview:none,max-video-preview:0";
+const expectedFacebookIosAppLink = "fb://profile/298730479987891";
+const expectedFacebookAndroidAppLink =
+  "fb://facewebmodal/f?href=https%3A%2F%2Fwww.facebook.com%2Fseguros.aseguranza";
 const expectedTennesseeTrustedFormReviewFields = [
   {
     name: "trusted_form_grantor_name",
@@ -421,6 +424,20 @@ describe("form registry", () => {
     expect(txRoute.form.tracking?.googleTagManager?.containerId).toBe("GTM-MVJNX5DZ");
     expect(JSON.stringify(txRoute.form.tracking?.events)).toContain(`"pixelId":"${hogarTexasMetaPixelId}"`);
     expect(tnRoute).toBeUndefined();
+  });
+
+  it("authors Facebook app links on Spanish post-submit CTAs", () => {
+    const autoRoute = getRequiredTennesseeRoute();
+    const homeRoute = getRequiredHogarTexasRoute();
+    const expectedFacebookAppLink = {
+      ios: expectedFacebookIosAppLink,
+      android: expectedFacebookAndroidAppLink,
+    };
+
+    expect(autoRoute.form.postSubmit.cta?.href).toBe("https://www.facebook.com/seguros.aseguranza");
+    expect(homeRoute.form.postSubmit.cta?.href).toBe("https://www.facebook.com/seguros.aseguranza");
+    expect(autoRoute.form.postSubmit.cta?.appLink).toEqual(expectedFacebookAppLink);
+    expect(homeRoute.form.postSubmit.cta?.appLink).toEqual(expectedFacebookAppLink);
   });
 
   it("centralizes optional Meta Pixel IDs by product and area", () => {
@@ -2750,7 +2767,7 @@ describe("form registry", () => {
   });
 
   it("rejects unsafe post-submit CTA config", () => {
-    const createFlowWithPostSubmitCta = (cta: { label: string; href: string }) =>
+    const createFlowWithPostSubmitCta = (cta: any) =>
       defineFormFlow({
         name: "Invalid Post Submit CTA",
         status: "ACTIVE",
@@ -2796,6 +2813,41 @@ describe("form registry", () => {
     expect(() => createFlowWithPostSubmitCta({ label: "Done", href: "//example.test" })).toThrow(
       'postSubmit.cta.href must be a relative "/" URL or an "https://" URL.',
     );
+    expect(() =>
+      createFlowWithPostSubmitCta({
+        label: "Done",
+        href: "https://example.test",
+        appLink: {},
+      }),
+    ).toThrow("postSubmit.cta.appLink must include ios or android when provided.");
+    expect(() =>
+      createFlowWithPostSubmitCta({
+        label: "Done",
+        href: "https://example.test",
+        appLink: { ios: "" },
+      }),
+    ).toThrow("postSubmit.cta.appLink.ios must be a non-empty custom-scheme URL when provided.");
+    expect(() =>
+      createFlowWithPostSubmitCta({
+        label: "Done",
+        href: "https://example.test",
+        appLink: { ios: "https://facebook.com/example" },
+      }),
+    ).toThrow("postSubmit.cta.appLink.ios must be a non-empty custom-scheme URL when provided.");
+    expect(() =>
+      createFlowWithPostSubmitCta({
+        label: "Done",
+        href: "https://example.test",
+        appLink: { android: "javascript:alert(1)" },
+      }),
+    ).toThrow("postSubmit.cta.appLink.android must be a non-empty custom-scheme URL when provided.");
+    expect(() =>
+      createFlowWithPostSubmitCta({
+        label: "Done",
+        href: "https://example.test",
+        appLink: { android: "/facebook" },
+      }),
+    ).toThrow("postSubmit.cta.appLink.android must be a non-empty custom-scheme URL when provided.");
     expect(createFlowWithPostSubmitCta({ label: "Done", href: "/auto/tn" }).postSubmit.cta).toEqual({
       label: "Done",
       href: "/auto/tn",
@@ -2803,6 +2855,34 @@ describe("form registry", () => {
     expect(createFlowWithPostSubmitCta({ label: "Done", href: "https://example.test" }).postSubmit.cta).toEqual({
       label: "Done",
       href: "https://example.test",
+    });
+    expect(
+      createFlowWithPostSubmitCta({
+        label: "Done",
+        href: "https://example.test",
+        appLink: { ios: "fb://profile/123" },
+      }).postSubmit.cta,
+    ).toEqual({
+      label: "Done",
+      href: "https://example.test",
+      appLink: { ios: "fb://profile/123" },
+    });
+    expect(
+      createFlowWithPostSubmitCta({
+        label: "Done",
+        href: "https://example.test",
+        appLink: {
+          ios: "fb://profile/123",
+          android: "fb://facewebmodal/f?href=https%3A%2F%2Fexample.test",
+        },
+      }).postSubmit.cta,
+    ).toEqual({
+      label: "Done",
+      href: "https://example.test",
+      appLink: {
+        ios: "fb://profile/123",
+        android: "fb://facewebmodal/f?href=https%3A%2F%2Fexample.test",
+      },
     });
   });
 
@@ -7120,8 +7200,83 @@ describe("form rendering", () => {
     expect(html).toContain('.form-panel[data-form-view="post-submit"] .actions-single .button');
     expect(html).toContain("width: 100%");
     expect(html).toContain('<a class="button button-primary" href="/auto/tn">Start over</a>');
+    expect(html).not.toContain("data-app-link-ios");
+    expect(html).not.toContain("data-app-link-android");
+    expect(html).not.toContain("[data-app-link-ios], [data-app-link-android]");
     expect(html).not.toContain('id="back-button"');
     expect(html).not.toContain('id="next-button"');
+    expect(html).not.toContain("window.__FORM_CONFIG__");
+  });
+
+  it("renders optional post-submit CTA app links with a lightweight click fallback", async () => {
+    const flow = defineFormFlow({
+      name: "Post Submit App Link Fixture",
+      status: "ACTIVE",
+      ...testFlowCopy,
+      postSubmit: {
+        slug: "done",
+        title: "Done.",
+        message: "We received your form.",
+        cta: {
+          label: "Open Facebook",
+          href: "https://www.facebook.com/seguros.aseguranza",
+          appLink: {
+            ios: "fb://profile/123456789",
+            android: "fb://facewebmodal/f?href=https%3A%2F%2Fwww.facebook.com%2Fseguros.aseguranza&ref=thanks",
+          },
+        },
+      },
+      contract: {
+        context: z.object({}),
+        answers: z.object({
+          wants_quote: z.enum(["yes", "no"]),
+        }),
+        payload: z.object({
+          wantsQuote: z.string(),
+        }),
+      },
+      context: {},
+      payload: {
+        url: "https://example.test/lead-submissions",
+        method: "POST",
+        encoding: "json",
+        mapping: ({ answers }) => ({
+          wantsQuote: answers.wants_quote,
+        }),
+      },
+      page: {
+        name: "Post Submit App Link Form",
+      },
+      steps: [
+        step.choice({
+          key: "wants_quote",
+          slug: "quote",
+          label: "Do you want a quote?",
+          options: [
+            { key: "yes", label: "Yes" },
+            { key: "no", label: "No" },
+          ],
+        }),
+      ],
+    });
+    const html = await renderFormPage(flow, {
+      routeKey: "post_submit_app_link_custom",
+      postSubmit: {
+        trackingEvents: [{ event: "instant_form_submit_success" }],
+        stepCountLabel: "Step 1 of 1",
+      },
+    });
+
+    expect(html).toContain('href="https://www.facebook.com/seguros.aseguranza"');
+    expect(html).toContain('data-app-link-ios="fb://profile/123456789"');
+    expect(html).toContain(
+      'data-app-link-android="fb://facewebmodal/f?href=https%3A%2F%2Fwww.facebook.com%2Fseguros.aseguranza&amp;ref=thanks"',
+    );
+    expect(html).toContain('target.closest("[data-app-link-ios], [data-app-link-android]")');
+    expect(html).toContain("navigator.userAgent");
+    expect(html).toContain("window.location.href = appLink");
+    expect(html).toContain("window.location.href = link.href");
+    expect(html).toContain("}, 800);");
     expect(html).not.toContain("window.__FORM_CONFIG__");
   });
 

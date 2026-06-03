@@ -363,6 +363,8 @@ function assertPostSubmit(postSubmit: FormPostSubmit, steps: readonly FormStep[]
   if (!isSafePostSubmitCtaHref(postSubmit.cta.href)) {
     throw new Error('postSubmit.cta.href must be a relative "/" URL or an "https://" URL.');
   }
+
+  assertPostSubmitCtaAppLink(postSubmit.cta.appLink);
 }
 
 function assertAttribution(attribution: FormAttribution | undefined): void {
@@ -391,6 +393,40 @@ function isSafePostSubmitCtaHref(href: string): boolean {
     (trimmedHref.startsWith("/") && !trimmedHref.startsWith("//")) ||
     trimmedHref.startsWith("https://")
   );
+}
+
+function assertPostSubmitCtaAppLink(appLink: NonNullable<FormPostSubmit["cta"]>["appLink"]): void {
+  if (!appLink) {
+    return;
+  }
+
+  if (appLink.ios === undefined && appLink.android === undefined) {
+    throw new Error("postSubmit.cta.appLink must include ios or android when provided.");
+  }
+
+  if (appLink.ios !== undefined && !isSafeCustomSchemeUrl(appLink.ios)) {
+    throw new Error("postSubmit.cta.appLink.ios must be a non-empty custom-scheme URL when provided.");
+  }
+
+  if (appLink.android !== undefined && !isSafeCustomSchemeUrl(appLink.android)) {
+    throw new Error("postSubmit.cta.appLink.android must be a non-empty custom-scheme URL when provided.");
+  }
+}
+
+function isSafeCustomSchemeUrl(value: unknown): value is string {
+  if (typeof value !== "string" || !value.trim() || value !== value.trim() || /[\s<>]/u.test(value)) {
+    return false;
+  }
+
+  try {
+    const parsedUrl = new URL(value);
+    return (
+      /^[a-z][a-z0-9+.-]*:$/iu.test(parsedUrl.protocol) &&
+      !["http:", "https:", "javascript:", "data:", "vbscript:", "file:"].includes(parsedUrl.protocol.toLowerCase())
+    );
+  } catch {
+    return false;
+  }
 }
 
 function isSafePayloadUrl(url: string): boolean {

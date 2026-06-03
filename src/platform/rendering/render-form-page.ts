@@ -1586,7 +1586,7 @@ ${pageMetaTags}
       </div>
     </main>
     ${trackingScripts}
-    ${isPostSubmit ? "" : renderControllerScripts(formConfigExpression, activeStepKind)}
+    ${isPostSubmit ? renderPostSubmitAppLinkScript(form) : renderControllerScripts(formConfigExpression, activeStepKind)}
   </body>
 </html>`;
 
@@ -1617,12 +1617,68 @@ function renderPostSubmitFooter(form: InstantForm): string {
     return "";
   }
 
+  const appLinkAttributes = renderPostSubmitCtaAppLinkAttributes(form.postSubmit.cta);
+
   return `
         <footer>
           <div class="actions actions-single">
-            <a class="button button-primary" href="${escapeHtml(form.postSubmit.cta.href)}">${escapeHtml(form.postSubmit.cta.label)}</a>
+            <a class="button button-primary" href="${escapeHtml(form.postSubmit.cta.href)}"${appLinkAttributes}>${escapeHtml(form.postSubmit.cta.label)}</a>
           </div>
         </footer>`;
+}
+
+function renderPostSubmitCtaAppLinkAttributes(cta: NonNullable<InstantForm["postSubmit"]["cta"]>): string {
+  const attributes = [
+    cta.appLink?.ios ? `data-app-link-ios="${escapeHtml(cta.appLink.ios)}"` : "",
+    cta.appLink?.android ? `data-app-link-android="${escapeHtml(cta.appLink.android)}"` : "",
+  ].filter(Boolean);
+
+  return attributes.length ? ` ${attributes.join(" ")}` : "";
+}
+
+function renderPostSubmitAppLinkScript(form: InstantForm): string {
+  if (!form.postSubmit.cta?.appLink) {
+    return "";
+  }
+
+  return `
+    <script>
+      (() => {
+        const form = document.getElementById("lead-form");
+        if (!form) {
+          return;
+        }
+
+        form.addEventListener("click", (event) => {
+          const target = event.target;
+          if (!(target instanceof Element)) {
+            return;
+          }
+
+          const link = target.closest("[data-app-link-ios], [data-app-link-android]");
+          if (!(link instanceof HTMLAnchorElement)) {
+            return;
+          }
+
+          const userAgent = navigator.userAgent || "";
+          const appLink = /\\b(iPhone|iPad|iPod)\\b/i.test(userAgent)
+            ? link.dataset.appLinkIos
+            : /\\bAndroid\\b/i.test(userAgent)
+              ? link.dataset.appLinkAndroid
+              : "";
+
+          if (!appLink) {
+            return;
+          }
+
+          event.preventDefault();
+          window.location.href = appLink;
+          window.setTimeout(() => {
+            window.location.href = link.href;
+          }, 800);
+        });
+      })();
+    </script>`;
 }
 
 function renderFormFooter(form: InstantForm, nextButtonLabel: string): string {

@@ -46,6 +46,10 @@ export const esAutoInsurancePostSubmit = {
   cta: {
     label: "¡Dele like a nuestra página!",
     href: "https://www.facebook.com/seguros.aseguranza",
+    appLink: {
+      ios: "fb://profile/298730479987891",
+      android: "fb://facewebmodal/f?href=https%3A%2F%2Fwww.facebook.com%2Fseguros.aseguranza",
+    },
   },
 } as const;
 
