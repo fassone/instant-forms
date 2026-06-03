@@ -85,11 +85,13 @@ export function createAutoInsuranceTracking({
       event.formView({
         name: "instant_form_view",
         includeContext: ["areaCode", "product"],
+        ...(serverEffects ? { server: serverEffects } : {}),
       }),
       event.stepView({
         name: "instant_form_step_view",
         includeContext: ["areaCode", "product"],
         includeStep: true,
+        ...(serverEffects ? { server: serverEffects } : {}),
       }),
       event.stepAnswer({
         name: "instant_form_step_answer",

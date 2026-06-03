@@ -445,6 +445,31 @@ describe("form registry", () => {
     expect(homeRoute.form.postSubmit.cta?.appLink).toEqual(expectedFacebookAppLink);
   });
 
+  it("attaches server effects to Spanish auto and home view events when PostHog is configured", () => {
+    const autoFlow = createAutoInsuranceFlow({
+      flowName: "ES - TX Auto - PostHog Test",
+      areaCode: "TX",
+      areaName: "Texas",
+      postHogProjectApiKey: "phc_test_key",
+      postHogApiHost: "https://us.i.posthog.com",
+    });
+    const homeFlow = createHomeInsuranceFlow({
+      flowName: "ES - TX Home - PostHog Test",
+      areaCode: "TX",
+      areaName: "Texas",
+      postHogProjectApiKey: "phc_test_key",
+      postHogApiHost: "https://us.i.posthog.com",
+    });
+
+    for (const form of [autoFlow, homeFlow]) {
+      expect(typeof form.tracking?.events?.find((event) => event.kind === "formView")?.server).toBe("function");
+      expect(typeof form.tracking?.events?.find((event) => event.kind === "stepView")?.server).toBe("function");
+      expect(form.tracking?.events?.find((event) => event.kind === "validationError")?.server).toBeUndefined();
+      expect(form.tracking?.events?.find((event) => event.kind === "submitAttempt")?.server).toBeUndefined();
+      expect(form.tracking?.events?.find((event) => event.kind === "submitError")?.server).toBeUndefined();
+    }
+  });
+
   it("centralizes optional Meta Pixel IDs by product and area", () => {
     const testHomePixels: AreaMetaPixelMap = defineAreaMetaPixelMap({
       tn: "1234567890",
@@ -1361,7 +1386,7 @@ describe("form registry", () => {
     expect(JSON.stringify(payload)).not.toContain("Lopez");
   });
 
-  it("allows server callbacks only on server-built tracking event kinds", () => {
+  it("allows server callbacks only on server-known tracking event kinds", () => {
     expect(() =>
       defineFormFlow({
         name: "Invalid Server Callback Event Test",
@@ -1383,8 +1408,8 @@ describe("form registry", () => {
         tracking: ({ event }) => ({
           googleTagManager: googleTagManager({ containerId: "GTM-ABC123" }),
           events: [
-            event.stepView({
-              name: "step_view",
+            event.validationError({
+              name: "validation_error",
               server: (() => undefined) as never,
             }),
           ],
@@ -1401,7 +1426,7 @@ describe("form registry", () => {
           }),
         ],
       }),
-    ).toThrow("server is only supported on submitSuccess, stepAnswer, and trustedFormSubstepView events");
+    ).toThrow("server is only supported on formView, stepView, submitSuccess, stepAnswer, and trustedFormSubstepView events");
 
     const flow = defineFormFlow({
       name: "Valid Server Callback Event Test",
@@ -1425,6 +1450,15 @@ describe("form registry", () => {
       tracking: ({ event }) => ({
         googleTagManager: googleTagManager({ containerId: "GTM-ABC123" }),
         events: [
+          event.formView({
+            name: "form_view",
+            server: () => undefined,
+          }),
+          event.stepView({
+            name: "step_view",
+            includeStep: true,
+            server: () => undefined,
+          }),
           event.stepAnswer({
             name: "step_answer",
             server: () => undefined,
@@ -1445,6 +1479,8 @@ describe("form registry", () => {
     });
 
     expect(typeof flow.tracking?.events?.[0]?.server).toBe("function");
+    expect(typeof flow.tracking?.events?.[1]?.server).toBe("function");
+    expect(typeof flow.tracking?.events?.[2]?.server).toBe("function");
   });
 
   it("returns partial Meta remarketing events from validated checkpoints", async () => {
@@ -4711,7 +4747,7 @@ describe("submission validation", () => {
     );
 
     expect(JSON.stringify(trackingEvents)).not.toContain('"pixelId"');
-    expect(trackingEvents.some((eventDefinition) => "server" in eventDefinition)).toBe(false);
+    expect(trackingEvents.some((eventDefinition) => Boolean(eventDefinition.meta))).toBe(false);
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.payload.delivery.payload).toMatchObject({
@@ -4751,7 +4787,7 @@ describe("submission validation", () => {
     );
 
     expect(JSON.stringify(trackingEvents)).not.toContain('"pixelId"');
-    expect(trackingEvents.some((eventDefinition) => "server" in eventDefinition)).toBe(false);
+    expect(trackingEvents.some((eventDefinition) => Boolean(eventDefinition.meta))).toBe(false);
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.payload.delivery.payload).toMatchObject({
@@ -6422,6 +6458,128 @@ describe("server routing", () => {
           step_index: 0,
           step_kind: "choice",
           $current_url: "https://cotiza.example/posthog/quote",
+          $process_person_profile: false,
+        },
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("sets a generic visitor id cookie and schedules PostHog capture for server-rendered form and step views", async () => {
+    const postHogRequests: Array<any> = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (_input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+      postHogRequests.push(JSON.parse(String(init?.body)));
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+
+    try {
+      const serverEffects = createTrackingServerEffects([
+        createPostHogCaptureEffect({
+          projectApiKey: "phc_test_key",
+          apiHost: "https://us.i.posthog.com",
+        }),
+      ]);
+      const flow = defineFormFlow({
+        name: "PostHog View Test",
+        status: "ACTIVE",
+        ...testFlowCopy,
+        contract: {
+          context: z.object({ areaCode: z.string() }),
+          answers: z.object({
+            wants_quote: z.enum(["yes", "no"]),
+          }),
+          payload: z.object({ wantsQuote: z.string() }),
+        },
+        context: { areaCode: "TX" },
+        payload: {
+          url: "https://example.test/lead-submissions",
+          method: "POST",
+          encoding: "json",
+          mapping: ({ answers }) => ({ wantsQuote: answers.wants_quote }),
+        },
+        page: { name: "PostHog View Test" },
+        tracking: ({ event }) => ({
+          visitorId: {
+            cookie: {
+              name: "instant_forms_visitor_id",
+              maxAgeSeconds: 12345,
+            },
+          },
+          events: [
+            event.formView({
+              name: "instant_form_view",
+              includeContext: ["areaCode"],
+              server: serverEffects,
+            }),
+            event.stepView({
+              name: "instant_form_step_view",
+              includeContext: ["areaCode"],
+              includeStep: true,
+              server: serverEffects,
+            }),
+          ],
+        }),
+        steps: [
+          step.choice({
+            key: "wants_quote",
+            slug: "quote",
+            label: "Do you want a quote?",
+            options: [
+              { key: "yes", label: "Yes" },
+              { key: "no", label: "No" },
+            ],
+          }),
+        ],
+      });
+      const routes = defineFormRoutes({
+        index: redirectTo("/posthog"),
+        folders: { posthog: flow },
+        notFound: unavailable(unavailableContent),
+      });
+      const app = new Hono();
+      registerFormRoutePages(app, routes);
+
+      const response = await app.fetch(new Request("http://localhost/posthog/quote"));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const setCookie = response.headers.get("Set-Cookie") ?? "";
+      const visitorId = /instant_forms_visitor_id=([0-9A-Za-z]{24})/u.exec(setCookie)?.[1];
+      const viewRequest = postHogRequests.find((request) => request.event === "instant_form_view");
+      const stepViewRequest = postHogRequests.find((request) => request.event === "instant_form_step_view");
+
+      expect(response.status).toBe(200);
+      expect(visitorId).toBeTruthy();
+      expect(setCookie).toContain("Max-Age=12345");
+      expect(postHogRequests).toHaveLength(2);
+      expect(viewRequest).toMatchObject({
+        api_key: "phc_test_key",
+        event: "instant_form_view",
+        distinct_id: visitorId,
+        properties: {
+          route_key: "posthog",
+          form_name: "PostHog View Test",
+          page_name: "PostHog View Test",
+          context: JSON.stringify({ areaCode: "TX" }),
+          $current_url: "http://localhost/posthog/quote",
+          $process_person_profile: false,
+        },
+      });
+      expect(viewRequest?.properties).not.toHaveProperty("step_key");
+      expect(stepViewRequest).toMatchObject({
+        api_key: "phc_test_key",
+        event: "instant_form_step_view",
+        distinct_id: visitorId,
+        properties: {
+          route_key: "posthog",
+          form_name: "PostHog View Test",
+          page_name: "PostHog View Test",
+          context: JSON.stringify({ areaCode: "TX" }),
+          step_key: "wants_quote",
+          step_slug: "quote",
+          step_index: 0,
+          step_kind: "choice",
+          $current_url: "http://localhost/posthog/quote",
           $process_person_profile: false,
         },
       });

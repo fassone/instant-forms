@@ -122,7 +122,12 @@ export type TrackingEventKind =
   | "submitSuccess"
   | "submitError";
 
-export type ServerTrackingEventKind = "stepAnswer" | "trustedFormSubstepView" | "submitSuccess";
+export type ServerTrackingEventKind =
+  | "formView"
+  | "stepView"
+  | "stepAnswer"
+  | "trustedFormSubstepView"
+  | "submitSuccess";
 export type MetaPixelId = string;
 export type MetaUserDataKey = "ph" | "em" | "fn" | "ln" | "ct" | "st" | "zp" | "country" | "external_id";
 

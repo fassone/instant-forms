@@ -2,6 +2,7 @@ import type { Context, Hono } from "hono";
 import { getCookie } from "hono/cookie";
 
 import {
+  applyTrackingVisitorIdCookie,
   createAttributionCookieCollector,
   type AttributionCookieCollector,
   clearPostSubmitState,
@@ -347,16 +348,6 @@ function registerPublicFormFolder(
       return redirectToFlowUrl(c, form, getPublicStepUrl(routeSegments, resumeStep), attribution);
     }
 
-    const initialTrackingEvents = createInitialRouteTrackingEvents(
-      c,
-      form,
-      routeKey,
-      requestedStep,
-      stepIndex,
-      answers,
-      eventLogger,
-    );
-
     if (requestedStep.kind === "interstitial" && answers[requestedStep.key] === requestedStep.seenAnswer) {
       const nextStep = getStepAt(form, getNextStepIndex(form, stepIndex, answers));
       logRouteEvent(c, eventLogger, {
@@ -375,6 +366,16 @@ function registerPublicFormFolder(
 
       return redirectToFlowUrl(c, form, getPublicStepUrl(routeSegments, nextStep), attribution);
     }
+
+    const initialTrackingEvents = createInitialRouteTrackingEvents(
+      c,
+      form,
+      routeKey,
+      requestedStep,
+      stepIndex,
+      answers,
+      eventLogger,
+    );
 
     const renderOptions = {
       activeStepIndex: stepIndex,
@@ -398,13 +399,16 @@ function registerPublicFormFolder(
     });
 
     return attribution.applyTo(
-      htmlResponse(
-        prebuiltHtml ??
-          (await renderFormPage(form, {
-            ...renderOptions,
-          })),
-        200,
-        "no-store",
+      applyTrackingVisitorIdCookie(
+        c,
+        htmlResponse(
+          prebuiltHtml ??
+            (await renderFormPage(form, {
+              ...renderOptions,
+            })),
+          200,
+          "no-store",
+        ),
       ),
     );
   });
@@ -491,6 +495,38 @@ function createInitialRouteTrackingEvents(
   answers: Record<string, string>,
   eventLogger?: InstantFormLogger,
 ): LifecycleTrackingEvent[] {
+  const formViewEvent = createLifecycleTrackingEvent({
+    form,
+    routeKey,
+    kind: "formView",
+    answers,
+    eventId: crypto.randomUUID(),
+    eventSourceUrl: c.req.raw.url,
+    requireServerBuilt: true,
+  });
+  scheduleTrackingServerCallback(c, form, routeKey, formViewEvent, {
+    answers,
+    logger: eventLogger,
+  });
+
+  const stepViewEvent = createLifecycleTrackingEvent({
+    form,
+    routeKey,
+    kind: "stepView",
+    step,
+    stepIndex,
+    answers,
+    eventId: crypto.randomUUID(),
+    eventSourceUrl: c.req.raw.url,
+    requireServerBuilt: true,
+  });
+  scheduleTrackingServerCallback(c, form, routeKey, stepViewEvent, {
+    answers,
+    step,
+    stepIndex,
+    logger: eventLogger,
+  });
+
   if (step.kind !== "trusted_form_consent") {
     return [];
   }

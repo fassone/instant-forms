@@ -528,12 +528,14 @@ function assertTrackingContract(contract: FormContract, tracking: FormTracking |
 
     if (
       eventConfig.server &&
+      eventConfig.kind !== "formView" &&
+      eventConfig.kind !== "stepView" &&
       eventConfig.kind !== "submitSuccess" &&
       eventConfig.kind !== "stepAnswer" &&
       eventConfig.kind !== "trustedFormSubstepView"
     ) {
       throw new Error(
-        `tracking.events.${eventConfig.kind}.server is only supported on submitSuccess, stepAnswer, and trustedFormSubstepView events.`,
+        `tracking.events.${eventConfig.kind}.server is only supported on formView, stepView, submitSuccess, stepAnswer, and trustedFormSubstepView events.`,
       );
     }
   }

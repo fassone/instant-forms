@@ -19,6 +19,7 @@ const TRACKING_VISITOR_ID_LENGTH = 24;
 const trackingVisitorIdPattern = /^[0-9A-Za-z]{24}$/u;
 const createTrackingVisitorId = customAlphabet(TRACKING_VISITOR_ID_ALPHABET, TRACKING_VISITOR_ID_LENGTH);
 const requestTrackingVisitorIds = new WeakMap<Request, string>();
+const requestTrackingVisitorIdCookieHeaders = new WeakMap<Request, string>();
 
 export type PostSubmitState = {
   trackingEvents: readonly TrackingEventPayload[];
@@ -87,6 +88,11 @@ export function ensureTrackingVisitorId(c: Context, config: TrackingVisitorIdCon
     return undefined;
   }
 
+  const requestValue = requestTrackingVisitorIds.get(c.req.raw);
+  if (isTrackingVisitorId(requestValue)) {
+    return requestValue;
+  }
+
   const existingValue = getCookie(c, config.cookie.name);
   if (isTrackingVisitorId(existingValue)) {
     requestTrackingVisitorIds.set(c.req.raw, existingValue);
@@ -94,7 +100,14 @@ export function ensureTrackingVisitorId(c: Context, config: TrackingVisitorIdCon
   }
 
   const generatedValue = createTrackingVisitorId();
+  const cookie = generateCookie(config.cookie.name, generatedValue, {
+    path: "/",
+    maxAge: config.cookie.maxAgeSeconds,
+    sameSite: "Lax",
+    secure: isSecureRequest(c.req.raw),
+  });
   requestTrackingVisitorIds.set(c.req.raw, generatedValue);
+  requestTrackingVisitorIdCookieHeaders.set(c.req.raw, cookie);
   setCookie(c, config.cookie.name, generatedValue, {
     path: "/",
     maxAge: config.cookie.maxAgeSeconds,
@@ -103,6 +116,15 @@ export function ensureTrackingVisitorId(c: Context, config: TrackingVisitorIdCon
   });
 
   return generatedValue;
+}
+
+export function applyTrackingVisitorIdCookie(c: Context, response: Response): Response {
+  const cookie = requestTrackingVisitorIdCookieHeaders.get(c.req.raw);
+  if (cookie) {
+    response.headers.append("Set-Cookie", cookie);
+  }
+
+  return response;
 }
 
 export function readTrackingVisitorId(c: Context, config: TrackingVisitorIdConfig | undefined): string | undefined {

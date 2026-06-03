@@ -469,9 +469,9 @@ void defineFormFlow({
   tracking: ({ event }) => ({
     googleTagManager: googleTagManager({ containerId: "GTM-ABC123" }),
     events: [
-      event.stepView({
-        name: "step_view",
-        // @ts-expect-error server callbacks are only allowed on server-built tracking events.
+      event.validationError({
+        name: "validation_error",
+        // @ts-expect-error server callbacks are only allowed on server-known tracking events.
         server: () => undefined,
       }),
     ],
