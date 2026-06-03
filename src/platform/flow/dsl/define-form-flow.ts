@@ -52,7 +52,7 @@ export function defineFormFlow<const TContract extends FormContract, const TStep
   assertAnswerStepContract(input.contract, steps);
   assertUiCopy(input.ui);
   assertPayloadDelivery(input.payload);
-  assertPagePresentation(input.page);
+  assertPage(input.page);
   assertPostSubmit(input.postSubmit, steps);
   assertAttribution(input.attribution);
   assertTrackingContract(input.contract, tracking);
@@ -226,8 +226,10 @@ function assertKnownTemplateVariables(
   const templates = [
     input.name,
     input.page.name,
+    input.page.meta?.description,
+    input.page.meta?.robots,
     ...input.steps.flatMap((stepDefinition) => getStepTemplateStrings(stepDefinition)),
-  ];
+  ].filter((template): template is string => typeof template === "string");
 
   for (const template of templates) {
     for (const variableName of getTemplateVariableNames(template)) {
@@ -236,6 +238,11 @@ function assertKnownTemplateVariables(
       }
     }
   }
+}
+
+function assertPage(page: FormPage): void {
+  assertPagePresentation(page);
+  assertPageMeta(page);
 }
 
 function assertPagePresentation(page: FormPage): void {
@@ -247,6 +254,16 @@ function assertPagePresentation(page: FormPage): void {
 
   if (typeof desktopHeightPx !== "number" || !Number.isFinite(desktopHeightPx) || desktopHeightPx <= 0) {
     throw new Error("page.presentation.desktopHeightPx must be a finite positive number.");
+  }
+}
+
+function assertPageMeta(page: FormPage): void {
+  if (page.meta?.description !== undefined && !isNonEmptyMarkupFreePlainText(page.meta.description)) {
+    throw new Error("page.meta.description must be non-empty plain text when provided.");
+  }
+
+  if (page.meta?.robots !== undefined && !isNonEmptyMarkupFreePlainText(page.meta.robots)) {
+    throw new Error("page.meta.robots must be non-empty plain text when provided.");
   }
 }
 
@@ -272,6 +289,10 @@ function assertChoiceScrollHint(stepDefinition: FormStep): void {
 
 function isNonEmptyPlainText(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
+}
+
+function isNonEmptyMarkupFreePlainText(value: unknown): value is string {
+  return isNonEmptyPlainText(value) && !/[<>]/u.test(value);
 }
 
 function assertStepPresentation(stepDefinition: FormStep): void {

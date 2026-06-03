@@ -50,9 +50,15 @@ export type FormPagePresentation = {
   desktopHeightPx?: number;
 };
 
+export type FormPageMeta = {
+  description?: string;
+  robots?: string;
+};
+
 export type FormPage = {
   name: string;
   presentation?: FormPagePresentation;
+  meta?: FormPageMeta;
 };
 
 export type FormPostSubmit = {

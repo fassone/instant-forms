@@ -2412,6 +2412,56 @@ describe("form registry", () => {
     );
   });
 
+  it("rejects empty or unsafe page metadata values", () => {
+    const createFlowWithPageMeta = (meta: unknown) =>
+      defineFormFlow({
+        name: "Invalid Page Metadata",
+        status: "ACTIVE",
+        ...testFlowCopy,
+        contract: {
+          context: z.object({}),
+          answers: z.object({ choice_key: z.enum(["yes"]) }),
+          payload: z.object({ choice: z.string() }),
+        },
+        context: {},
+        payload: {
+          url: "https://example.test/lead-submissions",
+          method: "POST",
+          encoding: "json",
+          mapping: ({ answers }) => ({ choice: answers.choice_key }),
+        },
+        page: {
+          name: "Page",
+          meta,
+        } as any,
+        steps: [
+          step.choice({
+            key: "choice_key",
+            slug: "elige",
+            label: "Elige",
+            options: [{ key: "yes", label: "Si" }],
+          }),
+        ],
+      });
+
+    expect(() => createFlowWithPageMeta({ description: "" })).toThrow(
+      "page.meta.description must be non-empty plain text when provided.",
+    );
+    expect(() => createFlowWithPageMeta({ description: "   " })).toThrow(
+      "page.meta.description must be non-empty plain text when provided.",
+    );
+    expect(() => createFlowWithPageMeta({ description: "Find <strong>quotes</strong>" })).toThrow(
+      "page.meta.description must be non-empty plain text when provided.",
+    );
+    expect(() => createFlowWithPageMeta({ robots: "" })).toThrow(
+      "page.meta.robots must be non-empty plain text when provided.",
+    );
+    expect(() => createFlowWithPageMeta({ robots: "noindex<script>" })).toThrow(
+      "page.meta.robots must be non-empty plain text when provided.",
+    );
+    expect(() => createFlowWithPageMeta({ description: "Insurance quotes", robots: "index,follow" })).not.toThrow();
+  });
+
   it("rejects invalid choice size presentation presets", () => {
     const createFlowWithChoiceSize = (choiceSize: unknown) =>
       defineFormFlow({
@@ -6914,6 +6964,8 @@ describe("form rendering", () => {
     const missingSubmission = validateSubmission(flow, "en_custom", { answers: {} });
 
     expect(html).toContain('<html lang="en">');
+    expect(html).not.toContain('<meta name="description"');
+    expect(html).not.toContain('<meta name="robots"');
     expect(html).toContain("Step 1 of 1");
     expect(html).toContain(">Back</button>");
     expect(html).toContain(">Submit</button>");
@@ -6932,6 +6984,58 @@ describe("form rendering", () => {
         message: "This answer is required.",
       });
     }
+  });
+
+  it("renders authored page metadata with escaped content", async () => {
+    const flow = defineFormFlow({
+      name: "Metadata Fixture",
+      status: "ACTIVE",
+      ...testFlowCopy,
+      contract: {
+        context: z.object({}),
+        answers: z.object({
+          wants_quote: z.enum(["yes", "no"]),
+        }),
+        payload: z.object({
+          wantsQuote: z.string(),
+        }),
+      },
+      context: {},
+      payload: {
+        url: "https://example.test/lead-submissions",
+        method: "POST",
+        encoding: "json",
+        mapping: ({ answers }) => ({
+          wantsQuote: answers.wants_quote,
+        }),
+      },
+      page: {
+        name: "Metadata Form",
+        meta: {
+          description: 'Compare "home" & auto insurance quotes.',
+          robots: "index,follow,max-image-preview:large",
+        },
+      },
+      steps: [
+        step.choice({
+          key: "wants_quote",
+          slug: "quote",
+          label: "Do you want a quote?",
+          options: [
+            { key: "yes", label: "Yes" },
+            { key: "no", label: "No" },
+          ],
+        }),
+      ],
+    });
+    const html = await renderFormPage(flow, { routeKey: "metadata_custom" });
+
+    expect(html).toContain(
+      '<meta name="description" content="Compare &quot;home&quot; &amp; auto insurance quotes.">',
+    );
+    expect(html).toContain('<meta name="robots" content="index,follow,max-image-preview:large">');
+    expect(html.indexOf('<meta name="description"')).toBeGreaterThan(html.indexOf('<meta name="viewport"'));
+    expect(html.indexOf('<meta name="robots"')).toBeLessThan(html.indexOf("<title>"));
   });
 
   it("renders post-submit pages in the shared form shell with an optional CTA", async () => {

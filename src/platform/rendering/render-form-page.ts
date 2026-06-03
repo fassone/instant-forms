@@ -120,12 +120,14 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
         ].filter((eventPayload): eventPayload is NonNullable<typeof eventPayload> => Boolean(eventPayload))
       : [],
   );
+  const pageMetaTags = renderPageMetaTags(form);
 
   const html = `<!doctype html>
 <html lang="${escapeHtml(form.locale)}">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+${pageMetaTags}
     <title>${escapeHtml(isPostSubmit ? form.postSubmit.title : form.page.name)} | ${escapeHtml(displayAreaCode.toUpperCase())}</title>
     <style>
       :root {
@@ -2173,6 +2175,17 @@ export function serializeForScript(value: unknown): string {
 
     return "\\u0026";
   });
+}
+
+function renderPageMetaTags(form: InstantForm): string {
+  const tags = [
+    form.page.meta?.description
+      ? `<meta name="description" content="${escapeHtml(form.page.meta.description)}">`
+      : "",
+    form.page.meta?.robots ? `<meta name="robots" content="${escapeHtml(form.page.meta.robots)}">` : "",
+  ].filter(Boolean);
+
+  return tags.map((tag) => `    ${tag}`).join("\n");
 }
 
 function escapeHtml(value: string): string {
