@@ -314,6 +314,7 @@ function buildTrackingPayload(
     ...getIncludedContextPayload(form, eventConfig.includeContext),
     ...(eventConfig.includeStep ? getStepTrackingPayload(options.step, options.stepIndex) : {}),
     ...(options.extra ?? {}),
+    ...(options.eventSourceUrl ? { event_source_url: options.eventSourceUrl } : {}),
     ...(metaPayload ? { meta: metaPayload } : {}),
   };
 }

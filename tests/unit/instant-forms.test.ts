@@ -8,6 +8,10 @@ import {
   gtmContainerIdSchema,
   metaTestEventCodeSchema,
 } from "../../src/authoring/integrations/google-tag-manager";
+import {
+  createPostHogCaptureEffect,
+  createTrackingServerEffects,
+} from "../../src/authoring/integrations/server-tracking-effects";
 import { trustedFormCertify } from "../../src/authoring/integrations/trusted-form";
 import { requestProxies } from "../../src/authoring/proxies/registry";
 import { selectedScripts } from "../../src/authoring/scripts/registry";
@@ -36,6 +40,7 @@ import {
 } from "../../src/authoring/flows/meta-pixels";
 import { createFetchHandler } from "../../src/platform/app/server";
 import { createCompressionMiddleware } from "../../src/platform/app/http/compression";
+import { ensureTrackingVisitorId } from "../../src/platform/app/http/cookies";
 import { registerFormRoutes } from "../../src/platform/app/routes/forms";
 import { registerScriptRoutes } from "../../src/platform/app/routes/scripts";
 import {
@@ -546,6 +551,7 @@ describe("form registry", () => {
       product: "home_insurance",
       advertiserName: "Liderna Inc",
       gtmContainerId: "GTM-ABC123",
+      trackingVisitorIdCookieMaxAgeSeconds: 365 * 24 * 60 * 60,
     });
 
     expect(flow.name).toBe("ES - TX Home - Template Test");
@@ -1648,6 +1654,156 @@ describe("form registry", () => {
         message: "server callback failed",
       },
     }));
+  });
+
+  it("composes server tracking effects and lets later effects run after a failure", async () => {
+    const calls: string[] = [];
+    const logRecords: InstantFormLogRecord[] = [];
+    const server = createTrackingServerEffects([
+      {
+        destination: "broken",
+        run: () => {
+          calls.push("broken");
+          throw new Error("broken effect failed");
+        },
+      },
+      {
+        destination: "ok",
+        run: () => {
+          calls.push("ok");
+          return { status: 204 };
+        },
+      },
+    ]);
+
+    let thrownMessage = "";
+    try {
+      await server?.({
+        event: { event: "server_step_answer", id: "evt_123" },
+        context: {},
+        answers: {},
+        cookies: { get: () => undefined },
+        request: { url: "https://example.test/form", headers: new Headers() },
+        runtime: {
+          requestId: "req_123",
+          routeKey: "callback",
+          formName: "Callback Test",
+          pageName: "Callback Page",
+          logger: (record: InstantFormLogRecord) => logRecords.push(record),
+        },
+      } as any);
+    } catch (error) {
+      thrownMessage = error instanceof Error ? error.message : String(error);
+    }
+
+    expect(calls.sort()).toEqual(["broken", "ok"]);
+    expect(thrownMessage).toBe("1 tracking server effect failed.");
+    expect(logRecords).toContainEqual(expect.objectContaining({
+      level: "warn",
+      event: "tracking.effect_failed",
+      routeKey: "callback",
+      data: {
+        destination: "broken",
+        trackingEvent: "server_step_answer",
+        trackingEventId: "evt_123",
+        message: "broken effect failed",
+      },
+    }));
+    expect(logRecords).toContainEqual(expect.objectContaining({
+      level: "info",
+      event: "tracking.effect_succeeded",
+      status: 204,
+      data: {
+        destination: "ok",
+        trackingEvent: "server_step_answer",
+        trackingEventId: "evt_123",
+      },
+    }));
+  });
+
+  it("builds safe PostHog capture payloads without raw answers or cookies", async () => {
+    const requests: Array<{ url: string; body: any }> = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+      requests.push({
+        url: String(input),
+        body: JSON.parse(String(init?.body)),
+      });
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+
+    try {
+      const effect = createPostHogCaptureEffect({
+        projectApiKey: "phc_test_key",
+        apiHost: "https://us.i.posthog.com",
+        getProperties: () => ({
+          source_channel: "facebook",
+          acquisition_channel: "paid",
+          platform: "facebook",
+        }),
+      });
+      const result = await effect.run({
+        event: {
+          event: "instant_form_step_answer",
+          id: "evt_123",
+          route_key: "hogar_tx",
+          form_name: "ES - TX Home - v1",
+          page_name: "Seguros Aseguranza",
+          context: { areaCode: "TX", product: "home_insurance" },
+          step_key: "phone_number",
+          step_slug: "telefono",
+          step_index: 9,
+          step_kind: "phone",
+          event_source_url: "https://cotiza.example/hogar/tx/telefono",
+        },
+        context: { areaCode: "TX" },
+        answers: {
+          first_name: "Michel",
+          phone_number: "+14435707047",
+          email: "michel@example.test",
+        },
+        cookies: { get: () => "private-cookie-value" },
+        request: {
+          url: "https://cotiza.example/api/forms/hogar_tx/checkpoints",
+          ip: "203.0.113.10",
+          userAgent: "PostHog Test Browser",
+          headers: new Headers({ Cookie: "private-cookie=value" }),
+        },
+        visitor: { id: "AbC123xYz789LmN456OpQrSt" },
+      } as any);
+      const request = requests[0];
+      const serializedBody = JSON.stringify(request?.body);
+
+      expect(result).toEqual({ status: 200 });
+      expect(request?.url).toBe("https://us.i.posthog.com/i/v0/e/");
+      expect(request?.body).toMatchObject({
+        api_key: "phc_test_key",
+        event: "instant_form_step_answer",
+        distinct_id: "AbC123xYz789LmN456OpQrSt",
+        properties: {
+          event_id: "evt_123",
+          route_key: "hogar_tx",
+          form_name: "ES - TX Home - v1",
+          page_name: "Seguros Aseguranza",
+          step_key: "phone_number",
+          step_slug: "telefono",
+          step_index: 9,
+          step_kind: "phone",
+          $current_url: "https://cotiza.example/hogar/tx/telefono",
+          $ip: "203.0.113.10",
+          $user_agent: "PostHog Test Browser",
+          source_channel: "facebook",
+          acquisition_channel: "paid",
+          platform: "facebook",
+          $process_person_profile: false,
+        },
+      });
+      expect(serializedBody).not.toContain("+14435707047");
+      expect(serializedBody).not.toContain("michel@example.test");
+      expect(serializedBody).not.toContain("private-cookie");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   it("runs server callbacks for TrustedForm substep tracking events", async () => {
@@ -3840,6 +3996,34 @@ describe("production logging", () => {
       requestId: "req_123",
       message: "logger unavailable",
     });
+  });
+});
+
+describe("tracking identity", () => {
+  it("creates alphanumeric visitor IDs with the authored cookie lifetime", async () => {
+    const app = new Hono();
+    app.get("/", (c) => {
+      const visitorId = ensureTrackingVisitorId(c, {
+        cookie: {
+          name: "instant_forms_visitor_id",
+          maxAgeSeconds: 12345,
+        },
+      });
+
+      return c.json({ visitorId });
+    });
+
+    const response = await app.request("https://example.test/");
+    const body = await response.json() as { visitorId?: string };
+    const setCookie = response.headers.get("Set-Cookie") ?? "";
+
+    expect(body.visitorId).toMatch(/^[0-9A-Za-z]{24}$/u);
+    expect(setCookie).toContain(`instant_forms_visitor_id=${body.visitorId}`);
+    expect(setCookie).toContain("Max-Age=12345");
+    expect(setCookie).toContain("SameSite=Lax");
+    expect(setCookie).toContain("Path=/");
+    expect(setCookie).toContain("Secure");
+    expect(setCookie).not.toContain("HttpOnly");
   });
 });
 
@@ -6134,6 +6318,116 @@ describe("server routing", () => {
         nextUrl: "/auto/tn/tiene-licencia",
       }),
     }));
+  });
+
+  it("sets a generic visitor id cookie and schedules PostHog capture for accepted checkpoints", async () => {
+    const postHogRequests: Array<any> = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (_input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+      postHogRequests.push(JSON.parse(String(init?.body)));
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+
+    try {
+      const flow = defineFormFlow({
+        name: "PostHog Checkpoint Test",
+        status: "ACTIVE",
+        ...testFlowCopy,
+        contract: {
+          context: z.object({ areaCode: z.string() }),
+          answers: z.object({
+            wants_quote: z.enum(["yes", "no"]),
+          }),
+          payload: z.object({ wantsQuote: z.string() }),
+        },
+        context: { areaCode: "TX" },
+        payload: {
+          url: "https://example.test/lead-submissions",
+          method: "POST",
+          encoding: "json",
+          mapping: ({ answers }) => ({ wantsQuote: answers.wants_quote }),
+        },
+        page: { name: "PostHog Checkpoint Test" },
+        tracking: ({ event }) => ({
+          visitorId: {
+            cookie: {
+              name: "instant_forms_visitor_id",
+              maxAgeSeconds: 12345,
+            },
+          },
+          events: [
+            event.stepAnswer({
+              name: "instant_form_step_answer",
+              includeStep: true,
+              server: createTrackingServerEffects([
+                createPostHogCaptureEffect({
+                  projectApiKey: "phc_test_key",
+                  apiHost: "https://us.i.posthog.com",
+                }),
+              ]),
+            }),
+          ],
+        }),
+        steps: [
+          step.choice({
+            key: "wants_quote",
+            slug: "quote",
+            label: "Do you want a quote?",
+            options: [
+              { key: "yes", label: "Yes" },
+              { key: "no", label: "No" },
+            ],
+          }),
+        ],
+      });
+      const routes = defineFormRoutes({
+        index: redirectTo("/posthog"),
+        folders: { posthog: flow },
+        notFound: unavailable(unavailableContent),
+      });
+      const app = new Hono();
+      registerFormRoutes(app, routes, () => undefined);
+
+      const response = await app.fetch(
+        new Request("http://localhost/api/forms/posthog/checkpoints", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            questionKey: "wants_quote",
+            answer: "yes",
+            tracking: { eventSourceUrl: "https://cotiza.example/posthog/quote" },
+          }),
+        }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const body = await response.json() as { trackingEvents?: Array<{ id: string }> };
+      const setCookie = response.headers.get("Set-Cookie") ?? "";
+      const visitorId = /instant_forms_visitor_id=([0-9A-Za-z]{24})/u.exec(setCookie)?.[1];
+
+      expect(response.status).toBe(200);
+      expect(visitorId).toBeTruthy();
+      expect(setCookie).toContain("Max-Age=12345");
+      expect(postHogRequests).toHaveLength(1);
+      expect(postHogRequests[0]).toMatchObject({
+        api_key: "phc_test_key",
+        event: "instant_form_step_answer",
+        distinct_id: visitorId,
+        properties: {
+          event_id: body.trackingEvents?.[0]?.id,
+          route_key: "posthog",
+          form_name: "PostHog Checkpoint Test",
+          page_name: "PostHog Checkpoint Test",
+          step_key: "wants_quote",
+          step_slug: "quote",
+          step_index: 0,
+          step_kind: "choice",
+          $current_url: "https://cotiza.example/posthog/quote",
+          $process_person_profile: false,
+        },
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   it("routes completed pre-contact answers through the matching checkpoint", async () => {
@@ -8845,6 +9139,7 @@ function createAutoInsuranceTemplateTestFlow(metaTestEventCode?: string) {
     advertiserName: "Liderna Inc",
     gtmContainerId: "GTM-ABC123",
     metaPixelId: "1234567890",
+    trackingVisitorIdCookieMaxAgeSeconds: 365 * 24 * 60 * 60,
     ...(metaTestEventCode !== undefined ? { metaTestEventCode } : {}),
   });
 }

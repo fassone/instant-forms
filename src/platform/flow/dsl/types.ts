@@ -130,6 +130,10 @@ export type TrackingSubmissionContext = {
   id: string;
 };
 
+export type TrackingVisitorContext = {
+  id: string;
+};
+
 export type TrackingRuntimeEventContext = {
   id: string;
   kind: TrackingEventKind;
@@ -169,6 +173,16 @@ export type TrackingServerCookieHelpers = {
   get: (name: string) => string | undefined;
 };
 
+export type TrackingServerRuntimeContext = {
+  requestId: string;
+  routeKey: string;
+  formName: string;
+  pageName: string;
+  stepKey?: string;
+  submissionId?: string;
+  logger?: import("../../logging").InstantFormLogger;
+};
+
 export type TrackingServerRequest = {
   url: string;
   ip?: string;
@@ -184,6 +198,15 @@ export type TrackingServerEventInput<TContract extends FormContract = FormContra
   request: TrackingServerRequest;
   submission?: TrackingSubmissionContext;
   step?: TrackingRuntimeStepContext;
+  visitor?: TrackingVisitorContext;
+  runtime?: TrackingServerRuntimeContext;
+};
+
+export type TrackingVisitorIdConfig = {
+  cookie: {
+    name: string;
+    maxAgeSeconds: number;
+  };
 };
 
 export type TrackingMetaMapping<TContract extends FormContract = FormContract> = {
@@ -255,6 +278,7 @@ export type StepTracking<TContextKey extends string = string> = Partial<
 >;
 
 export type FormTracking<TContract extends FormContract = FormContract> = {
+  visitorId?: TrackingVisitorIdConfig;
   googleTagManager?: GoogleTagManagerConfig<ContractSchemaKeys<TContract["context"]>>;
   events?: readonly TrackingEventConfig<
     TrackingEventKind,

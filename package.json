@@ -24,6 +24,7 @@
     "@qwik.dev/partytown": "^0.13.2",
     "hono": "^4.12.18",
     "hono-compress": "^1.0.2",
+    "nanoid": "^5.1.11",
     "zod": "^4.4.3"
   }
 }

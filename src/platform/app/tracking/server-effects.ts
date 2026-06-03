@@ -1,6 +1,7 @@
 import type { Context } from "hono";
 import { getCookie } from "hono/cookie";
 
+import { ensureTrackingVisitorId, readTrackingVisitorId } from "../http/cookies";
 import type {
   FormStep,
   InstantForm,
@@ -32,7 +33,9 @@ export function scheduleTrackingServerCallback(
     return;
   }
 
-  const input = createTrackingServerEventInput(c, form, lifecycleEvent.payload, options);
+  ensureTrackingVisitorId(c, form.tracking?.visitorId);
+
+  const input = createTrackingServerEventInput(c, form, routeKey, lifecycleEvent.payload, options);
   logInstantFormEvent(options.logger, {
     level: "info",
     event: "tracking.server_callback_scheduled",
@@ -89,6 +92,7 @@ function runTrackingServerCallback(
 function createTrackingServerEventInput(
   c: Context,
   form: InstantForm,
+  routeKey: string,
   event: TrackingServerEventPayload,
   options: {
     answers: TrackingAnswerMap;
@@ -101,13 +105,20 @@ function createTrackingServerEventInput(
   const step = options.step ? createTrackingStepContext(options.step, options.stepIndex) : undefined;
   const userAgent = c.req.raw.headers.get("user-agent")?.trim() || undefined;
   const ip = getRequestIp(c.req.raw.headers);
+  const visitorId = readTrackingVisitorId(c, form.tracking?.visitorId);
 
   return {
     event,
     context: form.context,
     answers: options.answers,
     cookies: {
-      get: (name: string) => getCookie(c, name),
+      get: (name: string) => {
+        if (name === form.tracking?.visitorId?.cookie.name && visitorId) {
+          return visitorId;
+        }
+
+        return getCookie(c, name);
+      },
     },
     request: {
       url: c.req.raw.url,
@@ -117,6 +128,16 @@ function createTrackingServerEventInput(
     },
     ...(options.submission ? { submission: { id: options.submission.submissionId } } : {}),
     ...(step ? { step } : {}),
+    ...(visitorId ? { visitor: { id: visitorId } } : {}),
+    runtime: {
+      requestId: getRequestId(c.req.raw),
+      routeKey,
+      formName: form.name,
+      pageName: form.page.name,
+      ...(options.step ? { stepKey: options.step.key } : {}),
+      ...(options.submission ? { submissionId: options.submission.submissionId } : {}),
+      ...(options.logger ? { logger: options.logger } : {}),
+    },
   };
 }
 

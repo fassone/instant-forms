@@ -1,5 +1,6 @@
 import type { Context } from "hono";
 import { deleteCookie, generateCookie, getCookie, setCookie } from "hono/cookie";
+import { customAlphabet } from "nanoid";
 
 import {
   CHECKPOINT_COOKIE_MAX_AGE_SECONDS,
@@ -9,10 +10,15 @@ import {
   sanitizeCheckpointAnswers,
   type CheckpointAnswers,
 } from "../../persistence/checkpoints";
-import type { AttributionCookieHelpers, AttributionCookieOptions, InstantForm } from "../../flow";
+import type { AttributionCookieHelpers, AttributionCookieOptions, InstantForm, TrackingVisitorIdConfig } from "../../flow";
 import type { TrackingEventPayload } from "../../rendering";
 
 const POST_SUBMIT_COOKIE_MAX_AGE_SECONDS = 5 * 60;
+const TRACKING_VISITOR_ID_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+const TRACKING_VISITOR_ID_LENGTH = 24;
+const trackingVisitorIdPattern = /^[0-9A-Za-z]{24}$/u;
+const createTrackingVisitorId = customAlphabet(TRACKING_VISITOR_ID_ALPHABET, TRACKING_VISITOR_ID_LENGTH);
+const requestTrackingVisitorIds = new WeakMap<Request, string>();
 
 export type PostSubmitState = {
   trackingEvents: readonly TrackingEventPayload[];
@@ -74,6 +80,48 @@ export function clearPostSubmitState(c: Context, routeKey: string): void {
     path: "/",
     secure: isSecureRequest(c.req.raw),
   });
+}
+
+export function ensureTrackingVisitorId(c: Context, config: TrackingVisitorIdConfig | undefined): string | undefined {
+  if (!config) {
+    return undefined;
+  }
+
+  const existingValue = getCookie(c, config.cookie.name);
+  if (isTrackingVisitorId(existingValue)) {
+    requestTrackingVisitorIds.set(c.req.raw, existingValue);
+    return existingValue;
+  }
+
+  const generatedValue = createTrackingVisitorId();
+  requestTrackingVisitorIds.set(c.req.raw, generatedValue);
+  setCookie(c, config.cookie.name, generatedValue, {
+    path: "/",
+    maxAge: config.cookie.maxAgeSeconds,
+    sameSite: "Lax",
+    secure: isSecureRequest(c.req.raw),
+  });
+
+  return generatedValue;
+}
+
+export function readTrackingVisitorId(c: Context, config: TrackingVisitorIdConfig | undefined): string | undefined {
+  if (!config) {
+    return undefined;
+  }
+
+  const requestValue = requestTrackingVisitorIds.get(c.req.raw);
+  if (isTrackingVisitorId(requestValue)) {
+    return requestValue;
+  }
+
+  const cookieValue = getCookie(c, config.cookie.name);
+  if (isTrackingVisitorId(cookieValue)) {
+    requestTrackingVisitorIds.set(c.req.raw, cookieValue);
+    return cookieValue;
+  }
+
+  return undefined;
 }
 
 export function createAttributionCookieCollector(c: Context): AttributionCookieCollector {
@@ -168,6 +216,10 @@ function isTrackingEventPayload(value: unknown): value is TrackingEventPayload {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isTrackingVisitorId(value: string | undefined): value is string {
+  return Boolean(value && trackingVisitorIdPattern.test(value));
 }
 
 function isSecureRequest(request: Request): boolean {

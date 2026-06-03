@@ -18,6 +18,9 @@ export const esAutoInsuranceVariables = z.object({
   metaPixelId: metaPixelIdSchema.optional(),
   metaTestEventCode: metaTestEventCodeSchema.optional(),
   metaConversionsAccessToken: z.string().min(1, "Expected a Meta Conversions API access token").optional(),
+  postHogProjectApiKey: z.string().min(1, "Expected a PostHog project API key").optional(),
+  postHogApiHost: z.string().url("Expected a PostHog API host URL").optional(),
+  trackingVisitorIdCookieMaxAgeSeconds: z.number().int().positive(),
 });
 
 export type EsAutoInsuranceVariables = z.output<typeof esAutoInsuranceVariables>;

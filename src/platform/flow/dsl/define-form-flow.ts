@@ -461,21 +461,38 @@ function isRailwayPrivateHostname(hostname: string): boolean {
 }
 
 function assertTrackingContract(contract: FormContract, tracking: FormTracking | undefined): void {
+  const visitorId = tracking?.visitorId;
+  if (visitorId) {
+    if (!/^[A-Za-z0-9_]{1,80}$/u.test(visitorId.cookie.name)) {
+      throw new Error("tracking.visitorId.cookie.name must use only letters, numbers, or underscores.");
+    }
+
+    if (
+      !Number.isInteger(visitorId.cookie.maxAgeSeconds) ||
+      visitorId.cookie.maxAgeSeconds < 60 ||
+      visitorId.cookie.maxAgeSeconds > 400 * 24 * 60 * 60
+    ) {
+      throw new Error("tracking.visitorId.cookie.maxAgeSeconds must be an integer between 60 and 34560000.");
+    }
+  }
+
   const googleTagManager = tracking?.googleTagManager;
-  if (!googleTagManager) {
+  if (!tracking) {
     return;
   }
 
-  if (!/^GTM-[A-Z0-9]+$/iu.test(googleTagManager.containerId)) {
-    throw new Error("tracking.googleTagManager.containerId must be a valid GTM container ID.");
-  }
+  if (googleTagManager) {
+    if (!/^GTM-[A-Z0-9]+$/iu.test(googleTagManager.containerId)) {
+      throw new Error("tracking.googleTagManager.containerId must be a valid GTM container ID.");
+    }
 
-  if (googleTagManager.delivery !== "partytown") {
-    throw new Error('tracking.googleTagManager.delivery must be "partytown".');
-  }
+    if (googleTagManager.delivery !== "partytown") {
+      throw new Error('tracking.googleTagManager.delivery must be "partytown".');
+    }
 
-  if (googleTagManager.proxy !== "first_party") {
-    throw new Error('tracking.googleTagManager.proxy must be "first_party".');
+    if (googleTagManager.proxy !== "first_party") {
+      throw new Error('tracking.googleTagManager.proxy must be "first_party".');
+    }
   }
 
   const contextKeys = new Set(getSchemaKeys(contract.context));

@@ -17,6 +17,9 @@ export const defaultAutoInsuranceVariables = {
   metaTestEventCode: process.env.META_TEST_EVENT_CODE,
   metaConversionsAccessToken:
     process.env.NODE_ENV === "test" ? undefined : process.env.META_CONVERSIONS_ACCESS_TOKEN || undefined,
+  postHogProjectApiKey: process.env.POSTHOG_PROJECT_API_KEY || undefined,
+  postHogApiHost: process.env.POSTHOG_API_HOST || "https://us.i.posthog.com",
+  trackingVisitorIdCookieMaxAgeSeconds: 365 * 24 * 60 * 60,
 } as const satisfies Pick<
   EsAutoInsuranceVariables,
   | "advertiserName"
@@ -24,8 +27,11 @@ export const defaultAutoInsuranceVariables = {
   | "metaConversionsAccessToken"
   | "metaTestEventCode"
   | "pageName"
+  | "postHogApiHost"
+  | "postHogProjectApiKey"
   | "product"
   | "submissionUrl"
+  | "trackingVisitorIdCookieMaxAgeSeconds"
 >;
 
 export type CreateAutoInsuranceFlowInput = Pick<
@@ -35,7 +41,12 @@ export type CreateAutoInsuranceFlowInput = Pick<
   Partial<
     Pick<
       EsAutoInsuranceVariables,
-      "metaConversionsAccessToken" | "metaPixelId" | "metaTestEventCode"
+      | "metaConversionsAccessToken"
+      | "metaPixelId"
+      | "metaTestEventCode"
+      | "postHogApiHost"
+      | "postHogProjectApiKey"
+      | "trackingVisitorIdCookieMaxAgeSeconds"
     >
   >;
 

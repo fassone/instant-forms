@@ -5,14 +5,22 @@ import type {
   TrackingAuthoringHelpers,
 } from "../../../platform/flow";
 import { googleTagManager } from "../../integrations/google-tag-manager";
+import {
+  createMetaConversionsEffect,
+  createPostHogCaptureEffect,
+  createTrackingServerEffects,
+} from "../../integrations/server-tracking-effects";
+import { getCapturedLeadAttribution } from "./attribution";
 import type { HomeInsuranceContract } from "./contracts";
-import { createMetaConversionsServerCallback } from "./meta-conversions";
 
 type CreateHomeInsuranceTrackingInput = {
   gtmContainerId?: GoogleTagManagerContainerId;
   metaPixelId?: MetaPixelId;
   metaTestEventCode?: string;
   metaConversionsAccessToken?: string;
+  postHogProjectApiKey?: string;
+  postHogApiHost?: string;
+  trackingVisitorIdCookieMaxAgeSeconds: number;
 };
 
 export function createHomeInsuranceTracking({
@@ -20,24 +28,59 @@ export function createHomeInsuranceTracking({
   metaPixelId,
   metaTestEventCode,
   metaConversionsAccessToken,
+  postHogProjectApiKey,
+  postHogApiHost,
+  trackingVisitorIdCookieMaxAgeSeconds,
 }: CreateHomeInsuranceTrackingInput):
   | ((helpers: TrackingAuthoringHelpers<HomeInsuranceContract>) => FormTracking<HomeInsuranceContract>)
   | undefined {
-  if (!gtmContainerId) {
+  const serverEffects = createTrackingServerEffects<HomeInsuranceContract>([
+    ...(metaPixelId && metaConversionsAccessToken
+      ? [createMetaConversionsEffect<HomeInsuranceContract>(metaConversionsAccessToken)]
+      : []),
+    ...(postHogProjectApiKey && postHogApiHost
+      ? [
+          createPostHogCaptureEffect<HomeInsuranceContract>({
+            projectApiKey: postHogProjectApiKey,
+            apiHost: postHogApiHost,
+            getProperties: ({ cookies }) => {
+              const attribution = getCapturedLeadAttribution(cookies);
+
+              return {
+                source_channel: attribution.sourceChannel,
+                acquisition_channel: attribution.acquisitionChannel,
+                platform: attribution.platform,
+              };
+            },
+          }),
+        ]
+      : []),
+  ]);
+
+  if (!gtmContainerId && !serverEffects) {
     return undefined;
   }
 
-  const metaConversionsServer =
-    metaPixelId && metaConversionsAccessToken
-      ? createMetaConversionsServerCallback(metaConversionsAccessToken)
-      : undefined;
-
   return ({ event }: TrackingAuthoringHelpers<HomeInsuranceContract>) => ({
-    googleTagManager: googleTagManager({
-      containerId: gtmContainerId,
-      delivery: "partytown",
-      proxy: "first_party",
-    }),
+    ...(serverEffects
+      ? {
+          visitorId: {
+            cookie: {
+              name: "instant_forms_visitor_id",
+              maxAgeSeconds: trackingVisitorIdCookieMaxAgeSeconds,
+            },
+          },
+        }
+      : {}),
+    ...(gtmContainerId
+      ? {
+          googleTagManager: googleTagManager({
+            containerId: gtmContainerId,
+            delivery: "partytown",
+            proxy: "first_party",
+          }),
+        }
+      : {}),
     events: [
       event.formView({
         name: "instant_form_view",
@@ -82,7 +125,7 @@ export function createHomeInsuranceTracking({
               },
             }
           : {}),
-        ...(metaConversionsServer ? { server: metaConversionsServer } : {}),
+        ...(serverEffects ? { server: serverEffects } : {}),
       }),
       event.validationError({
         name: "instant_form_validation_error",
@@ -123,7 +166,7 @@ export function createHomeInsuranceTracking({
               },
             }
           : {}),
-        ...(metaConversionsServer ? { server: metaConversionsServer } : {}),
+        ...(serverEffects ? { server: serverEffects } : {}),
       }),
       event.submitAttempt({
         name: "instant_form_submit_attempt",
@@ -132,6 +175,7 @@ export function createHomeInsuranceTracking({
       event.submitSuccess({
         name: "instant_form_submit_success",
         includeContext: ["areaCode", "product"],
+        ...(serverEffects ? { server: serverEffects } : {}),
       }),
       event.submitError({
         name: "instant_form_submit_error",
