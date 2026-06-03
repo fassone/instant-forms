@@ -167,6 +167,8 @@ const homeRouteKey = "hogar_tx";
 const autoTennesseeMetaPixelId = "1025903583116475";
 const autoCaliforniaMetaPixelId = "2458973931233184";
 const hogarTexasMetaPixelId = "1430748765773171";
+const expectedNoindexRobotsPolicy =
+  "noindex,nofollow,nosnippet,noarchive,noimageindex,max-snippet:0,max-image-preview:none,max-video-preview:0";
 const expectedTennesseeTrustedFormReviewFields = [
   {
     name: "trusted_form_grantor_name",
@@ -474,6 +476,14 @@ describe("form registry", () => {
 
     expect(caHtml).toContain("¿Usted vive en California?");
     expect(dcHtml).toContain("¿Usted vive en District of Columbia?");
+    expect(caHtml).toContain(
+      '<meta name="description" content="Cotice seguro de auto en California con Seguros Aseguranza. Complete un formulario corto para recibir opciones de cobertura disponibles.">',
+    );
+    expect(dcHtml).toContain(
+      '<meta name="description" content="Cotice seguro de auto en District of Columbia con Seguros Aseguranza. Complete un formulario corto para recibir opciones de cobertura disponibles.">',
+    );
+    expect(caHtml).toContain(`<meta name="robots" content="${expectedNoindexRobotsPolicy}">`);
+    expect(dcHtml).toContain(`<meta name="robots" content="${expectedNoindexRobotsPolicy}">`);
   });
 
   it("renders sample home state copy from each area's variables", async () => {
@@ -499,6 +509,14 @@ describe("form registry", () => {
 
     expect(caHtml).toContain("¿La propiedad que quiere asegurar está en California?");
     expect(dcHtml).toContain("¿La propiedad que quiere asegurar está en District of Columbia?");
+    expect(caHtml).toContain(
+      '<meta name="description" content="Cotice seguro de hogar en California con Seguros Aseguranza. Complete un formulario corto para recibir opciones para su propiedad.">',
+    );
+    expect(dcHtml).toContain(
+      '<meta name="description" content="Cotice seguro de hogar en District of Columbia con Seguros Aseguranza. Complete un formulario corto para recibir opciones para su propiedad.">',
+    );
+    expect(caHtml).toContain(`<meta name="robots" content="${expectedNoindexRobotsPolicy}">`);
+    expect(dcHtml).toContain(`<meta name="robots" content="${expectedNoindexRobotsPolicy}">`);
   });
 
   it("creates reusable Spanish home insurance template flows", () => {

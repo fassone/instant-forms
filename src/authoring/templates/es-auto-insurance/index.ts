@@ -1,7 +1,7 @@
 import { defineFormFlow, defineFormTemplate } from "../../../platform/flow";
 import { createLeadAttribution } from "./attribution";
 import { autoInsuranceContract } from "./contracts";
-import { esAutoInsurancePostSubmit, esUiCopy } from "./copy";
+import { createEsAutoInsurancePageMeta, esAutoInsurancePostSubmit, esUiCopy } from "./copy";
 import { createLidernaWebleadsPayloadMapping } from "./payload";
 import { createAutoInsuranceSteps } from "./steps";
 import { createAutoInsuranceTracking } from "./tracking";
@@ -43,6 +43,7 @@ export const esAutoInsuranceTemplate = defineFormTemplate({
       },
       page: {
         name: variables.pageName,
+        meta: createEsAutoInsurancePageMeta(areaDisplayName),
       },
       postSubmit: esAutoInsurancePostSubmit,
       attribution: createLeadAttribution(),
