@@ -68,6 +68,8 @@ bun run build:forms
 
 The build writes minified route HTML into `/_dist/forms`. Each step page still ships CSS and the minimum active-step JavaScript inline for speed, but production requests read the prebuilt shell and only inject the request-specific checkpoint config from the HttpOnly cookie. The build also emits a hashed, cacheable transition JS asset under `/_dist/forms/_instant/forms/<hash>/transition.js`; after the first page settles, the browser loads that static asset so approved next/back transitions can swap step HTML without a full document load. Development keeps readable CSS/JS and uses the same active-step-only SSR shape.
 
+The Hono app applies origin-level text compression with `hono-compress`, preferring Brotli and falling back to gzip for large HTML, JavaScript, JSON, CSS, and plain-text responses. Cloudflare Brotli/compression can remain enabled as an outer edge optimization, but form pages no longer rely on the CDN or Railway edge to satisfy browser compression checks.
+
 ## Project Structure
 
 ```text

@@ -9,6 +9,7 @@ import { registerFormRoutes, type SubmissionLogger } from "./routes/forms";
 import { registerScriptRoutes } from "./routes/scripts";
 import type { DeliveryOptions } from "../submissions/delivery";
 import { assignRequestId, type InstantFormLogger } from "../logging";
+import { createCompressionMiddleware } from "./http/compression";
 
 export type { SubmissionLogger };
 
@@ -27,6 +28,8 @@ export function createFetchHandler(options: AppOptions = {}) {
 export function createApp(options: AppOptions = {}) {
   const logger = options.logger ?? (() => undefined);
   const app = new Hono();
+
+  app.use("*", createCompressionMiddleware());
 
   app.use("*", async (c, next) => {
     const requestId = assignRequestId(c.req.raw);

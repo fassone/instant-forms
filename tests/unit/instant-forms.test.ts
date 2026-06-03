@@ -35,6 +35,7 @@ import {
   type AreaMetaPixelMap,
 } from "../../src/authoring/flows/meta-pixels";
 import { createFetchHandler } from "../../src/platform/app/server";
+import { createCompressionMiddleware } from "../../src/platform/app/http/compression";
 import { registerFormRoutes } from "../../src/platform/app/routes/forms";
 import { registerScriptRoutes } from "../../src/platform/app/routes/scripts";
 import {
@@ -3691,6 +3692,133 @@ describe("production logging", () => {
       requestId: "req_123",
       message: "logger unavailable",
     });
+  });
+});
+
+describe("response compression", () => {
+  it("compresses large HTML responses with Brotli when accepted", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(
+      new Request("http://localhost/auto/tn/vive-en-tennessee", {
+        headers: {
+          "Accept-Encoding": "br,gzip",
+        },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Encoding")).toBe("br");
+    expect(response.headers.get("Vary")).toContain("Accept-Encoding");
+  });
+
+  it("falls back to gzip for large HTML responses when Brotli is not accepted", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(
+      new Request("http://localhost/auto/tn/vive-en-tennessee", {
+        headers: {
+          "Accept-Encoding": "gzip",
+        },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Encoding")).toBe("gzip");
+    expect(response.headers.get("Vary")).toContain("Accept-Encoding");
+  });
+
+  it("does not compress small text responses below the threshold", async () => {
+    const app = new Hono();
+    app.use("*", createCompressionMiddleware());
+    app.get(
+      "/small",
+      () =>
+        new Response("ok", {
+          headers: {
+            "Content-Length": "2",
+            "Content-Type": "text/plain; charset=utf-8",
+          },
+        }),
+    );
+
+    const response = await app.fetch(
+      new Request("http://localhost/small", {
+        headers: {
+          "Accept-Encoding": "br,gzip",
+        },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Encoding")).toBeNull();
+  });
+
+  it("does not compress non-text assets", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(
+      new Request("http://localhost/assets/logo.webp", {
+        headers: {
+          "Accept-Encoding": "br,gzip",
+        },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toBe("image/webp");
+    expect(response.headers.get("Content-Encoding")).toBeNull();
+  });
+
+  it("does not recompress already encoded responses", async () => {
+    const app = new Hono();
+    app.use("*", createCompressionMiddleware());
+    app.get(
+      "/encoded",
+      () =>
+        new Response("already encoded", {
+          headers: {
+            "Content-Encoding": "gzip",
+            "Content-Type": "text/plain; charset=utf-8",
+          },
+        }),
+    );
+
+    const response = await app.fetch(
+      new Request("http://localhost/encoded", {
+        headers: {
+          "Accept-Encoding": "br,gzip",
+        },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Encoding")).toBe("gzip");
+    expect(response.headers.get("Vary")).toBeNull();
+  });
+
+  it("does not compress no-transform JavaScript responses", async () => {
+    const app = new Hono();
+    app.use("*", createCompressionMiddleware());
+    app.get(
+      "/script.js",
+      () =>
+        new Response("console.log('x');".repeat(200), {
+          headers: {
+            "Cache-Control": "private, max-age=300, no-transform",
+            "Content-Type": "application/javascript; charset=utf-8",
+          },
+        }),
+    );
+
+    const response = await app.fetch(
+      new Request("http://localhost/script.js", {
+        headers: {
+          "Accept-Encoding": "br,gzip",
+        },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Encoding")).toBeNull();
+    expect(response.headers.get("Cache-Control")).toBe("private, max-age=300, no-transform");
   });
 });
 
