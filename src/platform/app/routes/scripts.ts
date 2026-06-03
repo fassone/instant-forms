@@ -26,17 +26,33 @@ export function registerScriptRoutes(
   }
 
   app.get("/_instant/scripts/*", async (c) => {
-    const scriptFile = getScriptFileFromPath(new URL(c.req.url).pathname);
+    const requestUrl = new URL(c.req.url);
+    const scriptFile = getScriptFileFromPath(requestUrl.pathname);
     if (!scriptFile?.endsWith(".js")) {
       return new Response("Not found", { status: 404 });
     }
 
+    const startedAt = Date.now();
     const response = await proxySelectedScript(c.req.raw, registry, scriptFile.slice(0, -3));
     if (response.status >= 400) {
       logScriptProxyEvent(eventLogger, c.req.raw, {
         event: "proxy.selected_script_failed",
         status: response.status,
-        data: { scriptFile, path: new URL(c.req.url).pathname },
+        durationMs: Date.now() - startedAt,
+        data: { scriptFile, path: requestUrl.pathname },
+      });
+    } else {
+      logScriptProxyEvent(eventLogger, c.req.raw, {
+        level: "info",
+        event: "proxy.selected_script_succeeded",
+        status: response.status,
+        durationMs: Date.now() - startedAt,
+        data: {
+          scriptFile,
+          path: requestUrl.pathname,
+          responseContentType: response.headers.get("Content-Type") ?? undefined,
+          responseBytes: getResponseByteLength(response.headers),
+        },
       });
     }
 
@@ -148,6 +164,7 @@ async function proxyAllowlistedRequest(
   const timeout = setTimeout(() => {
     abortController.abort();
   }, timeoutMs);
+  const startedAt = Date.now();
 
   try {
     const upstreamResponse = await fetch(upstreamUrl, {
@@ -168,6 +185,22 @@ async function proxyAllowlistedRequest(
       "X-Content-Type-Options": "nosniff",
     });
 
+    logScriptProxyEvent(eventLogger, request, {
+      level: "info",
+      event: "proxy.request_succeeded",
+      status: upstreamResponse.status,
+      durationMs: Date.now() - startedAt,
+      data: {
+        proxyKey,
+        method: request.method,
+        path: new URL(request.url).pathname,
+        upstreamHost: upstreamUrl.hostname,
+        upstreamPath: upstreamUrl.pathname,
+        responseContentType: headers.get("Content-Type") ?? undefined,
+        responseBytes: body.byteLength,
+      },
+    });
+
     return new Response(body, {
       status: upstreamResponse.status,
       headers,
@@ -176,6 +209,7 @@ async function proxyAllowlistedRequest(
     logScriptProxyEvent(eventLogger, request, {
       event: "proxy.request_failed",
       status: 502,
+      durationMs: Date.now() - startedAt,
       data: {
         proxyKey,
         upstreamUrl: upstreamUrl.toString(),
@@ -264,18 +298,31 @@ function logScriptProxyEvent(
   logger: InstantFormLogger | undefined,
   request: Request,
   input: {
+    level?: "debug" | "info" | "warn" | "error";
     event: string;
     status: number;
+    durationMs?: number;
     data?: unknown;
   },
 ): void {
   logInstantFormEvent(logger, {
-    level: input.status >= 500 ? "error" : "warn",
+    level: input.level ?? (input.status >= 500 ? "error" : "warn"),
     event: input.event,
     requestId: getRequestId(request),
     status: input.status,
+    durationMs: input.durationMs,
     data: input.data,
   });
+}
+
+function getResponseByteLength(headers: Headers): number | undefined {
+  const contentLength = headers.get("Content-Length");
+  if (!contentLength) {
+    return undefined;
+  }
+
+  const bytes = Number(contentLength);
+  return Number.isFinite(bytes) && bytes >= 0 ? bytes : undefined;
 }
 
 function getScriptFileFromPath(pathname: string): string | undefined {

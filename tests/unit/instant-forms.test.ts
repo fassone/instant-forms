@@ -5550,9 +5550,58 @@ describe("server routing", () => {
     }
   });
 
+  it("logs successful selected script proxy requests with sanitized metadata", async () => {
+    const originalFetch = globalThis.fetch;
+    const logRecords: InstantFormLogRecord[] = [];
+    const handler = createFetchHandler({
+      eventLogger: (record) => logRecords.push(record),
+    });
+
+    globalThis.fetch = (() =>
+      Promise.resolve(
+        new Response("window.__gtmProxyLoaded = true;", {
+          headers: { "Content-Type": "application/javascript" },
+        }),
+      )) as unknown as typeof fetch;
+
+    try {
+      const response = await handler(
+        new Request("http://localhost/_instant/scripts/gtm.js?id=GTM-ABC123&l=dataLayer", {
+          headers: {
+            Cookie: "private=value",
+          },
+        }),
+      );
+      const body = await response.text();
+      const serializedLogs = JSON.stringify(logRecords);
+
+      expect(response.status).toBe(200);
+      expect(body).toContain("__gtmProxyLoaded");
+      expect(logRecords).toContainEqual(expect.objectContaining({
+        level: "info",
+        event: "proxy.selected_script_succeeded",
+        status: 200,
+        durationMs: expect.any(Number),
+        data: expect.objectContaining({
+          scriptFile: "gtm.js",
+          path: "/_instant/scripts/gtm.js",
+          responseContentType: "application/javascript; charset=utf-8",
+          responseBytes: new TextEncoder().encode(body).byteLength,
+        }),
+      }));
+      expect(serializedLogs).not.toContain("GTM-ABC123");
+      expect(serializedLogs).not.toContain("private=value");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it("proxies TrustedForm event requests through an allowlisted first-party route", async () => {
     const originalFetch = globalThis.fetch;
-    const handler = createFetchHandler();
+    const logRecords: InstantFormLogRecord[] = [];
+    const handler = createFetchHandler({
+      eventLogger: (record) => logRecords.push(record),
+    });
     let fetchedUrl = "";
     let fetchedHeaders: Headers | undefined;
 
@@ -5584,6 +5633,23 @@ describe("server routing", () => {
       expect(fetchedUrl).toBe("https://events.trustedform.com/v1/beacon?event=submitted");
       expect(fetchedHeaders?.get("Accept")).toBe("text/plain");
       expect(fetchedHeaders?.get("Cookie")).toBeNull();
+      expect(logRecords).toContainEqual(expect.objectContaining({
+        level: "info",
+        event: "proxy.request_succeeded",
+        status: 200,
+        durationMs: expect.any(Number),
+        data: expect.objectContaining({
+          proxyKey: "trustedForm",
+          method: "GET",
+          path: "/_instant/trustedform/proxy",
+          upstreamHost: "events.trustedform.com",
+          upstreamPath: "/v1/beacon",
+          responseContentType: "text/plain",
+          responseBytes: 2,
+        }),
+      }));
+      expect(JSON.stringify(logRecords)).not.toContain("event=submitted");
+      expect(JSON.stringify(logRecords)).not.toContain("private=value");
 
       const rejectedResponse = await handler(
         new Request(
@@ -5593,6 +5659,15 @@ describe("server routing", () => {
         ),
       );
       expect(rejectedResponse.status).toBe(400);
+      expect(logRecords).toContainEqual(expect.objectContaining({
+        level: "warn",
+        event: "proxy.request_rejected",
+        status: 400,
+        data: expect.objectContaining({
+          proxyKey: "trustedForm",
+          path: "/_instant/trustedform/proxy",
+        }),
+      }));
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -5600,7 +5675,10 @@ describe("server routing", () => {
 
   it("proxies Google tag requests through an allowlisted first-party route", async () => {
     const originalFetch = globalThis.fetch;
-    const handler = createFetchHandler();
+    const logRecords: InstantFormLogRecord[] = [];
+    const handler = createFetchHandler({
+      eventLogger: (record) => logRecords.push(record),
+    });
     let fetchedUrl = "";
     let fetchedHeaders: Headers | undefined;
 
@@ -5632,6 +5710,23 @@ describe("server routing", () => {
       expect(fetchedUrl).toBe("https://www.google-analytics.com/g/collect?v=2&en=page_view");
       expect(fetchedHeaders?.get("Accept")).toBe("text/plain");
       expect(fetchedHeaders?.get("Cookie")).toBeNull();
+      expect(logRecords).toContainEqual(expect.objectContaining({
+        level: "info",
+        event: "proxy.request_succeeded",
+        status: 200,
+        durationMs: expect.any(Number),
+        data: expect.objectContaining({
+          proxyKey: "googleTags",
+          method: "GET",
+          path: "/_instant/google-tags/proxy",
+          upstreamHost: "www.google-analytics.com",
+          upstreamPath: "/g/collect",
+          responseContentType: "text/plain",
+          responseBytes: 2,
+        }),
+      }));
+      expect(JSON.stringify(logRecords)).not.toContain("page_view");
+      expect(JSON.stringify(logRecords)).not.toContain("private=value");
 
       const debugBootstrapTarget = encodeURIComponent(
         "https://www.googletagmanager.com/debug/bootstrap?id=GTM-ABC123&src=GTM&cond=3&gtm=45He65k1v9253286226za204",
@@ -5668,7 +5763,10 @@ describe("server routing", () => {
 
   it("proxies Meta Pixel requests through an allowlisted first-party route", async () => {
     const originalFetch = globalThis.fetch;
-    const handler = createFetchHandler();
+    const logRecords: InstantFormLogRecord[] = [];
+    const handler = createFetchHandler({
+      eventLogger: (record) => logRecords.push(record),
+    });
     let fetchedUrl = "";
     let fetchedHeaders: Headers | undefined;
 
@@ -5706,6 +5804,21 @@ describe("server routing", () => {
       expect(fetchedUrl).toBe("https://connect.facebook.net/en_US/fbevents.js");
       expect(fetchedHeaders?.get("Accept")).toBe("text/plain");
       expect(fetchedHeaders?.get("Cookie")).toBeNull();
+      expect(logRecords).toContainEqual(expect.objectContaining({
+        level: "info",
+        event: "proxy.request_succeeded",
+        status: 200,
+        durationMs: expect.any(Number),
+        data: expect.objectContaining({
+          proxyKey: "metaPixel",
+          method: "GET",
+          path: "/_instant/meta/proxy",
+          upstreamHost: "connect.facebook.net",
+          upstreamPath: "/en_US/fbevents.js",
+          responseContentType: "application/javascript",
+          responseBytes: new TextEncoder().encode('new Image().src="/_instant/meta/tr/?id=1234567890&ev=Lead";').byteLength,
+        }),
+      }));
 
       const eventTarget = encodeURIComponent("https://www.facebook.com/tr?id=1234567890&ev=Lead&noscript=1");
       const eventResponse = await handler(new Request(`http://localhost/_instant/meta/proxy?u=${eventTarget}`));
@@ -5719,6 +5832,23 @@ describe("server routing", () => {
       expect(beaconResponse.status).toBe(200);
       expect(await beaconResponse.text()).toBe("ok");
       expect(fetchedUrl).toBe("https://www.facebook.com/tr/?id=1234567890&ev=Lead");
+      expect(logRecords).toContainEqual(expect.objectContaining({
+        level: "info",
+        event: "proxy.request_succeeded",
+        status: 200,
+        durationMs: expect.any(Number),
+        data: expect.objectContaining({
+          proxyKey: "metaPixel",
+          method: "GET",
+          path: "/_instant/meta/tr/",
+          upstreamHost: "www.facebook.com",
+          upstreamPath: "/tr/",
+          responseContentType: "text/plain",
+          responseBytes: 2,
+        }),
+      }));
+      expect(JSON.stringify(logRecords)).not.toContain("1234567890");
+      expect(JSON.stringify(logRecords)).not.toContain("private=value");
 
       const rejectedResponse = await handler(
         new Request(`http://localhost/_instant/meta/proxy?u=${encodeURIComponent("https://evil.test/pixel")}`),
