@@ -1801,7 +1801,7 @@ describe("form registry", () => {
         },
         cookies: { get: () => "private-cookie-value" },
         request: {
-          url: "https://cotiza.example/api/forms/hogar_tx/checkpoints",
+          url: "https://api.example/api/forms/hogar_tx/checkpoints",
           ip: "203.0.113.10",
           userAgent: "PostHog Test Browser",
           headers: new Headers({ Cookie: "private-cookie=value" }),
@@ -1829,6 +1829,7 @@ describe("form registry", () => {
           answer_key: "phone_number",
           answer_present: true,
           $current_url: "https://cotiza.example/hogar/tx/telefono",
+          $hostname: "cotiza.example",
           $ip: "203.0.113.10",
           $user_agent: "PostHog Test Browser",
           source_channel: "facebook",
@@ -1883,7 +1884,7 @@ describe("form registry", () => {
         },
         cookies: { get: () => undefined },
         request: {
-          url: "https://cotiza.example/hogar/tx/tipo-de-propiedad",
+          url: "http://127.0.0.1:3177/hogar/tx/tipo-de-propiedad",
           headers: new Headers(),
         },
         visitor: { id: "AbC123xYz789LmN456OpQrSt" },
@@ -1892,8 +1893,76 @@ describe("form registry", () => {
       expect(requests[0]?.body.properties).toMatchObject({
         answer_key: "property_type",
         answer_value: "condo",
+        $current_url: "http://127.0.0.1:3177/hogar/tx/tipo-de-propiedad",
+        $hostname: "127.0.0.1",
       });
       expect(requests[0]?.body.properties).not.toHaveProperty("answer_present");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("adds hostname to every server-side PostHog event kind", async () => {
+    const requests: Array<{ body: any }> = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (_input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+      requests.push({ body: JSON.parse(String(init?.body)) });
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+
+    try {
+      const effect = createPostHogCaptureEffect({
+        projectApiKey: "phc_test_key",
+        apiHost: "https://us.i.posthog.com",
+      });
+      const serverEventNames = [
+        "instant_form_view",
+        "instant_form_step_view",
+        "instant_form_step_answer",
+        "instant_form_trusted_form_substep_view",
+        "instant_form_submit_success",
+      ];
+
+      for (const eventName of serverEventNames) {
+        await effect.run({
+          event: {
+            event: eventName,
+            id: `evt_${eventName}`,
+            route_key: "hogar_tx",
+            form_name: "ES - TX Home - v1",
+            page_name: "Seguros Aseguranza",
+            step_key: "property_type",
+            step_slug: "tipo-de-propiedad",
+            step_index: 2,
+            step_kind: "choice",
+            answer_key: eventName === "instant_form_step_answer" ? "property_type" : undefined,
+            trusted_form_substep: eventName === "instant_form_trusted_form_substep_view" ? "review" : undefined,
+            event_source_url: "https://cotiza.seguros-aseguranza.com:8443/hogar/tx/tipo-de-propiedad",
+          },
+          context: { areaCode: "TX" },
+          answers: {
+            property_type: "condo",
+          },
+          cookies: { get: () => undefined },
+          request: {
+            url: "https://api.example/api/forms/hogar_tx/tracking-events",
+            headers: new Headers(),
+          },
+          submission:
+            eventName === "instant_form_submit_success"
+              ? { id: "submission_123", submittedAt: "2026-06-04T00:00:00.000Z" }
+              : undefined,
+          visitor: { id: "AbC123xYz789LmN456OpQrSt" },
+        } as any);
+      }
+
+      expect(requests).toHaveLength(serverEventNames.length);
+      for (const request of requests) {
+        expect(request.body.properties).toMatchObject({
+          $current_url: "https://cotiza.seguros-aseguranza.com:8443/hogar/tx/tipo-de-propiedad",
+          $hostname: "cotiza.seguros-aseguranza.com",
+        });
+      }
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -6540,6 +6609,7 @@ describe("server routing", () => {
           answer_key: "wants_quote",
           answer_value: "yes",
           $current_url: "https://cotiza.example/posthog/quote",
+          $hostname: "cotiza.example",
           $process_person_profile: false,
         },
       });
@@ -6558,6 +6628,7 @@ describe("server routing", () => {
           answer_key: "first_name",
           answer_present: true,
           $current_url: "https://cotiza.example/posthog/first-name",
+          $hostname: "cotiza.example",
           $process_person_profile: false,
         },
       });
@@ -6664,6 +6735,7 @@ describe("server routing", () => {
           page_name: "PostHog View Test",
           context: JSON.stringify({ areaCode: "TX" }),
           $current_url: "http://localhost/posthog/quote",
+          $hostname: "localhost",
           $process_person_profile: false,
         },
       });
@@ -6682,6 +6754,7 @@ describe("server routing", () => {
           step_index: 0,
           step_kind: "choice",
           $current_url: "http://localhost/posthog/quote",
+          $hostname: "localhost",
           $process_person_profile: false,
         },
       });

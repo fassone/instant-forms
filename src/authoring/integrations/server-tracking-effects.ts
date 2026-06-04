@@ -164,6 +164,8 @@ export function createPostHogCaptureEffect<TContract extends FormContract>({
 }
 
 function createSafePostHogProperties(input: TrackingServerEventInput): Record<string, string | number | boolean | undefined> {
+  const currentUrl = getStringProperty(input.event.event_source_url) ?? input.request.url;
+
   return {
     event_id: input.event.id,
     route_key: getStringProperty(input.event.route_key),
@@ -177,7 +179,8 @@ function createSafePostHogProperties(input: TrackingServerEventInput): Record<st
     answer_key: getStringProperty(input.event.answer_key),
     trusted_form_substep: getStringProperty(input.event.trusted_form_substep),
     submission_id: input.submission?.id,
-    $current_url: getStringProperty(input.event.event_source_url) ?? input.request.url,
+    $current_url: currentUrl,
+    $hostname: getUrlHostname(currentUrl),
     $ip: input.request.ip,
     $user_agent: input.request.userAgent,
   };
@@ -256,4 +259,12 @@ function hasAnswerValue(value: unknown): boolean {
   }
 
   return typeof value !== "string" || value.trim().length > 0;
+}
+
+function getUrlHostname(url: string): string | undefined {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return undefined;
+  }
 }
