@@ -1804,7 +1804,10 @@ describe("form registry", () => {
           url: "https://api.example/api/forms/hogar_tx/checkpoints",
           ip: "203.0.113.10",
           userAgent: "PostHog Test Browser",
-          headers: new Headers({ Cookie: "private-cookie=value" }),
+          headers: new Headers({
+            Cookie: "private-cookie=value",
+            Referer: "https://facebook.example/ad?campaign=home",
+          }),
         },
         visitor: { id: "AbC123xYz789LmN456OpQrSt" },
       } as any);
@@ -1829,9 +1832,13 @@ describe("form registry", () => {
           answer_key: "phone_number",
           answer_present: true,
           $current_url: "https://cotiza.example/hogar/tx/telefono",
-          $hostname: "cotiza.example",
+          $host: "cotiza.example",
+          $pathname: "/hogar/tx/telefono",
+          hostname: "cotiza.example",
           $ip: "203.0.113.10",
-          $user_agent: "PostHog Test Browser",
+          $raw_user_agent: "PostHog Test Browser",
+          $referrer: "https://facebook.example/ad?campaign=home",
+          $referring_domain: "facebook.example",
           source_channel: "facebook",
           acquisition_channel: "paid",
           platform: "facebook",
@@ -1839,6 +1846,8 @@ describe("form registry", () => {
         },
       });
       expect(request?.body.properties).not.toHaveProperty("answer_value");
+      expect(request?.body.properties).not.toHaveProperty("$hostname");
+      expect(request?.body.properties).not.toHaveProperty("$user_agent");
       expect(serializedBody).not.toContain("+14435707047");
       expect(serializedBody).not.toContain("michel@example.test");
       expect(serializedBody).not.toContain("private-cookie");
@@ -1885,7 +1894,7 @@ describe("form registry", () => {
         cookies: { get: () => undefined },
         request: {
           url: "http://127.0.0.1:3177/hogar/tx/tipo-de-propiedad",
-          headers: new Headers(),
+          headers: new Headers({ Referer: "not a valid url" }),
         },
         visitor: { id: "AbC123xYz789LmN456OpQrSt" },
       } as any);
@@ -1894,9 +1903,13 @@ describe("form registry", () => {
         answer_key: "property_type",
         answer_value: "condo",
         $current_url: "http://127.0.0.1:3177/hogar/tx/tipo-de-propiedad",
-        $hostname: "127.0.0.1",
+        $host: "127.0.0.1:3177",
+        $pathname: "/hogar/tx/tipo-de-propiedad",
+        hostname: "127.0.0.1",
       });
       expect(requests[0]?.body.properties).not.toHaveProperty("answer_present");
+      expect(requests[0]?.body.properties).not.toHaveProperty("$referrer");
+      expect(requests[0]?.body.properties).not.toHaveProperty("$referring_domain");
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -1946,7 +1959,8 @@ describe("form registry", () => {
           cookies: { get: () => undefined },
           request: {
             url: "https://api.example/api/forms/hogar_tx/tracking-events",
-            headers: new Headers(),
+            userAgent: "PostHog Server Test Browser",
+            headers: new Headers({ Referer: "https://partner.example:9443/source" }),
           },
           submission:
             eventName === "instant_form_submit_success"
@@ -1960,8 +1974,15 @@ describe("form registry", () => {
       for (const request of requests) {
         expect(request.body.properties).toMatchObject({
           $current_url: "https://cotiza.seguros-aseguranza.com:8443/hogar/tx/tipo-de-propiedad",
-          $hostname: "cotiza.seguros-aseguranza.com",
+          $host: "cotiza.seguros-aseguranza.com:8443",
+          $pathname: "/hogar/tx/tipo-de-propiedad",
+          hostname: "cotiza.seguros-aseguranza.com",
+          $raw_user_agent: "PostHog Server Test Browser",
+          $referrer: "https://partner.example:9443/source",
+          $referring_domain: "partner.example:9443",
         });
+        expect(request.body.properties).not.toHaveProperty("$hostname");
+        expect(request.body.properties).not.toHaveProperty("$user_agent");
       }
     } finally {
       globalThis.fetch = originalFetch;
@@ -6609,7 +6630,9 @@ describe("server routing", () => {
           answer_key: "wants_quote",
           answer_value: "yes",
           $current_url: "https://cotiza.example/posthog/quote",
-          $hostname: "cotiza.example",
+          $host: "cotiza.example",
+          $pathname: "/posthog/quote",
+          hostname: "cotiza.example",
           $process_person_profile: false,
         },
       });
@@ -6628,7 +6651,9 @@ describe("server routing", () => {
           answer_key: "first_name",
           answer_present: true,
           $current_url: "https://cotiza.example/posthog/first-name",
-          $hostname: "cotiza.example",
+          $host: "cotiza.example",
+          $pathname: "/posthog/first-name",
+          hostname: "cotiza.example",
           $process_person_profile: false,
         },
       });
@@ -6735,7 +6760,9 @@ describe("server routing", () => {
           page_name: "PostHog View Test",
           context: JSON.stringify({ areaCode: "TX" }),
           $current_url: "http://localhost/posthog/quote",
-          $hostname: "localhost",
+          $host: "localhost",
+          $pathname: "/posthog/quote",
+          hostname: "localhost",
           $process_person_profile: false,
         },
       });
@@ -6754,7 +6781,9 @@ describe("server routing", () => {
           step_index: 0,
           step_kind: "choice",
           $current_url: "http://localhost/posthog/quote",
-          $hostname: "localhost",
+          $host: "localhost",
+          $pathname: "/posthog/quote",
+          hostname: "localhost",
           $process_person_profile: false,
         },
       });

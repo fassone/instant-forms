@@ -165,6 +165,8 @@ export function createPostHogCaptureEffect<TContract extends FormContract>({
 
 function createSafePostHogProperties(input: TrackingServerEventInput): Record<string, string | number | boolean | undefined> {
   const currentUrl = getStringProperty(input.event.event_source_url) ?? input.request.url;
+  const urlProperties = getPostHogUrlProperties(currentUrl);
+  const referrerProperties = getPostHogReferrerProperties(input.request.headers.get("referer"));
 
   return {
     event_id: input.event.id,
@@ -180,9 +182,10 @@ function createSafePostHogProperties(input: TrackingServerEventInput): Record<st
     trusted_form_substep: getStringProperty(input.event.trusted_form_substep),
     submission_id: input.submission?.id,
     $current_url: currentUrl,
-    $hostname: getUrlHostname(currentUrl),
+    ...urlProperties,
+    ...referrerProperties,
     $ip: input.request.ip,
-    $user_agent: input.request.userAgent,
+    $raw_user_agent: input.request.userAgent,
   };
 }
 
@@ -261,10 +264,32 @@ function hasAnswerValue(value: unknown): boolean {
   return typeof value !== "string" || value.trim().length > 0;
 }
 
-function getUrlHostname(url: string): string | undefined {
+function getPostHogUrlProperties(url: string): { $host?: string; $pathname?: string; hostname?: string } {
   try {
-    return new URL(url).hostname;
+    const parsedUrl = new URL(url);
+
+    return {
+      $host: parsedUrl.host,
+      $pathname: parsedUrl.pathname,
+      hostname: parsedUrl.hostname,
+    };
   } catch {
-    return undefined;
+    return {};
+  }
+}
+
+function getPostHogReferrerProperties(referrerHeader: string | null): { $referrer?: string; $referring_domain?: string } {
+  const referrer = referrerHeader?.trim();
+  if (!referrer) {
+    return {};
+  }
+
+  try {
+    return {
+      $referrer: referrer,
+      $referring_domain: new URL(referrer).host,
+    };
+  } catch {
+    return {};
   }
 }
