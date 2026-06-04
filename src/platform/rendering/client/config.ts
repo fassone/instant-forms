@@ -378,7 +378,7 @@ function createClientTrackingConfig(
   );
   const events = Object.fromEntries(
     (form.tracking?.events ?? [])
-      .filter((eventConfig) => eventConfig.kind !== "postHogPageView")
+      .filter((eventConfig) => eventConfig.kind !== "postHogPageView" && eventConfig.kind !== "postHogPageLeave")
       .map((eventConfig) => [
         eventConfig.kind,
         {

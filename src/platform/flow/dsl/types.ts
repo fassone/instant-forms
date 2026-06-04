@@ -116,6 +116,7 @@ export type TrackingEventKind =
   | "formView"
   | "stepView"
   | "postHogPageView"
+  | "postHogPageLeave"
   | "stepAnswer"
   | "validationError"
   | "trustedFormSubstepView"
@@ -127,6 +128,7 @@ export type ServerTrackingEventKind =
   | "formView"
   | "stepView"
   | "postHogPageView"
+  | "postHogPageLeave"
   | "stepAnswer"
   | "trustedFormSubstepView"
   | "submitSuccess";
@@ -292,7 +294,7 @@ export type StepTrackingEventOverride<TContextKey extends string = string> =
 
 export type StepTracking<TContextKey extends string = string> = Partial<
   Record<
-    Exclude<TrackingEventKind, "formView" | "postHogPageView" | "submitSuccess">,
+    Exclude<TrackingEventKind, "formView" | "postHogPageView" | "postHogPageLeave" | "submitSuccess">,
     StepTrackingEventOverride<TContextKey>
   >
 >;
@@ -1016,6 +1018,9 @@ export type TrackingEventAuthoringHelpers<TContract extends FormContract> = {
   readonly postHogPageView: (
     input: TrackingEventInput<"postHogPageView", ContractSchemaKeys<TContract["context"]>, TContract>,
   ) => TrackingEventConfig<"postHogPageView", ContractSchemaKeys<TContract["context"]>, TContract>;
+  readonly postHogPageLeave: (
+    input: TrackingEventInput<"postHogPageLeave", ContractSchemaKeys<TContract["context"]>, TContract>,
+  ) => TrackingEventConfig<"postHogPageLeave", ContractSchemaKeys<TContract["context"]>, TContract>;
   readonly stepAnswer: (
     input: TrackingEventInput<"stepAnswer", ContractSchemaKeys<TContract["context"]>, TContract>,
   ) => TrackingEventConfig<"stepAnswer", ContractSchemaKeys<TContract["context"]>, TContract>;

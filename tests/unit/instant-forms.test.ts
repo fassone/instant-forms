@@ -477,13 +477,16 @@ describe("form registry", () => {
       expect(typeof form.tracking?.events?.find((event) => event.kind === "postHogPageView")?.server).toBe(
         "function",
       );
+      expect(typeof form.tracking?.events?.find((event) => event.kind === "postHogPageLeave")?.server).toBe(
+        "function",
+      );
       expect(form.tracking?.events?.find((event) => event.kind === "validationError")?.server).toBeUndefined();
       expect(form.tracking?.events?.find((event) => event.kind === "submitAttempt")?.server).toBeUndefined();
       expect(form.tracking?.events?.find((event) => event.kind === "submitError")?.server).toBeUndefined();
     }
   });
 
-  it("authors PostHog native pageviews only when PostHog is configured", () => {
+  it("authors PostHog native pageviews and pageleaves only when PostHog is configured", () => {
     const metaOnlyFlow = createAutoInsuranceFlow({
       flowName: "ES - TX Auto - Meta Only Test",
       areaCode: "TX",
@@ -501,9 +504,15 @@ describe("form registry", () => {
     });
 
     expect(metaOnlyFlow.tracking?.events?.find((event) => event.kind === "postHogPageView")).toBeUndefined();
+    expect(metaOnlyFlow.tracking?.events?.find((event) => event.kind === "postHogPageLeave")).toBeUndefined();
     expect(postHogFlow.tracking?.events?.find((event) => event.kind === "postHogPageView")).toMatchObject({
       kind: "postHogPageView",
       name: "$pageview",
+      includeStep: true,
+    });
+    expect(postHogFlow.tracking?.events?.find((event) => event.kind === "postHogPageLeave")).toMatchObject({
+      kind: "postHogPageLeave",
+      name: "$pageleave",
       includeStep: true,
     });
   });
@@ -1407,6 +1416,49 @@ describe("form registry", () => {
       }),
     ).toThrow("meta is only supported on submitSuccess, stepAnswer, and trustedFormSubstepView events");
 
+    expect(() =>
+      defineFormFlow({
+        name: "Invalid PostHog PageLeave Meta Event Test",
+        status: "ACTIVE",
+        ...testFlowCopy,
+        contract: {
+          context: z.object({ areaCode: z.string() }),
+          answers: z.object({ wants_quote: z.enum(["yes", "no"]) }),
+          payload: z.object({ wantsQuote: z.string() }),
+        },
+        context: { areaCode: "TN" },
+        payload: {
+          url: "https://example.test/lead-submissions",
+          method: "POST",
+          encoding: "json",
+          mapping: ({ answers }) => ({ wantsQuote: answers.wants_quote }),
+        },
+        page: { name: "Invalid PostHog PageLeave Meta Event Test" },
+        tracking: ({ event }) => ({
+          events: [
+            event.postHogPageLeave({
+              name: "$pageleave",
+              meta: {
+                pixelId: "1234567890",
+                eventName: "PageLeave",
+              },
+            }),
+          ],
+        }),
+        steps: [
+          step.choice({
+            key: "wants_quote",
+            slug: "quote",
+            label: "Do you want a quote?",
+            options: [
+              { key: "yes", label: "Yes" },
+              { key: "no", label: "No" },
+            ],
+          }),
+        ],
+      }),
+    ).toThrow("meta is only supported on submitSuccess, stepAnswer, and trustedFormSubstepView events");
+
     const flow = createMetaRemarketingTestFlow();
     const residenceStep = requireStep(flow, "residence_state");
     const payload = createLifecycleTrackingPayload({
@@ -1509,7 +1561,7 @@ describe("form registry", () => {
         ],
       }),
     ).toThrow(
-      "server is only supported on formView, stepView, postHogPageView, submitSuccess, stepAnswer, and trustedFormSubstepView events",
+      "server is only supported on formView, stepView, postHogPageView, postHogPageLeave, submitSuccess, stepAnswer, and trustedFormSubstepView events",
     );
 
     const flow = defineFormFlow({
@@ -1548,6 +1600,11 @@ describe("form registry", () => {
             includeStep: true,
             server: () => undefined,
           }),
+          event.postHogPageLeave({
+            name: "$pageleave",
+            includeStep: true,
+            server: () => undefined,
+          }),
           event.stepAnswer({
             name: "step_answer",
             server: () => undefined,
@@ -1571,6 +1628,7 @@ describe("form registry", () => {
     expect(typeof flow.tracking?.events?.[1]?.server).toBe("function");
     expect(typeof flow.tracking?.events?.[2]?.server).toBe("function");
     expect(typeof flow.tracking?.events?.[3]?.server).toBe("function");
+    expect(typeof flow.tracking?.events?.[4]?.server).toBe("function");
   });
 
   it("returns partial Meta remarketing events from validated checkpoints", async () => {
@@ -2024,6 +2082,7 @@ describe("form registry", () => {
       });
       const serverEventNames = [
         "$pageview",
+        "$pageleave",
         "instant_form_view",
         "instant_form_step_view",
         "instant_form_step_answer",
@@ -2045,6 +2104,8 @@ describe("form registry", () => {
             step_kind: "choice",
             answer_key: eventName === "instant_form_step_answer" ? "property_type" : undefined,
             trusted_form_substep: eventName === "instant_form_trusted_form_substep_view" ? "review" : undefined,
+            leave_reason: eventName === "$pageleave" ? "pagehide" : undefined,
+            duration_ms: eventName === "$pageleave" ? 4321 : undefined,
             event_source_url: "https://cotiza.seguros-aseguranza.com:8443/hogar/tx/tipo-de-propiedad",
           },
           context: { areaCode: "TX" },
@@ -2067,6 +2128,11 @@ describe("form registry", () => {
       }
 
       expect(requests).toHaveLength(serverEventNames.length);
+      const pageLeaveRequest = requests.find((request) => request.body.event === "$pageleave");
+      expect(pageLeaveRequest?.body.properties).toMatchObject({
+        leave_reason: "pagehide",
+        duration_ms: 4321,
+      });
       for (const request of requests) {
         expect(request.body.properties).toMatchObject({
           $current_url: "https://cotiza.seguros-aseguranza.com:8443/hogar/tx/tipo-de-propiedad",
@@ -6966,6 +7032,12 @@ describe("server routing", () => {
               includeStep: true,
               server: serverEffects,
             }),
+            event.postHogPageLeave({
+              name: "$pageleave",
+              includeContext: ["areaCode"],
+              includeStep: true,
+              server: serverEffects,
+            }),
           ],
         }),
         steps: [
@@ -7132,6 +7204,12 @@ describe("server routing", () => {
               includeStep: true,
               server: serverEffects,
             }),
+            event.postHogPageLeave({
+              name: "$pageleave",
+              includeContext: ["areaCode"],
+              includeStep: true,
+              server: serverEffects,
+            }),
           ],
         }),
         steps: [
@@ -7171,10 +7249,12 @@ describe("server routing", () => {
             Cookie: `${getCheckpointCookieName("posthog")}=${encodeCheckpointAnswers({ wants_quote: "yes" })}`,
           },
           body: JSON.stringify({
-            eventKinds: ["stepView", "postHogPageView"],
+            eventKinds: ["postHogPageLeave", "stepView", "postHogPageView"],
             stepKey: "contact_preference",
             answers: { wants_quote: "yes" },
             currentUrl: "http://localhost/posthog/contact?source=transition",
+            leaveReason: "step_transition",
+            durationMs: 1234,
             tracking: {
               eventSourceUrl: "https://ignored.example/wrong",
             },
@@ -7186,6 +7266,7 @@ describe("server routing", () => {
       const setCookie = response.headers.get("Set-Cookie") ?? "";
       const visitorId = getCookieValueFromSetCookie(setCookie, getTrackingVisitorIdCookieName());
       const sessionId = getCookieValueFromSetCookie(setCookie, getTrackingSessionIdCookieName());
+      const pageLeaveRequest = postHogRequests.find((request) => request.event === "$pageleave");
       const stepViewRequest = postHogRequests.find((request) => request.event === "instant_form_step_view");
       const pageViewRequest = postHogRequests.find((request) => request.event === "$pageview");
 
@@ -7193,7 +7274,27 @@ describe("server routing", () => {
       expect(body).toEqual({ ok: true, trackingEvents: [] });
       expect(visitorId).toBeTruthy();
       expect(sessionId).toBeTruthy();
-      expect(postHogRequests).toHaveLength(2);
+      expect(postHogRequests).toHaveLength(3);
+      expect(pageLeaveRequest).toMatchObject({
+        api_key: "phc_test_key",
+        event: "$pageleave",
+        distinct_id: visitorId,
+        properties: {
+          route_key: "posthog",
+          form_name: "PostHog Transition View Test",
+          page_name: "PostHog Transition View Test",
+          context: JSON.stringify({ areaCode: "TX" }),
+          step_key: "contact_preference",
+          step_slug: "contact",
+          step_index: 1,
+          step_kind: "choice",
+          leave_reason: "step_transition",
+          duration_ms: 1234,
+          $session_id: sessionId,
+          $current_url: "http://localhost/posthog/contact?source=transition",
+          $pathname: "/posthog/contact",
+        },
+      });
       expect(stepViewRequest).toMatchObject({
         api_key: "phc_test_key",
         event: "instant_form_step_view",
@@ -8587,6 +8688,12 @@ describe("form rendering", () => {
             includeStep: true,
             server: () => undefined,
           }),
+          event.postHogPageLeave({
+            name: "$pageleave",
+            includeContext: ["areaCode", "product"],
+            includeStep: true,
+            server: () => undefined,
+          }),
           event.stepAnswer({ name: "instant_form_step_answer", includeStep: true }),
           event.validationError({ name: "instant_form_validation_error", includeStep: true }),
           event.submitAttempt({ name: "instant_form_submit_attempt", includeStep: true }),
@@ -8659,11 +8766,18 @@ describe("form rendering", () => {
     expect(html).toContain("instant_form_submit_success");
     expect(html).toContain("instant_form_submit_error");
     expect(html).toContain("trackServerStepViewTransition");
+    expect(html).toContain("trackServerPageLeave");
+    expect(html).toContain("navigator.sendBeacon");
+    expect(html).toContain("keepalive: true");
+    expect(html).toContain('trackCurrentStepPageLeave("pagehide")');
+    expect(html).toContain('trackCurrentStepPageLeave("visibility_hidden")');
     expect(html).toContain('eventKinds.push("stepView")');
     expect(html).toContain('eventKinds.push("postHogPageView")');
+    expect(html).toContain('eventKind: "postHogPageLeave"');
     expect(html).toContain("hasCompletedInitialStepViewTracking");
-    expect(html).toContain('"serverEvents":{"postHogPageView":true}');
+    expect(html).toContain('"serverEvents":{"postHogPageView":true,"postHogPageLeave":true}');
     expect(html).not.toContain("$pageview");
+    expect(html).not.toContain("$pageleave");
     expect(html).toContain('"routeKey":"tracking_custom"');
     expect(html).toContain('"tracking":{"serverEvents"');
     expect(html).toContain('"googleTagManager"');

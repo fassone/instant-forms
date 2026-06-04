@@ -13,6 +13,7 @@ export function createTrackingAuthoringHelpers<TContract extends FormContract>()
       formView: createEventBuilder("formView"),
       stepView: createEventBuilder("stepView"),
       postHogPageView: createEventBuilder("postHogPageView"),
+      postHogPageLeave: createEventBuilder("postHogPageLeave"),
       stepAnswer: createEventBuilder("stepAnswer"),
       validationError: createEventBuilder("validationError"),
       trustedFormSubstepView: createEventBuilder("trustedFormSubstepView"),

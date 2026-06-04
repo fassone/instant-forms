@@ -57,7 +57,8 @@ type NativeFormData = {
   get(name: string): unknown;
 };
 
-type TrackingEventRequestKind = "stepView" | "postHogPageView" | "trustedFormSubstepView";
+type TrackingEventRequestKind = "stepView" | "postHogPageView" | "postHogPageLeave" | "trustedFormSubstepView";
+type PageLeaveReason = "step_transition" | "pagehide" | "visibility_hidden";
 
 export function registerFormRoutes(
   app: Hono,
@@ -473,6 +474,7 @@ export function registerFormRoutes(
         getClientCurrentUrl(requestBody),
         browserIds,
         eventLogger,
+        eventKind === "postHogPageLeave" ? getPageLeaveEventExtra(requestBody) : undefined,
       );
       return [];
     });
@@ -1017,11 +1019,12 @@ function createViewTrackingEvent(
   stepUrl: string,
   step: FormStep,
   stepIndex: number,
-  kind: "stepView" | "postHogPageView",
+  kind: "stepView" | "postHogPageView" | "postHogPageLeave",
   answers: Record<string, string>,
   clientCurrentUrl: string | undefined,
   browserIds: MetaBrowserIds = {},
   eventLogger?: InstantFormLogger,
+  extra?: Record<string, unknown>,
 ): void {
   const eventSourceUrl = getTrackingEventSourceUrl(c.req.raw.url, stepUrl, clientCurrentUrl, browserIds.eventSourceUrl);
   const lifecycleEvent = createLifecycleTrackingEvent({
@@ -1032,6 +1035,7 @@ function createViewTrackingEvent(
     stepIndex: stepIndex === -1 ? undefined : stepIndex,
     answers,
     browserIds,
+    extra,
     eventId: crypto.randomUUID(),
     eventSourceUrl,
     requireServerBuilt: true,
@@ -1050,7 +1054,30 @@ function getTrackingEventKinds(input: Record<string, unknown>): TrackingEventReq
 }
 
 function isSupportedTrackingEventKind(eventKind: TrackingEventRequestKind): boolean {
-  return eventKind === "stepView" || eventKind === "postHogPageView" || eventKind === "trustedFormSubstepView";
+  return (
+    eventKind === "stepView" ||
+    eventKind === "postHogPageView" ||
+    eventKind === "postHogPageLeave" ||
+    eventKind === "trustedFormSubstepView"
+  );
+}
+
+function getPageLeaveEventExtra(input: Record<string, unknown>): Record<string, unknown> {
+  const reason = getPageLeaveReason(input.leaveReason);
+  const durationMs = getNonNegativeInteger(input.durationMs);
+
+  return {
+    ...(reason ? { leave_reason: reason } : {}),
+    ...(durationMs === undefined ? {} : { duration_ms: durationMs }),
+  };
+}
+
+function getPageLeaveReason(value: unknown): PageLeaveReason | undefined {
+  return value === "step_transition" || value === "pagehide" || value === "visibility_hidden" ? value : undefined;
+}
+
+function getNonNegativeInteger(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : undefined;
 }
 
 function getClientCurrentUrl(input: Record<string, unknown>): string | undefined {

@@ -90,6 +90,10 @@ function getCoreRuntimeScript(): string {
   let lastTrackedStepViewKey = "";
   let lastServerTrackedStepViewKey = "";
   let hasCompletedInitialStepViewTracking = false;
+  let hasCurrentStepEntry = false;
+  let currentStepEntryStartedAt = getMonotonicNow();
+  let currentStepEntryId = 0;
+  let lastSentPageLeaveEntryKey = "";
 
   function registerBehaviorModule(kind, module) {
     behaviorModules[kind] = module;
@@ -434,6 +438,16 @@ function getCoreRuntimeScript(): string {
       replaceHiddenMatchingRouteIfNeeded();
     });
 
+    window.addEventListener("pagehide", () => {
+      trackCurrentStepPageLeave("pagehide");
+    });
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") {
+        trackCurrentStepPageLeave("visibility_hidden");
+      }
+    });
+
     window.addEventListener("resize", () => {
       getActiveBehavior()?.onResize?.(getContext(), getQuestion(), getStepElement());
     });
@@ -456,8 +470,16 @@ function getCoreRuntimeScript(): string {
   }
 
   function showStep(nextStep) {
+    const requestedStep = Math.max(0, Math.min(nextStep, steps.length - 1));
+    const previousStep = currentStep;
+    const previousQuestion = config.steps[previousStep];
+    const didStepChange = requestedStep !== previousStep;
+    if (didStepChange && previousQuestion) {
+      trackServerPageLeave(previousQuestion, "step_transition", getAbsoluteStepUrl(previousQuestion));
+    }
+
     const previousBehavior = mountedBehavior;
-    if (mountedStepIndex !== -1 && mountedStepIndex !== nextStep) {
+    if (mountedStepIndex !== -1 && mountedStepIndex !== requestedStep) {
       mountedCleanup?.();
       previousBehavior?.unmount?.(getContext(), getQuestion(), getStepElement());
       mountedCleanup = undefined;
@@ -465,7 +487,6 @@ function getCoreRuntimeScript(): string {
       mountedStepIndex = -1;
     }
 
-    const requestedStep = Math.max(0, Math.min(nextStep, steps.length - 1));
     currentStep = requestedStep;
     const question = getQuestion();
     const countedStepNumber = getRenderedCountedStepNumber();
@@ -492,6 +513,9 @@ function getCoreRuntimeScript(): string {
     requestCurrentResolvedStepPayloadIfNeeded();
     preloadTrustedFormAssets();
     trackStepView(question, currentStep);
+    if (didStepChange || !hasCurrentStepEntry) {
+      markCurrentStepEntry();
+    }
   }
 
   function setPanelHidden(panel, isHidden) {
@@ -1642,7 +1666,7 @@ function getCoreRuntimeScript(): string {
 
     const tracking = {
       ...getMetaBrowserTrackingData(),
-      eventSourceUrl: window.location.href,
+      eventSourceUrl: getAbsoluteStepUrl(question),
     };
 
     void fetch("/api/forms/" + encodeURIComponent(config.routeKey) + "/tracking-events", {
@@ -1652,10 +1676,80 @@ function getCoreRuntimeScript(): string {
         eventKinds,
         stepKey: question.key,
         answers,
-        currentUrl: window.location.href,
+        currentUrl: getAbsoluteStepUrl(question),
         tracking,
       }),
     }).catch(() => undefined);
+  }
+
+  function trackCurrentStepPageLeave(reason) {
+    trackServerPageLeave(getQuestion(), reason, window.location.href);
+  }
+
+  function trackServerPageLeave(question, reason, currentUrl) {
+    if (!question || config.previewMode || !config.tracking?.serverEvents?.postHogPageLeave) {
+      return;
+    }
+
+    const entryKey = currentStepEntryId + "|" + question.key + "|" + question.url;
+    if (entryKey === lastSentPageLeaveEntryKey) {
+      return;
+    }
+    lastSentPageLeaveEntryKey = entryKey;
+
+    sendServerTrackingPayload({
+      eventKind: "postHogPageLeave",
+      stepKey: question.key,
+      answers,
+      currentUrl,
+      leaveReason: reason,
+      durationMs: getCurrentStepDurationMs(),
+      tracking: {
+        ...getMetaBrowserTrackingData(),
+        eventSourceUrl: currentUrl,
+      },
+    });
+  }
+
+  function sendServerTrackingPayload(payload) {
+    const url = "/api/forms/" + encodeURIComponent(config.routeKey) + "/tracking-events";
+    const body = JSON.stringify(payload);
+
+    if (typeof navigator.sendBeacon === "function") {
+      try {
+        if (navigator.sendBeacon(url, new Blob([body], { type: "application/json" }))) {
+          return;
+        }
+      } catch {
+        // Fall through to keepalive fetch.
+      }
+    }
+
+    void fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+      keepalive: true,
+    }).catch(() => undefined);
+  }
+
+  function markCurrentStepEntry() {
+    hasCurrentStepEntry = true;
+    currentStepEntryId += 1;
+    currentStepEntryStartedAt = getMonotonicNow();
+    lastSentPageLeaveEntryKey = "";
+  }
+
+  function getCurrentStepDurationMs() {
+    return Math.max(0, Math.round(getMonotonicNow() - currentStepEntryStartedAt));
+  }
+
+  function getMonotonicNow() {
+    return window.performance && typeof window.performance.now === "function" ? window.performance.now() : Date.now();
+  }
+
+  function getAbsoluteStepUrl(question) {
+    return new URL(question.url, window.location.origin).toString();
   }
 
   function trackFormEvent(eventKind, payload = {}) {

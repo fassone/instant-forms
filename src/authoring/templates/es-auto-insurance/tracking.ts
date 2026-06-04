@@ -122,6 +122,12 @@ export function createAutoInsuranceTracking({
               includeStep: true,
               server: serverEffects,
             }),
+            event.postHogPageLeave({
+              name: "$pageleave",
+              includeContext: ["areaCode", "product"],
+              includeStep: true,
+              server: serverEffects,
+            }),
           ]
         : []),
       event.stepAnswer({

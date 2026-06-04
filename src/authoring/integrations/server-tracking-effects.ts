@@ -183,6 +183,8 @@ function createSafePostHogProperties(input: TrackingServerEventInput): Record<st
     step_kind: getStringProperty(input.event.step_kind) ?? input.step?.kind,
     answer_key: getStringProperty(input.event.answer_key),
     trusted_form_substep: getStringProperty(input.event.trusted_form_substep),
+    leave_reason: getStringProperty(input.event.leave_reason),
+    duration_ms: getNonNegativeIntegerProperty(input.event.duration_ms),
     submission_id: input.submission?.id,
     $session_id: input.session?.id,
     $current_url: currentUrl,
@@ -258,6 +260,10 @@ function getStringProperty(value: unknown): string | undefined {
 
 function getNumberProperty(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function getNonNegativeIntegerProperty(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : undefined;
 }
 
 function hasAnswerValue(value: unknown): boolean {
