@@ -135,6 +135,7 @@ export function registerFormRoutes(
 
     if (
       stepDefinition.kind === "interstitial" &&
+      stepDefinition.completionAnswer !== stepDefinition.seenAnswer &&
       requestedAnswer === stepDefinition.seenAnswer &&
       answers[stepDefinition.key] !== stepDefinition.completionAnswer &&
       answers[stepDefinition.key] !== stepDefinition.seenAnswer
@@ -184,7 +185,9 @@ export function registerFormRoutes(
     setCheckpointAnswers(c, routeEntry.routeKey, sanitizedAnswers);
 
     const nextIndex =
-      stepDefinition.kind === "interstitial" && validation.answer === stepDefinition.completionAnswer
+      stepDefinition.kind === "interstitial" &&
+      stepDefinition.completionAnswer !== stepDefinition.seenAnswer &&
+      validation.answer === stepDefinition.completionAnswer
         ? stepIndex
         : stepIndex === -1
           ? getResumeStepIndex(form, sanitizedAnswers)

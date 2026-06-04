@@ -291,17 +291,19 @@ function getCoreRuntimeScript(): string {
       void handleNext();
     });
 
-    backButton.addEventListener("click", () => {
-      const activeBehavior = getActiveBehavior();
-      if (activeBehavior?.beforeBack?.(getContext(), getQuestion(), getStepElement())) {
-        return;
-      }
+    if (backButton) {
+      backButton.addEventListener("click", () => {
+        const activeBehavior = getActiveBehavior();
+        if (activeBehavior?.beforeBack?.(getContext(), getQuestion(), getStepElement())) {
+          return;
+        }
 
-      const previousUrl = getRenderedPreviousUrl();
-      if (previousUrl) {
-        navigateToUrl(previousUrl);
-      }
-    });
+        const previousUrl = getRenderedPreviousUrl();
+        if (previousUrl) {
+          navigateToUrl(previousUrl);
+        }
+      });
+    }
 
     form.addEventListener("submit", (event) => {
       const submitResult = getActiveBehavior()?.onSubmit?.(event, getContext(), getQuestion(), getStepElement());
@@ -592,7 +594,9 @@ function getCoreRuntimeScript(): string {
     } else {
       nextButton.removeAttribute("aria-busy");
     }
-    backButton.disabled = !getRenderedPreviousUrl() || isLoading;
+    if (backButton) {
+      backButton.disabled = !getRenderedPreviousUrl() || isLoading;
+    }
   }
 
   function applyNextButtonState(label, behavior, question) {
@@ -2580,6 +2584,10 @@ function getInterstitialBehaviorScript(registerExpression: string): string {
       return "interstitial:" + question.key;
     }
 
+    function isWelcomeQuestion(question) {
+      return question && question.interstitialTiming === "welcome";
+    }
+
     function clearMatchingTimers(ctx, question) {
       activeMatchingRunId += 1;
       matchingTextTransitionId += 1;
@@ -2599,6 +2607,7 @@ function getInterstitialBehaviorScript(registerExpression: string): string {
     }
 
     function isNextDisabled(ctx, question) {
+      if (isWelcomeQuestion(question)) return false;
       return ctx.answers[question.key] !== question.completionAnswer && ctx.answers[question.key] !== question.seenAnswer && !completedMatchingSteps.has(question.key);
     }
 
@@ -2705,6 +2714,11 @@ function getInterstitialBehaviorScript(registerExpression: string): string {
     }
 
     function mount(ctx, question, step) {
+      if (isWelcomeQuestion(question)) {
+        clearMatchingTimers(ctx, question);
+        return;
+      }
+
       const runId = activeMatchingRunId;
       const elements = getMatchingElements(step);
       if (!elements.status || !elements.benefit) return;
@@ -2759,7 +2773,27 @@ function getInterstitialBehaviorScript(registerExpression: string): string {
       isNextDisabled,
       isAnswered,
       getAnswer,
+      getNextLabel(_ctx, question) {
+        return isWelcomeQuestion(question) && question.ctaLabel ? question.ctaLabel : undefined;
+      },
       async onNext(ctx, question) {
+        if (isWelcomeQuestion(question)) {
+          if (window.__FORM_CONFIG__.previewMode) {
+            ctx.answers[question.key] = question.seenAnswer;
+            ctx.showStep(ctx.getNextVisibleStepIndex());
+            return true;
+          }
+          ctx.setNextButtonLoading(getMatchingLoadingReason(question), true);
+          try {
+            const nextUrl = await ctx.saveCheckpoint(question.key, question.seenAnswer);
+            ctx.replaceToUrl(nextUrl ?? ctx.getRenderedNextUrl());
+          } catch (checkpointError) {
+            ctx.setNextButtonLoading(getMatchingLoadingReason(question), false);
+            ctx.showErrorModal(checkpointError instanceof Error ? checkpointError.message : ctx.config.ui.errors.checkpointStepSaveFailed);
+          }
+          return true;
+        }
+
         if (ctx.answers[question.key] === question.seenAnswer) {
           ctx.showStep(ctx.getNextVisibleStepIndex());
           return true;

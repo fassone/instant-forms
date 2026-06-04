@@ -114,6 +114,7 @@ import { validateSubmission } from "../../src/platform/submissions/validation";
 import { US_STATES, normalizeUsState } from "../../src/shared/data/us-states";
 
 const preContactAnswers = {
+  welcome_started: "started",
   belongs_to_state: "yes",
   has_license: "yes",
   has_insurance: "no",
@@ -127,23 +128,12 @@ const outOfStatePreContactAnswers = {
   residence_state: "TX",
 };
 
-const seenMatchingAnswers = {
+const readyForContactAnswers = {
   ...preContactAnswers,
-  matching_offer: "seen",
-};
-
-const completedMatchingAnswers = {
-  ...preContactAnswers,
-  matching_offer: "completed",
-};
-
-const completedOutOfStateMatchingAnswers = {
-  ...outOfStatePreContactAnswers,
-  matching_offer: "completed",
 };
 
 const preConsentAnswers = {
-  ...seenMatchingAnswers,
+  ...readyForContactAnswers,
   first_name: "Ana",
   last_name: "Lopez",
   phone_number: "(615) 555-1234",
@@ -155,6 +145,7 @@ const validAnswers = {
 };
 
 const homePreContactAnswers = {
+  welcome_started: "started",
   property_in_state: "yes",
   ownership_status: "own",
   property_type: "single_family",
@@ -560,10 +551,12 @@ describe("form registry", () => {
     });
 
     const caHtml = await renderFormPage(caFlow, {
+      activeStepIndex: 1,
       routeKey: "auto_ca",
       stepUrlOverrides: createStepUrlOverridesForRoute(["auto", "ca"], caFlow),
     });
     const dcHtml = await renderFormPage(dcFlow, {
+      activeStepIndex: 1,
       routeKey: "auto_dc",
       stepUrlOverrides: createStepUrlOverridesForRoute(["auto", "dc"], dcFlow),
     });
@@ -593,10 +586,12 @@ describe("form registry", () => {
     });
 
     const caHtml = await renderFormPage(caFlow, {
+      activeStepIndex: 1,
       routeKey: "hogar_ca",
       stepUrlOverrides: createStepUrlOverridesForRoute(["hogar", "ca"], caFlow),
     });
     const dcHtml = await renderFormPage(dcFlow, {
+      activeStepIndex: 1,
       routeKey: "hogar_dc",
       stepUrlOverrides: createStepUrlOverridesForRoute(["hogar", "dc"], dcFlow),
     });
@@ -634,6 +629,7 @@ describe("form registry", () => {
       product: "home_insurance",
     });
     expect(flow.steps.map((stepDefinition) => stepDefinition.key)).toEqual([
+      "welcome_started",
       "property_in_state",
       "property_state",
       "ownership_status",
@@ -642,7 +638,6 @@ describe("form registry", () => {
       "has_home_insurance",
       "house_age_years",
       "roof_age_years",
-      "matching_offer",
       "first_name",
       "last_name",
       "phone_number",
@@ -705,13 +700,13 @@ describe("form registry", () => {
     );
 
     const folderResponse = await app.fetch(new Request("http://localhost/cotiza"));
-    const stepResponse = await app.fetch(new Request("http://localhost/cotiza/vive-en-tennessee"));
+    const stepResponse = await app.fetch(new Request("http://localhost/cotiza/inicio"));
     const unknownChildResponse = await app.fetch(new Request("http://localhost/cotiza/no-existe"));
     const html = await stepResponse.text();
 
-    expect(folderResponse.headers.get("Location")).toBe("/cotiza/vive-en-tennessee");
+    expect(folderResponse.headers.get("Location")).toBe("/cotiza/inicio");
     expect(stepResponse.status).toBe(200);
-    expect(html).toContain('"url":"/cotiza/vive-en-tennessee"');
+    expect(html).toContain('"url":"/cotiza/inicio"');
     expect(html).toContain('"tiene-licencia":"/cotiza/tiene-licencia"');
     expect(unknownChildResponse.headers.get("Location")).toBe("/cotiza");
   });
@@ -735,21 +730,21 @@ describe("form registry", () => {
 
     const groupResponse = await app.fetch(new Request("http://localhost/tn"));
     const folderResponse = await app.fetch(new Request("http://localhost/tn/custom"));
-    const stepResponse = await app.fetch(new Request("http://localhost/tn/custom/vive-en-tennessee"));
+    const stepResponse = await app.fetch(new Request("http://localhost/tn/custom/inicio"));
     const unknownChildResponse = await app.fetch(new Request("http://localhost/tn/not-real"));
     const previewGroupResponse = await app.fetch(new Request("http://localhost/__preview/tn"));
-    const previewResponse = await app.fetch(new Request("http://localhost/__preview/tn/custom/buscando-oferta"));
+    const previewResponse = await app.fetch(new Request("http://localhost/__preview/tn/custom/inicio"));
     const html = await stepResponse.text();
     const previewHtml = await previewResponse.text();
 
     expect(groupResponse.headers.get("Location")).toBe("/tn/custom");
-    expect(folderResponse.headers.get("Location")).toBe("/tn/custom/vive-en-tennessee");
+    expect(folderResponse.headers.get("Location")).toBe("/tn/custom/inicio");
     expect(stepResponse.status).toBe(200);
-    expect(html).toContain('"url":"/tn/custom/vive-en-tennessee"');
+    expect(html).toContain('"url":"/tn/custom/inicio"');
     expect(unknownChildResponse.headers.get("Location")).toBe("/tn/custom");
     expect(previewGroupResponse.headers.get("Location")).toBe("/__preview/tn/custom");
     expect(previewResponse.status).toBe(200);
-    expect(previewHtml).toContain('"url":"/__preview/tn/custom/buscando-oferta"');
+    expect(previewHtml).toContain('"url":"/__preview/tn/custom/inicio"');
   });
 
   it("lets route groups inherit the nearest fallback", async () => {
@@ -792,13 +787,13 @@ describe("form registry", () => {
     const form = getRequiredTennesseeForm();
 
     expect(form.steps.map((question) => getStepSlug(question))).toEqual([
+      "inicio",
       "vive-en-tennessee",
       "estado-donde-vive",
       "tiene-licencia",
       "tiene-seguro",
       "titulo-limpio",
       "autos-a-asegurar",
-      "buscando-oferta",
       "nombre",
       "apellido",
       "telefono",
@@ -808,13 +803,13 @@ describe("form registry", () => {
 
   it("uses reusable counted-step semantics", () => {
     const form = getRequiredTennesseeForm();
-    const firstQuestion = form.steps[0];
-    const matchingQuestion = form.steps.find((question) => question.kind === "interstitial");
+    const welcomeQuestion = form.steps[0];
+    const firstQuestion = form.steps[1];
 
     expect(firstQuestion ? isCountedStep(firstQuestion) : undefined).toBe(true);
-    expect(matchingQuestion ? isCountedStep(matchingQuestion) : undefined).toBe(false);
+    expect(welcomeQuestion ? isCountedStep(welcomeQuestion) : undefined).toBe(false);
     expect(firstQuestion ? isCountedStep({ ...firstQuestion, countsAsStep: false }) : undefined).toBe(false);
-    expect(matchingQuestion ? isCountedStep({ ...matchingQuestion, countsAsStep: true }) : undefined).toBe(true);
+    expect(welcomeQuestion ? isCountedStep({ ...welcomeQuestion, countsAsStep: true }) : undefined).toBe(true);
   });
 
   it("compiles declarative DSL steps with templates, behaviors, and success colors", () => {
@@ -2359,7 +2354,7 @@ describe("form registry", () => {
   it("returns server-built Meta events for TrustedForm substep views", async () => {
     const handler = createFetchHandler();
     const savedAnswers = {
-      ...seenMatchingAnswers,
+      ...readyForContactAnswers,
       first_name: "Ana",
       last_name: "Lopez",
       phone_number: "+16155551234",
@@ -2424,7 +2419,7 @@ describe("form registry", () => {
     const form = getRequiredTennesseeForm();
     const trustedFormStepIndex = form.steps.findIndex((stepDefinition) => stepDefinition.key === "trustedform_consent");
     const savedAnswers = {
-      ...seenMatchingAnswers,
+      ...readyForContactAnswers,
       first_name: "Ana",
       last_name: "Lopez",
       phone_number: "+16155551234",
@@ -3037,6 +3032,92 @@ describe("form registry", () => {
       'presentation.choiceSize for step "choice_key" must be "default", "compact", or "spacious".',
     );
     expect(() => createFlowWithChoiceSize("compact")).not.toThrow();
+  });
+
+  it("validates interstitial timing presets and welcome placement", () => {
+    const createFlowWithInterstitialTiming = (interstitialTiming: unknown) =>
+      defineFormFlow({
+        name: "Invalid Interstitial Timing",
+        status: "ACTIVE",
+        ...testFlowCopy,
+        contract: {
+          context: z.object({}),
+          answers: z.object({}),
+          payload: z.object({ started: z.string() }),
+        },
+        context: {},
+        payload: {
+          url: "https://example.test/lead-submissions",
+          method: "POST",
+          encoding: "json",
+          mapping: () => ({ started: "yes" }),
+        },
+        page: { name: "Page" },
+        steps: [
+          step.interstitial({
+            key: "welcome_started",
+            slug: "inicio",
+            label: "Inicio",
+            interstitialTiming: interstitialTiming as any,
+            loadingLabel: "Intro copy.",
+            ctaLabel: "Start",
+            countsAsStep: false,
+            completionAnswer: "started",
+            seenAnswer: "started",
+            successLines: [],
+            benefits: ["Benefit"],
+          }),
+        ],
+      });
+    const createFlowWithLaterWelcome = () =>
+      (defineFormFlow as any)({
+        name: "Later Welcome Interstitial",
+        status: "ACTIVE",
+        ...testFlowCopy,
+        contract: {
+          context: z.object({}),
+          answers: z.object({ first_choice: z.enum(["yes"]) }),
+          payload: z.object({ first_choice: z.string() }),
+        },
+        context: {},
+        payload: {
+          url: "https://example.test/lead-submissions",
+          method: "POST",
+          encoding: "json",
+          mapping: ({ answers }: { answers: { first_choice: string } }) => ({ first_choice: answers.first_choice }),
+        },
+        page: { name: "Page" },
+        steps: [
+          step.choice({
+            key: "first_choice",
+            slug: "first-choice",
+            label: "First choice",
+            options: [{ key: "yes", label: "Yes" }],
+          }),
+          step.interstitial({
+            key: "welcome_started",
+            slug: "inicio",
+            label: "Inicio",
+            interstitialTiming: "welcome" as any,
+            loadingLabel: "Intro copy.",
+            ctaLabel: "Start",
+            countsAsStep: false,
+            completionAnswer: "started",
+            seenAnswer: "started",
+            successLines: [],
+            benefits: ["Benefit"],
+          }),
+        ],
+      });
+
+    expect(() => createFlowWithInterstitialTiming("later")).toThrow(
+      'interstitialTiming must be "welcome" or "matching_offer".',
+    );
+    expect(() => createFlowWithInterstitialTiming("welcome")).not.toThrow();
+    expect(() => createFlowWithInterstitialTiming("matching_offer")).not.toThrow();
+    expect(() => (createFlowWithLaterWelcome as any)()).toThrow(
+      'Welcome interstitial step "welcome_started" must be the first step.',
+    );
   });
 
   it("requires authored scroll hint copy and validates choice overrides", () => {
@@ -4461,7 +4542,7 @@ describe("response compression", () => {
   it("compresses large HTML responses with Brotli when accepted", async () => {
     const handler = createFetchHandler();
     const response = await handler(
-      new Request("http://localhost/auto/tn/vive-en-tennessee", {
+      new Request("http://localhost/auto/tn/inicio", {
         headers: {
           "Accept-Encoding": "br,gzip",
         },
@@ -4476,7 +4557,7 @@ describe("response compression", () => {
   it("falls back to gzip for large HTML responses when Brotli is not accepted", async () => {
     const handler = createFetchHandler();
     const response = await handler(
-      new Request("http://localhost/auto/tn/vive-en-tennessee", {
+      new Request("http://localhost/auto/tn/inicio", {
         headers: {
           "Accept-Encoding": "gzip",
         },
@@ -5633,7 +5714,7 @@ describe("server routing", () => {
     const response = await handler(new Request("http://localhost/auto/tn"));
 
     expect(response.status).toBe(302);
-    expect(response.headers.get("Location")).toBe("/auto/tn/vive-en-tennessee");
+    expect(response.headers.get("Location")).toBe("/auto/tn/inicio");
     expect(response.headers.get("Cache-Control")).toBe("no-store");
   });
 
@@ -5641,7 +5722,7 @@ describe("server routing", () => {
     const handler = createFetchHandler();
     const tnResponse = await handler(new Request("http://localhost/auto/tn"));
 
-    expect(tnResponse.headers.get("Location")).toBe("/auto/tn/vive-en-tennessee");
+    expect(tnResponse.headers.get("Location")).toBe("/auto/tn/inicio");
   });
 
   it("redirects authored non-Tennessee auto state routes to their first unanswered step", async () => {
@@ -5649,7 +5730,7 @@ describe("server routing", () => {
     const caResponse = await handler(new Request("http://localhost/auto/ca"));
 
     expect(caResponse.status).toBe(302);
-    expect(caResponse.headers.get("Location")).toBe("/auto/ca/vive-en-california");
+    expect(caResponse.headers.get("Location")).toBe("/auto/ca/inicio");
   });
 
   it("returns unavailable for unauthored auto state routes", async () => {
@@ -5666,7 +5747,7 @@ describe("server routing", () => {
     const txResponse = await handler(new Request("http://localhost/hogar/tx"));
 
     expect(txResponse.status).toBe(302);
-    expect(txResponse.headers.get("Location")).toBe("/hogar/tx/propiedad-en-texas");
+    expect(txResponse.headers.get("Location")).toBe("/hogar/tx/inicio");
   });
 
   it("returns unavailable for unauthored hogar state routes", async () => {
@@ -5684,6 +5765,7 @@ describe("server routing", () => {
       new Request("http://localhost/auto/tn", {
         headers: {
           Cookie: createCheckpointCookie({
+            welcome_started: "started",
             belongs_to_state: "yes",
             has_license: "no",
           }),
@@ -5701,6 +5783,7 @@ describe("server routing", () => {
       new Request("http://localhost/auto/tn", {
         headers: {
           Cookie: createCheckpointCookie({
+            welcome_started: "started",
             belongs_to_state: "no",
           }),
         },
@@ -5711,7 +5794,7 @@ describe("server routing", () => {
     expect(response.headers.get("Location")).toBe("/auto/tn/estado-donde-vive");
   });
 
-  it("redirects pre-contact visitors to the matching step before contact information", async () => {
+  it("redirects pre-contact visitors to contact information after authored questions", async () => {
     const handler = createFetchHandler();
     const response = await handler(
       new Request("http://localhost/auto/tn", {
@@ -5722,10 +5805,10 @@ describe("server routing", () => {
     );
 
     expect(response.status).toBe(302);
-    expect(response.headers.get("Location")).toBe("/auto/tn/buscando-oferta");
+    expect(response.headers.get("Location")).toBe("/auto/tn/nombre");
   });
 
-  it("guards contact steps until the matching step has been seen", async () => {
+  it("allows contact steps after authored pre-contact questions", async () => {
     const handler = createFetchHandler();
     const response = await handler(
       new Request("http://localhost/auto/tn/nombre", {
@@ -5735,76 +5818,42 @@ describe("server routing", () => {
       }),
     );
 
-    expect(response.status).toBe(302);
-    expect(response.headers.get("Location")).toBe("/auto/tn/buscando-oferta");
+    expect(response.status).toBe(200);
   });
 
-  it("keeps completed-but-not-seen matching visitors on the matching step", async () => {
+  it("does not mount the disabled matching route in the active auto flow", async () => {
     const handler = createFetchHandler();
-    const resumeResponse = await handler(
-      new Request("http://localhost/auto/tn", {
-        headers: {
-          Cookie: createCheckpointCookie(completedMatchingAnswers),
-        },
-      }),
-    );
-    const contactResponse = await handler(
-      new Request("http://localhost/auto/tn/nombre", {
-        headers: {
-          Cookie: createCheckpointCookie(completedMatchingAnswers),
-        },
-      }),
-    );
-    const matchingResponse = await handler(
-      new Request("http://localhost/auto/tn/buscando-oferta", {
-        headers: {
-          Cookie: createCheckpointCookie(completedMatchingAnswers),
-        },
-      }),
-    );
+    const response = await handler(new Request("http://localhost/auto/tn/buscando-oferta"));
 
-    expect(resumeResponse.status).toBe(302);
-    expect(resumeResponse.headers.get("Location")).toBe("/auto/tn/buscando-oferta");
-    expect(contactResponse.status).toBe(302);
-    expect(contactResponse.headers.get("Location")).toBe("/auto/tn/buscando-oferta");
-    expect(matchingResponse.status).toBe(200);
-    const matchingHtml = await matchingResponse.text();
-    expect(matchingHtml).toContain('"matching_offer":"completed"');
-    expect((matchingHtml.match(/<p class="step-count" data-step-count/g) ?? []).length).toBe(1);
-    expect(matchingHtml).toContain('<div class="progress-meta">');
-    expect(matchingHtml).toContain('<p class="step-count" data-step-count aria-hidden="true">Paso 5 de 9</p>');
-    expect(matchingHtml).toContain('class="matching-benefit is-success is-visible"');
-    expect(matchingHtml).toContain(
-      '<span class="matching-success-line" data-color="brand-navy">¡Encontramos opciones para usted!</span>',
-    );
-    expect(matchingHtml).toContain(
-      '<span class="matching-success-line" data-color="accent">Descubra cuánto puede ahorrar...</span>',
-    );
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe("/auto/tn");
   });
 
-  it("excludes matching from step count on the out-of-state path", async () => {
+  it("excludes welcome from step count on the out-of-state path", async () => {
     const handler = createFetchHandler();
     const response = await handler(
-      new Request("http://localhost/auto/tn/buscando-oferta", {
+      new Request("http://localhost/auto/tn/estado-donde-vive", {
         headers: {
-          Cookie: createCheckpointCookie(completedOutOfStateMatchingAnswers),
+          Cookie: createCheckpointCookie({
+            welcome_started: "started",
+            belongs_to_state: "no",
+          }),
         },
       }),
     );
     const html = await response.text();
 
     expect(response.status).toBe(200);
-    expect(html).toContain('"matching_offer":"completed"');
     expect((html.match(/<p class="step-count" data-step-count/g) ?? []).length).toBe(1);
-    expect(html).toContain('<p class="step-count" data-step-count aria-hidden="true">Paso 6 de 10</p>');
+    expect(html).toContain('<p class="step-count" data-step-count>Paso 2 de 10</p>');
   });
 
-  it("allows contact steps after the matching checkpoint has been seen", async () => {
+  it("allows contact steps after authored pre-contact checkpoints", async () => {
     const handler = createFetchHandler();
     const response = await handler(
       new Request("http://localhost/auto/tn/nombre", {
         headers: {
-          Cookie: createCheckpointCookie(seenMatchingAnswers),
+          Cookie: createCheckpointCookie(preContactAnswers),
         },
       }),
     );
@@ -5822,7 +5871,7 @@ describe("server routing", () => {
       new Request("http://localhost/auto/tn/consentimiento", {
         headers: {
           Cookie: createCheckpointCookie({
-            ...seenMatchingAnswers,
+            ...readyForContactAnswers,
             first_name: "Ana",
             last_name: "Lopez",
           }),
@@ -5840,7 +5889,7 @@ describe("server routing", () => {
     const setCookie = response.headers.get("Set-Cookie") ?? "";
 
     expect(response.status).toBe(302);
-    expect(response.headers.get("Location")).toBe("/auto/tn/vive-en-tennessee?fbclid=CLICK123");
+    expect(response.headers.get("Location")).toBe("/auto/tn/inicio?fbclid=CLICK123");
     expect(setCookie).toContain("_fbc=fb.1.");
     expect(setCookie).toContain(".CLICK123");
     expect(setCookie).toContain("Path=/");
@@ -5852,12 +5901,12 @@ describe("server routing", () => {
 
   it("captures fbclid into _fbc when rendering the requested accessible form page", async () => {
     const handler = createFetchHandler();
-    const response = await handler(new Request("https://example.test/auto/tn/vive-en-tennessee?fbclid=CLICK123"));
+    const response = await handler(new Request("https://example.test/auto/tn/inicio?fbclid=CLICK123"));
     const html = await response.text();
     const setCookie = response.headers.get("Set-Cookie") ?? "";
 
     expect(response.status).toBe(200);
-    expect(html).toContain("¿Usted vive en Tennessee?");
+    expect(html).toContain("Seguro de auto claro, rápido y en español");
     expect(setCookie).toContain("_fbc=fb.1.");
     expect(setCookie).toContain(".CLICK123");
     expect(setCookie).toContain("Path=/");
@@ -5878,7 +5927,7 @@ describe("server routing", () => {
 
     expect(response.status).toBe(302);
     expect(response.headers.get("Location")).toBe(
-      "/auto/tn/vive-en-tennessee?source_channel=facebook&acquisition_channel=paid&platform=meta",
+      "/auto/tn/inicio?source_channel=facebook&acquisition_channel=paid&platform=meta",
     );
     expect(setCookie).toContain("liderna_source_channel=facebook");
     expect(setCookie).toContain("liderna_acquisition_channel=paid");
@@ -5894,7 +5943,7 @@ describe("server routing", () => {
   it("does not refresh _fbc when the existing cookie already matches the URL fbclid", async () => {
     const handler = createFetchHandler();
     const response = await handler(
-      new Request("https://example.test/auto/tn/vive-en-tennessee?fbclid=CLICK123", {
+      new Request("https://example.test/auto/tn/inicio?fbclid=CLICK123", {
         headers: {
           Cookie: "_fbc=fb.1.111.CLICK123",
         },
@@ -5908,14 +5957,14 @@ describe("server routing", () => {
   it("overwrites _fbc when the existing cookie has a different or malformed click id", async () => {
     const handler = createFetchHandler();
     const differentClickResponse = await handler(
-      new Request("https://example.test/auto/tn/vive-en-tennessee?fbclid=CLICK123", {
+      new Request("https://example.test/auto/tn/inicio?fbclid=CLICK123", {
         headers: {
           Cookie: "_fbc=fb.1.111.OLDCLICK",
         },
       }),
     );
     const malformedClickResponse = await handler(
-      new Request("https://example.test/auto/tn/vive-en-tennessee?fbclid=CLICK456", {
+      new Request("https://example.test/auto/tn/inicio?fbclid=CLICK456", {
         headers: {
           Cookie: "_fbc=malformed",
         },
@@ -5934,16 +5983,16 @@ describe("server routing", () => {
     expect(groupResponse.status).toBe(302);
     expect(groupResponse.headers.get("Location")).toBe("/auto/tn?fbclid=CLICK123");
     expect(flowResponse.status).toBe(302);
-    expect(flowResponse.headers.get("Location")).toBe("/auto/tn/vive-en-tennessee?fbclid=CLICK123");
+    expect(flowResponse.headers.get("Location")).toBe("/auto/tn/inicio?fbclid=CLICK123");
     expect(flowResponse.headers.get("Set-Cookie") ?? "").toContain(".CLICK123");
   });
 
   it("does not set _fbc without a valid captured fbclid", async () => {
     const handler = createFetchHandler();
-    const noClickResponse = await handler(new Request("https://example.test/auto/tn/vive-en-tennessee"));
-    const emptyClickResponse = await handler(new Request("https://example.test/auto/tn/vive-en-tennessee?fbclid="));
+    const noClickResponse = await handler(new Request("https://example.test/auto/tn/inicio"));
+    const emptyClickResponse = await handler(new Request("https://example.test/auto/tn/inicio?fbclid="));
     const oversizedClickResponse = await handler(
-      new Request(`https://example.test/auto/tn/vive-en-tennessee?fbclid=${"x".repeat(501)}`),
+      new Request(`https://example.test/auto/tn/inicio?fbclid=${"x".repeat(501)}`),
     );
 
     expect(noClickResponse.status).toBe(200);
@@ -5954,18 +6003,18 @@ describe("server routing", () => {
     expect(oversizedClickResponse.headers.get("Set-Cookie") ?? "").not.toContain("_fbc=");
   });
 
-  it("redirects an already-seen matching step to the next contact step", async () => {
+  it("redirects an already-started welcome step to the first real question", async () => {
     const handler = createFetchHandler();
     const response = await handler(
-      new Request("http://localhost/auto/tn/buscando-oferta", {
+      new Request("http://localhost/auto/tn/inicio", {
         headers: {
-          Cookie: createCheckpointCookie(seenMatchingAnswers),
+          Cookie: createCheckpointCookie({ welcome_started: "started" }),
         },
       }),
     );
 
     expect(response.status).toBe(302);
-    expect(response.headers.get("Location")).toBe("/auto/tn/nombre");
+    expect(response.headers.get("Location")).toBe("/auto/tn/vive-en-tennessee");
     expect(response.headers.get("Cache-Control")).toBe("no-store");
   });
 
@@ -5975,9 +6024,9 @@ describe("server routing", () => {
       eventLogger: (record) => logRecords.push(record),
     });
     const response = await handler(
-      new Request("http://localhost/auto/tn/buscando-oferta", {
+      new Request("http://localhost/auto/tn/nombre", {
         headers: {
-          Cookie: createCheckpointCookie(completedMatchingAnswers),
+          Cookie: createCheckpointCookie(preContactAnswers),
         },
       }),
     );
@@ -5988,7 +6037,7 @@ describe("server routing", () => {
     expect(logRecords).toContainEqual(expect.objectContaining({
       event: "form.rendered",
       routeKey,
-      stepKey: "matching_offer",
+      stepKey: "first_name",
       status: 200,
       data: expect.objectContaining({
         prebuilt: expect.any(Boolean),
@@ -6009,7 +6058,7 @@ describe("server routing", () => {
     );
 
     expect(response.status).toBe(302);
-    expect(response.headers.get("Location")).toBe("/auto/tn/vive-en-tennessee");
+    expect(response.headers.get("Location")).toBe("/auto/tn/inicio");
   });
 
   it("guards valid but too-forward step URLs", async () => {
@@ -6017,15 +6066,15 @@ describe("server routing", () => {
     const response = await handler(new Request("http://localhost/auto/tn/tiene-licencia"));
 
     expect(response.status).toBe(302);
-    expect(response.headers.get("Location")).toBe("/auto/tn/vive-en-tennessee");
+    expect(response.headers.get("Location")).toBe("/auto/tn/inicio");
   });
 
-  it("guards the matching step until prior questions are answered", async () => {
+  it("treats the disabled matching route as an unknown step slug", async () => {
     const handler = createFetchHandler();
     const response = await handler(new Request("http://localhost/auto/tn/buscando-oferta"));
 
     expect(response.status).toBe(302);
-    expect(response.headers.get("Location")).toBe("/auto/tn/vive-en-tennessee");
+    expect(response.headers.get("Location")).toBe("/auto/tn");
   });
 
   it("guards the residence-state step until Tennessee has been answered no", async () => {
@@ -6034,32 +6083,32 @@ describe("server routing", () => {
     const yesCookie = await handler(
       new Request("http://localhost/auto/tn/estado-donde-vive", {
         headers: {
-          Cookie: createCheckpointCookie({ belongs_to_state: "yes" }),
+          Cookie: createCheckpointCookie({ welcome_started: "started", belongs_to_state: "yes" }),
         },
       }),
     );
     const noWithoutResidence = await handler(
       new Request("http://localhost/auto/tn/tiene-licencia", {
         headers: {
-          Cookie: createCheckpointCookie({ belongs_to_state: "no" }),
+          Cookie: createCheckpointCookie({ welcome_started: "started", belongs_to_state: "no" }),
         },
       }),
     );
 
     expect(noCookie.status).toBe(302);
-    expect(noCookie.headers.get("Location")).toBe("/auto/tn/vive-en-tennessee");
+    expect(noCookie.headers.get("Location")).toBe("/auto/tn/inicio");
     expect(yesCookie.status).toBe(302);
     expect(yesCookie.headers.get("Location")).toBe("/auto/tn/tiene-licencia");
     expect(noWithoutResidence.status).toBe(302);
     expect(noWithoutResidence.headers.get("Location")).toBe("/auto/tn/estado-donde-vive");
   });
 
-  it("redirects legacy English step slugs to Spanish step URLs", async () => {
+  it("guards legacy English step slugs behind the welcome step", async () => {
     const handler = createFetchHandler();
     const response = await handler(new Request("http://localhost/auto/tn/belongs-to-state"));
 
     expect(response.status).toBe(302);
-    expect(response.headers.get("Location")).toBe("/auto/tn/vive-en-tennessee");
+    expect(response.headers.get("Location")).toBe("/auto/tn/inicio");
   });
 
   it("guards too-forward legacy English step slugs", async () => {
@@ -6067,7 +6116,7 @@ describe("server routing", () => {
     const response = await handler(new Request("http://localhost/auto/tn/has-license"));
 
     expect(response.status).toBe(302);
-    expect(response.headers.get("Location")).toBe("/auto/tn/vive-en-tennessee");
+    expect(response.headers.get("Location")).toBe("/auto/tn/inicio");
   });
 
   it("returns unavailable for unknown paths under route groups without group fallbacks", async () => {
@@ -6681,20 +6730,20 @@ describe("server routing", () => {
     expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
   });
 
-  it("serves a no-store matching preview route without the full form flow", async () => {
+  it("serves a no-store welcome preview route without the full form flow", async () => {
     const handler = createFetchHandler();
-    const response = await handler(new Request("http://localhost/__preview/auto/tn/buscando-oferta"));
+    const response = await handler(new Request("http://localhost/__preview/auto/tn/inicio"));
     const html = await response.text();
 
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(html).toContain('"previewMode":true');
-    expect(html).toContain('"url":"/__preview/auto/tn/buscando-oferta"');
-    expect(html).toContain(".matching-status:empty");
-    expect(html).toContain('data-matching-status></p>');
-    expect(html).toContain("¡Encontramos opciones para usted!");
-    expect(html).toContain("Descubra cuánto puede ahorrar...");
-    expect(html).toContain('data-step="0" data-step-kind="interstitial" data-step-counted="false" aria-hidden="false"');
+    expect(html).toContain('"url":"/__preview/auto/tn/inicio"');
+    expect(html).toContain("Seguro de auto claro, rápido y en español");
+    expect(html).toContain("Empezar mi cotización");
+    expect(html).toContain("Atención en español");
+    expect(html).toContain('data-step="0" data-step-kind="interstitial" data-interstitial-timing="welcome"');
+    expect(html).toContain('data-step-counted="false" aria-hidden="false"');
     expect(html).not.toContain("¿Usted vive en Tennessee?");
     expect(html).not.toContain('"slug":"nombre"');
   });
@@ -7336,7 +7385,28 @@ describe("server routing", () => {
     }
   });
 
-  it("routes completed pre-contact answers through the matching checkpoint", async () => {
+  it("routes the welcome CTA to the first real question", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(
+      new Request("http://localhost/api/forms/auto_tn/checkpoints", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ questionKey: "welcome_started", answer: "started" }),
+      }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      ok: true,
+      nextUrl: "/auto/tn/vive-en-tennessee",
+      answers: {
+        welcome_started: "started",
+      },
+    });
+  });
+
+  it("routes completed pre-contact answers directly to contact information", async () => {
     const handler = createFetchHandler();
     const carsResponse = await handler(
       new Request("http://localhost/api/forms/auto_tn/checkpoints", {
@@ -7344,6 +7414,7 @@ describe("server routing", () => {
         headers: {
           "Content-Type": "application/json",
           Cookie: createCheckpointCookie({
+            welcome_started: "started",
             belongs_to_state: "yes",
             has_license: "yes",
             has_insurance: "no",
@@ -7354,48 +7425,16 @@ describe("server routing", () => {
       }),
     );
     const carsBody = await carsResponse.json();
-    const cookie = carsResponse.headers.get("Set-Cookie")?.split(";")[0] ?? "";
-    const completedResponse = await handler(
-      new Request("http://localhost/api/forms/auto_tn/checkpoints", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Cookie: cookie,
-        },
-        body: JSON.stringify({ questionKey: "matching_offer", answer: "completed" }),
-      }),
-    );
-    const completedBody = await completedResponse.json();
-    const completedCookie = completedResponse.headers.get("Set-Cookie")?.split(";")[0] ?? "";
-    const matchingResponse = await handler(
-      new Request("http://localhost/api/forms/auto_tn/checkpoints", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Cookie: completedCookie,
-        },
-        body: JSON.stringify({ questionKey: "matching_offer", answer: "seen" }),
-      }),
-    );
-    const matchingBody = await matchingResponse.json();
 
     expect(carsResponse.status).toBe(200);
-    expect(carsBody).toMatchObject({ ok: true, nextUrl: "/auto/tn/buscando-oferta" });
-    expect(completedResponse.status).toBe(200);
-    expect(completedBody).toMatchObject({
-      ok: true,
-      nextUrl: "/auto/tn/buscando-oferta",
-      answers: completedMatchingAnswers,
-    });
-    expect(matchingResponse.status).toBe(200);
-    expect(matchingBody).toMatchObject({
+    expect(carsBody).toMatchObject({
       ok: true,
       nextUrl: "/auto/tn/nombre",
-      answers: seenMatchingAnswers,
+      answers: preContactAnswers,
     });
   });
 
-  it("skips the matching route from previous-step checkpoints after it has been seen", async () => {
+  it("keeps disabled matching out of previous-step checkpoint routing", async () => {
     const handler = createFetchHandler();
     const response = await handler(
       new Request("http://localhost/api/forms/auto_tn/checkpoints", {
@@ -7403,6 +7442,7 @@ describe("server routing", () => {
         headers: {
           "Content-Type": "application/json",
           Cookie: createCheckpointCookie({
+            welcome_started: "started",
             belongs_to_state: "yes",
             has_license: "yes",
             has_insurance: "no",
@@ -7424,7 +7464,10 @@ describe("server routing", () => {
     const noResponse = await handler(
       new Request("http://localhost/api/forms/auto_tn/checkpoints", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: createCheckpointCookie({ welcome_started: "started" }),
+        },
         body: JSON.stringify({ questionKey: "belongs_to_state", answer: "no" }),
       }),
     );
@@ -7449,6 +7492,7 @@ describe("server routing", () => {
       ok: true,
       nextUrl: "/auto/tn/tiene-licencia",
       answers: {
+        welcome_started: "started",
         belongs_to_state: "no",
         residence_state: "TX",
       },
@@ -7463,7 +7507,7 @@ describe("server routing", () => {
         headers: {
           "Content-Type": "application/json",
           Cookie: createCheckpointCookie({
-            ...seenMatchingAnswers,
+            ...readyForContactAnswers,
             first_name: "Ana",
             last_name: "Lopez",
           }),
@@ -7556,7 +7600,11 @@ describe("server routing", () => {
         body: JSON.stringify({
           stepKey: "trustedform_consent",
           answers: {
-            ...preContactAnswers,
+            welcome_started: "started",
+            belongs_to_state: "yes",
+            has_license: "yes",
+            has_insurance: "no",
+            is_clean_title: "yes",
             first_name: "Ana",
             last_name: "Lopez",
             phone_number: "(615) 555-1234",
@@ -7616,7 +7664,7 @@ describe("server routing", () => {
         body: JSON.stringify({ questionKey: "residence_state", answer: "Texas" }),
       }),
     );
-    const invalidMatching = await handler(
+    const disabledMatching = await handler(
       new Request("http://localhost/api/forms/auto_tn/checkpoints", {
         method: "POST",
         headers: {
@@ -7624,23 +7672,6 @@ describe("server routing", () => {
           Cookie: createCheckpointCookie(preContactAnswers),
         },
         body: JSON.stringify({ questionKey: "matching_offer", answer: "nope" }),
-      }),
-    );
-    const prematureSeenMatching = await handler(
-      new Request("http://localhost/api/forms/auto_tn/checkpoints", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Cookie: createCheckpointCookie(preContactAnswers),
-        },
-        body: JSON.stringify({ questionKey: "matching_offer", answer: "seen" }),
-      }),
-    );
-    const tooEarlyMatching = await handler(
-      new Request("http://localhost/api/forms/auto_tn/checkpoints", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ questionKey: "matching_offer", answer: "seen" }),
       }),
     );
 
@@ -7652,12 +7683,8 @@ describe("server routing", () => {
     await expect(invalidState.text()).resolves.toContain("Ingrese un estado válido de Estados Unidos.");
     expect(hiddenState.status).toBe(400);
     await expect(hiddenState.text()).resolves.toContain("Esta pregunta no está disponible.");
-    expect(invalidMatching.status).toBe(400);
-    await expect(invalidMatching.text()).resolves.toContain("No pudimos completar este paso.");
-    expect(prematureSeenMatching.status).toBe(400);
-    await expect(prematureSeenMatching.text()).resolves.toContain("No pudimos completar este paso.");
-    expect(tooEarlyMatching.status).toBe(400);
-    await expect(tooEarlyMatching.text()).resolves.toContain("Esta pregunta no está disponible.");
+    expect(disabledMatching.status).toBe(404);
+    await expect(disabledMatching.text()).resolves.toContain("Esta pregunta no está disponible.");
   });
 
   it("prefills rendered fields from sanitized checkpoint cookies", async () => {
@@ -7666,7 +7693,7 @@ describe("server routing", () => {
       new Request("http://localhost/auto/tn/nombre", {
         headers: {
           Cookie: createCheckpointCookie({
-            ...seenMatchingAnswers,
+            ...readyForContactAnswers,
             first_name: "Ana",
           }),
         },
@@ -8786,10 +8813,10 @@ describe("form rendering", () => {
   });
 
   it("keeps source inline assets in dev and serves built inline assets in production", async () => {
-    const devHtml = await withNodeEnv("development", () => renderTennesseeForm());
-    const productionHtml = await withNodeEnv("production", () => renderTennesseeForm());
+    const devHtml = await withNodeEnv("development", () => renderTennesseeForm({ activeStepIndex: 1 }));
+    const productionHtml = await withNodeEnv("production", () => renderTennesseeForm({ activeStepIndex: 1 }));
     const productionTemplateHtml = await withNodeEnv("production", () =>
-      renderTennesseeForm({ formConfigExpression: FORM_CONFIG_PLACEHOLDER_EXPRESSION }),
+      renderTennesseeForm({ activeStepIndex: 1, formConfigExpression: FORM_CONFIG_PLACEHOLDER_EXPRESSION }),
     );
 
     expect(getInlineAssetMode("development")).toBe("source");
@@ -9152,7 +9179,7 @@ describe("form rendering", () => {
   });
 
   it("uses larger desktop controls while preserving mobile sizing rules", async () => {
-    const html = await renderTennesseeForm();
+    const html = await renderTennesseeForm({ activeStepIndex: 1 });
 
     expect(html).toContain("max-width: 100%;");
     expect(html).toContain("font-size: clamp(2rem, 4vw, 2.75rem);");
@@ -9218,7 +9245,7 @@ describe("form rendering", () => {
     expect(html).toContain("justify-self: center;");
     expect(html).toContain("@media (min-width: 561px)");
     expect(html).toContain("height: var(--form-desktop-height, 724px);");
-    expect(html).not.toContain("--form-desktop-height:");
+    expect(html).toContain('style="--form-desktop-height: 820px;"');
     expect(html).toContain('.step[data-step-kind="interstitial"] .matching-content');
     expect(html).not.toContain(".matching-content {\n          height: 156px;");
     expect(html).toContain("min-height: 78px;");
@@ -9268,7 +9295,7 @@ describe("form rendering", () => {
   });
 
   it("wires choice answers to delayed auto-advance on click and number keys", async () => {
-    const html = await renderTennesseeForm();
+    const html = await renderTennesseeForm({ activeStepIndex: 1 });
 
     expect(html).toContain('registerBehaviorModule("choice"');
     expect(html).toContain("function advanceAfterChoiceSelection(ctx, question, answer)");
@@ -9438,135 +9465,57 @@ describe("form rendering", () => {
     ).toThrow("ui.scrollHints.moreOptions is required.");
   });
 
-  it("renders the branded matching step with one-time auto-continue wiring", async () => {
-    const html = await renderTennesseeForm( {
-      activeStepIndex: 6,
-      answers: preContactAnswers,
-    });
+  it("renders the authored welcome interstitial without matching-offer markup", async () => {
+    const html = await renderTennesseeForm();
 
     expect(html).toContain('"kind":"interstitial"');
-    expect(html).toContain('"slug":"buscando-oferta"');
-    expect(html).toContain('"url":"/auto/tn/buscando-oferta"');
-    expect(html).not.toContain("Buscando opciones para ti...");
-    expect(html).toContain("Estamos buscando su seguro ideal");
-    expect(html).toContain("Revisando sus respuestas");
-    expect(html).toContain("Buscando agentes disponibles");
-    expect(html).toContain("Priorizando atención en español");
-    expect(html).toContain("Preparando opciones en Tennessee");
-    expect(html).not.toContain("{{areaName}}");
-    expect(html).toContain("¡Encontramos opciones para usted!");
-    expect(html).toContain("Descubra cuánto puede ahorrar...");
-    expect(html).toContain('"successLines":[{"text":"¡Encontramos opciones para usted!","color":"brand-navy"}');
-    expect(html).toContain('registerBehaviorModule("interstitial"');
-    expect(html).not.toContain('registerBehaviorModule("phone"');
-    expect(html).not.toContain('registerBehaviorModule("trusted_form_consent"');
-    expect(html).toContain("function showMatchingSuccess(question, elements, options = {})");
+    expect(html).toContain('"interstitialTiming":"welcome"');
+    expect(html).toContain('"slug":"inicio"');
+    expect(html).toContain('"url":"/auto/tn/inicio"');
+    expect(html).toContain('"key":"welcome_started"');
+    expect(html).toContain('"seenAnswer":"started"');
+    expect(html).toContain('"completionAnswer":"started"');
+    expect(html).toContain('"ctaLabel":"Empezar mi cotización"');
+    expect(html).toContain('data-interstitial-timing="welcome"');
+    expect(html).toContain("Seguro de auto claro, rápido y en español");
+    expect(html).toContain(
+      "Hemos ayudado a miles de latinos a comparar opciones de seguro de auto accesibles, claras y sin compromiso.",
+    );
+    expect(html).toContain('<li class="welcome-benefit">Atención en español</li>');
+    expect(html).toContain('<li class="welcome-benefit">Opciones para su estado</li>');
+    expect(html).toContain('<li class="welcome-benefit">Cotización rápida y sencilla</li>');
+    expect(html).toContain('<div class="actions actions-single actions-welcome">');
+    expect(html).toContain('<button class="button button-primary" id="next-button" name="next" type="button">Empezar mi cotización</button>');
+    expect(html).not.toContain('id="back-button"');
     expect(html).toContain('"countsAsStep":false');
-    expect(html).toContain("return question && question.countsAsStep !== false");
-    expect(html).toContain("function getCountedVisibleStepIndexes()");
-    expect(html).toContain("function getRenderedCountedStepNumber()");
-    expect(html).toContain("progressBar.style.width = (countedStepNumber / countedStepCount) * 100 + \"%\"");
-    expect(html).toContain("let matchingTextTransitionId = 0;");
-    expect(html).toContain("matchingTextTransitionId += 1;");
-    expect(html).toContain("function applyMatchingBenefitText(elements, text, className)");
-    expect(html).toContain("function fadeMatchingBenefitIn(elements, transitionId)");
-    expect(html).toContain("function setMatchingBenefitText(elements, text, className, options = {})");
-    expect(html).toContain('setMatchingBenefitText(elements, question.successLines, "is-success", options)');
-    expect(html).toContain("showMatchingSuccess(question, elements, { immediate: true })");
-    expect(html).toContain('elements.benefit.classList.add(className)');
-    expect(html).toContain("matchingBenefitFadeOutMs = 300");
-    expect(html).toContain("matchingBenefitFadeInMs = 420");
-    expect(html).toContain("matchingBenefitDisplayMs = 950");
-    expect(html).toContain("matchingBenefitMinCount = 3");
-    expect(html).toContain("matchingBenefitMaxCount = 4");
-    expect(html).toContain("function shuffleMatchingBenefits(benefits)");
-    expect(html).toContain("Math.floor(Math.random() * (index + 1))");
-    expect(html).toContain("function getRandomMatchingBenefitCount(availableBenefitCount)");
-    expect(html).toContain("Math.random() * (maxBenefitCount - minBenefitCount + 1)");
-    expect(html).toContain("function getMatchingBenefitTimeline(benefits)");
-    expect(html).toContain("const benefitTimeline = getMatchingBenefitTimeline(question.benefits)");
-    expect(html).toContain("duration: matchingBenefitDisplayMs");
-    expect(html).toContain("startsAt += matchingBenefitDisplayMs");
-    expect(html).toContain("benefitTiming.startsAt");
-    expect(html).toContain("const successDelay = benefitTimeline.reduce((totalDuration, benefitTiming) => totalDuration + benefitTiming.duration, 0) || matchingBenefitDisplayMs");
-    expect(html).toContain("is-fading-out");
-    expect(html).toContain("is-fading-in");
-    expect(html).toContain("is-visible");
-    expect(html).toContain(".matching-benefit.is-success");
-    expect(html).toContain("font-size: clamp(1.35rem, 3vw, 1.65rem)");
-    expect(html).toContain("line-height: 1.18");
-    expect(html).toContain("-webkit-text-stroke: 0.025em rgba(255, 253, 244, 0.9)");
-    expect(html).toContain("paint-order: stroke fill");
-    expect(html).toContain("white-space: pre-line");
-    expect(html).toContain(".matching-success-line");
-    expect(html).toContain('.matching-success-line[data-color="brand-navy"]');
-    expect(html).toContain("color: var(--brand-navy)");
-    expect(html).toContain('.matching-success-line[data-color="accent"]');
-    expect(html).toContain("color: var(--accent)");
-    expect(html).toContain("0 0.025em 0 rgba(255, 253, 244, 0.74)");
-    expect(html).toContain("0 0.1em 0.22em rgba(7, 59, 142, 0.14)");
-    expect(html).toContain("filter: drop-shadow(0 12px 24px rgba(7, 59, 142, 0.1))");
-    expect(html).not.toContain("0 14px 32px rgba(248, 0, 87, 0.16)");
-    expect(html).toContain("matching-benefit-fade-out 300ms ease forwards");
-    expect(html).toContain("matching-benefit-fade-in 420ms ease forwards");
-    expect(html).toContain("@keyframes matching-benefit-fade-out");
-    expect(html).toContain("@keyframes matching-benefit-fade-in");
-    expect(html).toContain("scheduleMatchingTimer(() =>");
-    expect(html).toContain("if (transitionId !== matchingTextTransitionId)");
-    expect(html).toContain("applyMatchingBenefitText(elements, text, className)");
-    expect(html).toContain("function renderMatchingBenefitContent(element, content, className)");
-    expect(html).toContain("element.replaceChildren()");
-    expect(html).toContain('if (className !== "is-success")');
-    expect(html).toContain('String(content).split("\\n")');
-    expect(html).toContain('lineElement.className = "matching-success-line"');
-    expect(html).toContain("lineElement.dataset.color = line.color");
-    expect(html).toContain("setMatchingBenefitText(elements, benefitTimeline[0]?.text ?? \"\", \"\", { initial: true })");
-    expect(html).not.toContain("onTextShown");
-    expect(html).toContain("getContext");
-    expect(html).not.toContain("cancelAnimationFrame");
-    expect(html).not.toContain("HTMLCanvasElement");
-    expect(html).not.toContain("drawCanvas");
-    expect(html).not.toContain("drawRoundedCanvasRect");
-    expect(html).not.toContain("<canvas");
-    expect(html).not.toContain("is-matching-success");
-    expect(html).toContain('elements.status.textContent = ""');
-    expect(html).toContain('question.kind === "interstitial" && answers[question.key] === question.seenAnswer');
-    expect(html).toContain("function shouldHideMatchingStep(question)");
-    expect(html).toContain("function replaceHiddenMatchingRouteIfNeeded()");
-    expect(html).toContain("function getNextVisibleStepIndexAfter(stepIndex)");
-    expect(html).toContain('window.addEventListener("pageshow"');
-    expect(html).toContain("event.persisted");
-    expect(html).toContain("window.location.reload()");
-    expect(html).toContain("function isStepAnswered(question)");
-    expect(html).toContain("const completedMatchingSteps = new Set();");
-    expect(html).toContain("function completeMatchingStep(ctx, question, runId)");
-    expect(html).toContain("function replaceToUrl(url)");
-    expect(html).toContain("completedMatchingSteps.add(question.key)");
-    expect(html).toContain("!completedMatchingSteps.has(question.key)");
-    expect(html).toContain('ctx.saveCheckpoint(question.key, question.completionAnswer)');
+    expect(html).toContain('<p class="step-count" data-step-count aria-hidden="true">Paso 1 de 9</p>');
+    expect(html).toContain('.step[data-interstitial-timing="welcome"][aria-hidden="false"]');
+    expect(html).toContain(".welcome-benefit {");
+    expect(html).toContain("font-size: clamp(0.95rem, 4vw, 1.05rem);");
+    expect(html).toContain("if (backButton) {");
+    expect(html).toContain('registerBehaviorModule("interstitial"');
+    expect(html).toContain("function isWelcomeQuestion(question)");
+    expect(html).toContain('return question && question.interstitialTiming === "welcome";');
+    expect(html).toContain("question.ctaLabel ? question.ctaLabel : undefined");
     expect(html).toContain('ctx.saveCheckpoint(question.key, question.seenAnswer)');
-    expect(html).toContain('ctx.setNextButtonLoading(getMatchingLoadingReason(question), true)');
-    expect(html).toContain('ctx.setNextButtonLoading(getMatchingLoadingReason(question), false)');
-    expect(html).toContain("ctx.replaceToUrl(nextUrl ?? ctx.getRenderedNextUrl())");
-    expect(html).toContain("ctx.updateNextButton(ctx.config.ui.actions.next, false)");
-    expect(html).not.toContain("matching-loader");
-    expect(html).not.toContain("data-matching-retry");
-    expect(html).not.toContain('.form-panel[data-active-kind="interstitial"] footer');
-    expect(html).toContain("overflow: visible");
+    expect(html).not.toContain('<p class="matching-status" data-matching-status></p>');
+    expect(html).not.toContain("Estamos buscando su seguro ideal");
+    expect(html).not.toContain("Preparando opciones en Tennessee");
+    expect(html).not.toContain("¡Encontramos opciones para usted!");
   });
 
   it("wires a forgiving US phone mask without blocking browser autofill", async () => {
     const firstNameHtml = await renderTennesseeForm( {
       activeStepIndex: 7,
-      answers: seenMatchingAnswers,
+      answers: readyForContactAnswers,
     });
     const lastNameHtml = await renderTennesseeForm( {
       activeStepIndex: 8,
-      answers: { ...seenMatchingAnswers, first_name: "Ana" },
+      answers: { ...readyForContactAnswers, first_name: "Ana" },
     });
     const html = await renderTennesseeForm( {
       activeStepIndex: 9,
-      answers: { ...seenMatchingAnswers, first_name: "Ana", last_name: "Lopez" },
+      answers: { ...readyForContactAnswers, first_name: "Ana", last_name: "Lopez" },
     });
 
     expect(html).toContain("font-weight: 400;");
@@ -9647,7 +9596,7 @@ describe("form rendering", () => {
   it("renders TrustedForm consent as an authored final step", async () => {
     const phoneHtml = await renderTennesseeForm({
       activeStepIndex: 9,
-      answers: { ...seenMatchingAnswers, first_name: "Ana", last_name: "Lopez" },
+      answers: { ...readyForContactAnswers, first_name: "Ana", last_name: "Lopez" },
     });
     const html = await renderTennesseeForm({
       activeStepIndex: 10,
@@ -9902,7 +9851,7 @@ describe("form rendering", () => {
   it("synthetically submits focused text fields on mobile blur", async () => {
     const html = await renderTennesseeForm( {
       activeStepIndex: 7,
-      answers: seenMatchingAnswers,
+      answers: readyForContactAnswers,
     });
 
     expect(html).toContain("function isMobileViewport()");
@@ -9941,17 +9890,19 @@ describe("form rendering", () => {
     expect(html).toContain('"eventName":"LeadProgress"');
     expect(html).not.toContain('"eventName":"Lead"');
     expect(html).not.toContain('"stateCode"');
-    expect(html).toContain('"slug":"vive-en-tennessee"');
+    expect(html).toContain('"slug":"inicio"');
+    expect(html).not.toContain('"slug":"vive-en-tennessee"');
     expect(html).not.toContain('"slug":"estado-donde-vive"');
     expect(html).not.toContain('"slug":"buscando-oferta"');
-    expect(html).toContain('"url":"/auto/tn/vive-en-tennessee"');
+    expect(html).toContain('"url":"/auto/tn/inicio"');
+    expect(html).not.toContain('"url":"/auto/tn/vive-en-tennessee"');
     expect(html).not.toContain('"url":"/auto/tn/estado-donde-vive"');
     expect(html).not.toContain('"url":"/auto/tn/buscando-oferta"');
-    expect(html).toContain('"stepUrlsBySlug":{"vive-en-tennessee":"/auto/tn/vive-en-tennessee"');
+    expect(html).toContain('"stepUrlsBySlug":{"inicio":"/auto/tn/inicio"');
+    expect(html).toContain('"vive-en-tennessee":"/auto/tn/vive-en-tennessee"');
     expect(html).toContain('"estado-donde-vive":"/auto/tn/estado-donde-vive"');
-    expect(html).toContain('"buscando-oferta":"/auto/tn/buscando-oferta"');
+    expect(html).not.toContain('"buscando-oferta":"/auto/tn/buscando-oferta"');
     expect(html).not.toContain('"showWhen":{"questionKey":"belongs_to_state","answer":"no"}');
-    expect(html).not.toContain('"autocompleteSources"');
     expect(html).toContain("window.history.replaceState");
     expect(html).toContain('window.addEventListener("popstate"');
     expect(html).toContain("getStepIndexForPath(window.location.pathname)");
@@ -9960,13 +9911,13 @@ describe("form rendering", () => {
 
   it("renders the requested active step and saved answers", async () => {
     const html = await renderTennesseeForm( {
-      activeStepIndex: 1,
+      activeStepIndex: 2,
       answers: { belongs_to_state: "no", residence_state: "TX" },
     });
 
-    expect(html).toContain('data-step="1" data-step-kind="autocomplete" data-step-counted="true" aria-hidden="false"');
+    expect(html).toContain('data-step="2" data-step-kind="autocomplete" data-step-counted="true" aria-hidden="false"');
     expect((html.match(/<article class="step"/g) ?? []).length).toBe(1);
-    expect(html).not.toContain('data-step="0" data-step-kind="choice"');
+    expect(html).not.toContain('data-step="1" data-step-kind="choice"');
     expect(html).toContain('value="TX"');
     expect(html).toContain('"initialAnswers":{"belongs_to_state":"no","residence_state":"TX"}');
     expect(html).toContain('"showWhen":{"questionKey":"belongs_to_state","answer":"no"}');
@@ -9975,7 +9926,7 @@ describe("form rendering", () => {
 
   it("renders the mobile-friendly state autocomplete wiring", async () => {
     const html = await renderTennesseeForm( {
-      activeStepIndex: 1,
+      activeStepIndex: 2,
       answers: { belongs_to_state: "no" },
     });
 

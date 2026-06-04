@@ -42,6 +42,24 @@ export function createHomeInsuranceSteps({ areaDisplayName }: CreateHomeInsuranc
     tfTag,
   }: FlowAuthoringHelpers<HomeInsuranceContract>) =>
     [
+      step.interstitial({
+        key: "welcome_started",
+        slug: "inicio",
+        label: "Proteja su hogar con una cotización clara",
+        interstitialTiming: "welcome",
+        loadingLabel:
+          "Hemos ayudado a miles de familias latinas a encontrar opciones de seguro de hogar para su propiedad, con atención en español y sin compromiso.",
+        ctaLabel: "Empezar mi cotización",
+        countsAsStep: false,
+        completionAnswer: "started",
+        seenAnswer: "started",
+        successLines: [],
+        benefits: [
+          "Opciones para propietarios e inquilinos",
+          "Atención en español",
+          "Cotización rápida y sin compromiso",
+        ],
+      }),
       step.choice({
         key: "property_in_state",
         slug: `propiedad-en-${slugifyTemplateValue(areaDisplayName)}`,
@@ -138,6 +156,7 @@ export function createHomeInsuranceSteps({ areaDisplayName }: CreateHomeInsuranc
           { key: "21_plus", label: ageRangeLabels["21_plus"] },
         ],
       }),
+      /*
       step.interstitial(
         {
           key: "matching_offer",
@@ -159,6 +178,7 @@ export function createHomeInsuranceSteps({ areaDisplayName }: CreateHomeInsuranc
           ],
         }),
       ),
+      */
       step.text({
         key: "first_name",
         slug: "nombre",

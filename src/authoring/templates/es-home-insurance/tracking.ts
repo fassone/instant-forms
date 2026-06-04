@@ -14,6 +14,7 @@ import { getCapturedLeadAttribution } from "./attribution";
 import type { HomeInsuranceContract } from "./contracts";
 
 const safePostHogAnswerKeys = new Set<string>([
+  "welcome_started",
   "property_in_state",
   "property_state",
   "ownership_status",

@@ -69,10 +69,12 @@ type RawAutocompleteStepInput = RawBaseStepInput & {
   validationMessage?: string;
 };
 type RawInterstitialStepInput = RawBaseStepInput & {
+  interstitialTiming?: NonNullable<StepBehavior["interstitialTiming"]>;
   loadingLabel?: string;
+  ctaLabel?: string;
   successLines: readonly InterstitialStep["successLines"][number][];
-  completionAnswer?: "completed";
-  seenAnswer?: "seen";
+  completionAnswer?: string;
+  seenAnswer?: string;
   benefits: readonly string[];
 };
 type RawInterstitialStepDynamicInput = Omit<RawInterstitialStepInput, "benefits"> & {
@@ -116,6 +118,9 @@ type RejectRemovedTrustedFormConsentInputKeys<TInput> = {
 type InputShowWhen<TInput> = TInput extends { readonly showWhen: infer TShowWhen }
   ? Extract<TShowWhen, StepCondition>
   : undefined;
+type InputInterstitialTiming<TInput> = TInput extends { readonly interstitialTiming: infer TTiming }
+  ? Extract<TTiming, NonNullable<StepBehavior["interstitialTiming"]>>
+  : "matching_offer";
 type ChoiceOptionKey<TOptions extends readonly ChoiceOptionInput[]> = TOptions[number]["key"];
 type InputReviewTitle<TInput> = TInput extends { readonly review: { readonly title: infer TReviewTitle } }
   ? Extract<TReviewTitle, TrustedFormConsentStepInput["review"]["title"]>
@@ -181,7 +186,7 @@ export type FlowStepBuilders<TContract extends FormContract> = Omit<
   readonly interstitial: {
     <const TInput extends RawInterstitialStepInput>(
       input: TInput,
-    ): InterstitialStep<TInput["key"], InputShowWhen<TInput>, undefined>;
+    ): InterstitialStep<TInput["key"], InputShowWhen<TInput>, undefined, InputInterstitialTiming<TInput>>;
     <
       const TInput extends RawInterstitialStepDynamicInput,
       const TDependencies extends readonly ContractAnswerKey<TContract>[],
@@ -193,7 +198,8 @@ export type FlowStepBuilders<TContract extends FormContract> = Omit<
     ): InterstitialStep<
       TInput["key"],
       InputShowWhen<TInput>,
-      DynamicResolverContext<TDependencies[number], InterstitialStepDynamicBody>
+      DynamicResolverContext<TDependencies[number], InterstitialStepDynamicBody>,
+      InputInterstitialTiming<TInput>
     >;
   };
   readonly trustedFormConsent: {
@@ -322,7 +328,7 @@ export function createFlowAuthoringHelpers<TContract extends FormContract>(
 
 function createInterstitialStep<const TInput extends RawInterstitialStepInput>(
   input: TInput,
-): InterstitialStep<TInput["key"], InputShowWhen<TInput>, undefined>;
+): InterstitialStep<TInput["key"], InputShowWhen<TInput>, undefined, InputInterstitialTiming<TInput>>;
 function createInterstitialStep<
   const TInput extends RawInterstitialStepDynamicInput,
   const TDependencies extends readonly string[],
@@ -334,7 +340,8 @@ function createInterstitialStep<
 ): InterstitialStep<
   TInput["key"],
   InputShowWhen<TInput>,
-  DynamicResolverContext<TDependencies[number], InterstitialStepDynamicBody>
+  DynamicResolverContext<TDependencies[number], InterstitialStepDynamicBody>,
+  InputInterstitialTiming<TInput>
 >;
 function createInterstitialStep(
   input: RawInterstitialStepInput | RawInterstitialStepDynamicInput,
@@ -343,14 +350,28 @@ function createInterstitialStep(
     context: Readonly<Record<string, string | undefined>>;
     answers: Readonly<Record<string, string>>;
   }) => InterstitialStepDynamicBody,
-): InterstitialStep<string, StepCondition | undefined> {
+): InterstitialStep<
+  string,
+  StepCondition | undefined,
+  DynamicResolverContext<string, InterstitialStepDynamicBody> | undefined,
+  NonNullable<StepBehavior["interstitialTiming"]>
+> {
   const dynamic = dependencies && resolver ? resolve(dependencies, resolver) : undefined;
+  const interstitialTiming = input.interstitialTiming ?? "matching_offer";
+
+  if (interstitialTiming !== "welcome" && interstitialTiming !== "matching_offer") {
+    throw new Error('interstitialTiming must be "welcome" or "matching_offer".');
+  }
 
   return {
-    ...baseStep(input, "interstitial", "checkpoint_only", { interstitialTiming: "matching_offer" }),
+    ...baseStep(input, "interstitial", "checkpoint_only", {
+      interstitialTiming,
+    }),
     kind: "interstitial",
     type: "INTERSTITIAL",
+    interstitialTiming,
     loadingLabel: input.loadingLabel ?? "",
+    ctaLabel: input.ctaLabel ?? "",
     successLines: input.successLines,
     completionAnswer: input.completionAnswer ?? "completed",
     seenAnswer: input.seenAnswer ?? "seen",

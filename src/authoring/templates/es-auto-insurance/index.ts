@@ -48,6 +48,9 @@ export const esAutoInsuranceTemplate = defineFormTemplate({
       page: {
         name: variables.pageName,
         meta: createEsAutoInsurancePageMeta(areaDisplayName),
+        presentation: {
+          desktopHeightPx: 820,
+        },
       },
       postSubmit: esAutoInsurancePostSubmit,
       attribution: createLeadAttribution(),

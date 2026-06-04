@@ -81,7 +81,9 @@ export type ClientStep =
   | (ClientStepBase & {
       kind: "interstitial";
       type: InterstitialStep["type"];
+      interstitialTiming: InterstitialStep["interstitialTiming"];
       loadingLabel: string;
+      ctaLabel: string;
       successLines: InterstitialStep["successLines"];
       completionAnswer: InterstitialStep["completionAnswer"];
       seenAnswer: InterstitialStep["seenAnswer"];
@@ -281,7 +283,9 @@ function createClientStep(
       ...baseStep,
       kind: "interstitial",
       type: resolvedInterstitialStep.type,
+      interstitialTiming: resolvedInterstitialStep.interstitialTiming,
       loadingLabel: resolvedInterstitialStep.loadingLabel,
+      ctaLabel: resolvedInterstitialStep.ctaLabel,
       successLines: resolvedInterstitialStep.successLines,
       completionAnswer: resolvedInterstitialStep.completionAnswer,
       seenAnswer: resolvedInterstitialStep.seenAnswer,

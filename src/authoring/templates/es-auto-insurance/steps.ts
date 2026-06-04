@@ -11,6 +11,20 @@ type CreateAutoInsuranceStepsInput = {
 export function createAutoInsuranceSteps({ areaDisplayName }: CreateAutoInsuranceStepsInput) {
   return ({ step, text, md, phoneDisplay, stateDisplay, consentMd, tfTag }: FlowAuthoringHelpers<AutoInsuranceContract>) =>
     [
+      step.interstitial({
+        key: "welcome_started",
+        slug: "inicio",
+        label: "Seguro de auto claro, rápido y en español",
+        interstitialTiming: "welcome",
+        loadingLabel:
+          "Hemos ayudado a miles de latinos a comparar opciones de seguro de auto accesibles, claras y sin compromiso.",
+        ctaLabel: "Empezar mi cotización",
+        countsAsStep: false,
+        completionAnswer: "started",
+        seenAnswer: "started",
+        successLines: [],
+        benefits: ["Atención en español", "Opciones para su estado", "Cotización rápida y sencilla"],
+      }),
       step.choice({
         key: "belongs_to_state",
         slug: `vive-en-${slugifyTemplateValue(areaDisplayName)}`,
@@ -67,6 +81,7 @@ export function createAutoInsuranceSteps({ areaDisplayName }: CreateAutoInsuranc
           { key: "2+", label: "2+" },
         ],
       }),
+      /*
       step.interstitial(
         {
           key: "matching_offer",
@@ -88,6 +103,7 @@ export function createAutoInsuranceSteps({ areaDisplayName }: CreateAutoInsuranc
           ],
         }),
       ),
+      */
       step.text({
         key: "first_name",
         slug: "nombre",

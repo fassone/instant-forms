@@ -75,6 +75,8 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
   const initialNextButtonLabel =
     activeStep?.kind === "trusted_form_consent"
       ? activeStep.review.nextLabel || form.ui.actions.next
+      : activeStep?.kind === "interstitial" && activeStep.ctaLabel
+        ? activeStep.ctaLabel
       : activeStepIndex === lastStepIndex
         ? form.ui.actions.submit
         : form.ui.actions.next;
@@ -83,7 +85,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
     : activeStep
       ? renderQuestion(activeStep, activeStepIndex, activeStepIndex, initialAnswers, form)
       : "";
-  const renderedFooter = isPostSubmit ? renderPostSubmitFooter(form) : renderFormFooter(form, initialNextButtonLabel);
+  const renderedFooter = isPostSubmit ? renderPostSubmitFooter(form) : renderFormFooter(form, initialNextButtonLabel, activeStep);
   const formStyleAttribute = getFormPanelStyleAttribute(form);
   const initialActiveStepKind = isPostSubmit ? "post_submit" : activeStepKind;
   const sharedFormAttributes = ` data-form-chrome="${escapeHtml(initialFormChrome)}" data-active-step-kind="${escapeHtml(initialActiveStepKind)}"${renderedFooter.trim() ? ' data-has-footer="true"' : ""}`;
@@ -346,9 +348,19 @@ ${pageMetaTags}
       .step[data-step-kind="interstitial"][aria-hidden="false"] {
         display: grid;
         grid-template-rows: auto minmax(0, 1fr);
+        gap: 20px;
         height: 100%;
         min-height: 0;
         align-self: stretch;
+      }
+
+      .step[data-interstitial-timing="welcome"][aria-hidden="false"] {
+        align-content: start;
+        overflow: visible;
+      }
+
+      .step[data-interstitial-timing="welcome"] .question-title {
+        margin: 0;
       }
 
       .step[data-step-kind="choice"][aria-hidden="false"] {
@@ -513,6 +525,80 @@ ${pageMetaTags}
 
       .matching-status:empty {
         display: none;
+      }
+
+      .welcome-content {
+        display: grid;
+        grid-row: 2;
+        align-self: stretch;
+        align-content: start;
+        justify-items: stretch;
+        gap: 22px;
+        height: 100%;
+        min-height: 0;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        padding: 2px 4px 2px 0;
+        -webkit-overflow-scrolling: touch;
+      }
+
+      .welcome-body {
+        min-width: 0;
+        margin: 0;
+        color: var(--muted);
+        font-size: clamp(1.08rem, 2.4vw, 1.28rem);
+        font-weight: 650;
+        line-height: 1.45;
+        text-wrap: balance;
+        overflow-wrap: anywhere;
+      }
+
+      .welcome-benefits {
+        display: grid;
+        gap: 12px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .welcome-benefit {
+        position: relative;
+        display: grid;
+        grid-template-columns: 28px minmax(0, 1fr);
+        align-items: center;
+        gap: 12px;
+        min-height: 56px;
+        padding: 12px 14px;
+        border: 1px solid rgba(7, 59, 142, 0.16);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.72);
+        color: var(--text);
+        font-size: clamp(1rem, 2.2vw, 1.12rem);
+        font-weight: 800;
+        line-height: 1.25;
+        overflow-wrap: anywhere;
+      }
+
+      .welcome-benefit::before {
+        content: "";
+        width: 28px;
+        height: 28px;
+        border-radius: 999px;
+        background:
+          linear-gradient(135deg, var(--brand-blue), var(--accent));
+        box-shadow: 0 8px 18px rgba(7, 59, 142, 0.18);
+      }
+
+      .welcome-benefit::after {
+        content: "";
+        position: absolute;
+        left: 23px;
+        top: 50%;
+        width: 7px;
+        height: 12px;
+        border: solid #fff;
+        border-width: 0 3px 3px 0;
+        transform: translateY(-58%) rotate(45deg);
       }
 
       .choice-options-shell {
@@ -1031,6 +1117,14 @@ ${pageMetaTags}
         justify-content: flex-end;
       }
 
+      .actions-welcome {
+        justify-content: stretch;
+      }
+
+      .actions-welcome .button {
+        width: 100%;
+      }
+
       .form-panel[data-form-view="post-submit"] .actions-single {
         justify-content: stretch;
       }
@@ -1357,6 +1451,49 @@ ${pageMetaTags}
           gap: var(--mfs-16);
         }
 
+        .step[data-interstitial-timing="welcome"][aria-hidden="false"] {
+          gap: var(--mfs-16);
+        }
+
+        .step[data-interstitial-timing="welcome"] .question-title {
+          font-size: clamp(2rem, 8.2vw, 2.55rem);
+          line-height: 1.05;
+        }
+
+        .welcome-content {
+          gap: var(--mfs-16);
+          padding: var(--mfs-2) var(--mfs-4) var(--mfs-2) 0;
+        }
+
+        .welcome-body {
+          font-size: clamp(1rem, 4.2vw, 1.12rem);
+          line-height: 1.35;
+        }
+
+        .welcome-benefits {
+          gap: var(--mfs-10);
+        }
+
+        .welcome-benefit {
+          grid-template-columns: var(--mfs-28) minmax(0, 1fr);
+          gap: var(--mfs-12);
+          min-height: var(--mfs-56);
+          padding: var(--mfs-10) var(--mfs-12);
+          font-size: clamp(0.95rem, 4vw, 1.05rem);
+        }
+
+        .welcome-benefit::before {
+          width: var(--mfs-28);
+          height: var(--mfs-28);
+        }
+
+        .welcome-benefit::after {
+          left: calc(var(--mfs-12) + var(--mfs-10));
+          width: var(--mfs-6);
+          height: var(--mfs-10);
+          border-width: 0 var(--mfs-3) var(--mfs-3) 0;
+        }
+
         .step[data-step-kind="choice"] {
           --choice-options-gap: var(--mfs-12);
           --choice-option-min-height: var(--mfs-64);
@@ -1681,11 +1818,18 @@ function renderPostSubmitAppLinkScript(form: InstantForm): string {
     </script>`;
 }
 
-function renderFormFooter(form: InstantForm, nextButtonLabel: string): string {
+function renderFormFooter(form: InstantForm, nextButtonLabel: string, activeStep?: FormStep): string {
+  const isWelcomeInterstitial = activeStep?.kind === "interstitial" && activeStep.interstitialTiming === "welcome";
+  const actionsClass = isWelcomeInterstitial ? "actions actions-single actions-welcome" : "actions";
+  const backButton = isWelcomeInterstitial
+    ? ""
+    : `
+            <button class="button button-secondary" id="back-button" name="back" type="button">${escapeHtml(form.ui.actions.back)}</button>`;
+
   return `
         <footer>
-          <div class="actions">
-            <button class="button button-secondary" id="back-button" name="back" type="button">${escapeHtml(form.ui.actions.back)}</button>
+          <div class="${actionsClass}">
+            ${backButton}
             <button class="button button-primary" id="next-button" name="next" type="button">${escapeHtml(nextButtonLabel)}</button>
           </div>
         </footer>`;
@@ -1919,8 +2063,12 @@ function renderQuestion(
     stepDefinition.kind === "choice"
       ? ` data-choice-size="${escapeHtml(stepDefinition.presentation?.choiceSize ?? "default")}"`
       : "";
+  const interstitialTimingAttribute =
+    stepDefinition.kind === "interstitial"
+      ? ` data-interstitial-timing="${escapeHtml(stepDefinition.interstitialTiming)}"`
+      : "";
 
-  return `<article class="step" data-step="${index}" data-step-kind="${escapeHtml(stepDefinition.kind)}"${choiceSizeAttribute} data-step-counted="${String(countsAsStep)}" aria-hidden="${String(!isCurrent)}"${isCurrent ? "" : " inert"}>
+  return `<article class="step" data-step="${index}" data-step-kind="${escapeHtml(stepDefinition.kind)}"${choiceSizeAttribute}${interstitialTimingAttribute} data-step-counted="${String(countsAsStep)}" aria-hidden="${String(!isCurrent)}"${isCurrent ? "" : " inert"}>
     <h1 class="question-title" data-question-title>${getQuestionTitleHtml(stepDefinition)}</h1>
     ${renderQuestionDescription(stepDefinition)}
     ${renderTemplate(stepDefinition, answers, { form, index })}
@@ -1945,6 +2093,21 @@ function renderQuestionDescription(stepDefinition: FormStep): string {
 }
 
 function renderInterstitial(stepDefinition: InterstitialStep, answers: Record<string, string>): string {
+  if (stepDefinition.interstitialTiming === "welcome") {
+    const benefits = Array.isArray(stepDefinition.benefits) ? stepDefinition.benefits : [];
+
+    return `<div class="welcome-content" data-welcome-content>
+    ${stepDefinition.loadingLabel ? `<p class="welcome-body">${escapeHtml(stepDefinition.loadingLabel)}</p>` : ""}
+    ${
+      benefits.length > 0
+        ? `<ul class="welcome-benefits">
+      ${benefits.map((benefit) => `<li class="welcome-benefit">${escapeHtml(benefit)}</li>`).join("")}
+    </ul>`
+        : ""
+    }
+  </div>`;
+  }
+
   const answer = answers[stepDefinition.key];
   const isComplete = answer === stepDefinition.completionAnswer || answer === stepDefinition.seenAnswer;
   const benefitClass = isComplete ? "matching-benefit is-success is-visible" : "matching-benefit";

@@ -315,7 +315,7 @@ export type StepBehavior = {
   mobileBlurSubmit?: boolean;
   mask?: "us_phone";
   suggestions?: "autocomplete";
-  interstitialTiming?: "matching_offer";
+  interstitialTiming?: "welcome" | "matching_offer";
   trustedForm?: "certify";
 };
 
@@ -489,13 +489,16 @@ export type InterstitialStep<
   TDynamic extends StepDynamicResolver<string, InterstitialStepDynamicBody> | undefined =
     | StepDynamicResolver<string, InterstitialStepDynamicBody>
     | undefined,
+  TTiming extends NonNullable<StepBehavior["interstitialTiming"]> = NonNullable<StepBehavior["interstitialTiming"]>,
 > = BaseStep<TKey, TShowWhen> & {
   kind: "interstitial";
   type: "INTERSTITIAL";
+  interstitialTiming: TTiming;
   loadingLabel: string;
+  ctaLabel: string;
   successLines: readonly InterstitialSuccessLine[];
-  completionAnswer: "completed";
-  seenAnswer: "seen";
+  completionAnswer: string;
+  seenAnswer: string;
   benefits: readonly string[];
   dynamic?: TDynamic;
 };
@@ -823,10 +826,12 @@ export type InterstitialStepInput<
   TKey extends string = string,
   TShowWhen extends StepCondition | undefined = StepCondition | undefined,
 > = BaseStepInput<TKey, TShowWhen> & {
+  interstitialTiming?: NonNullable<StepBehavior["interstitialTiming"]>;
   loadingLabel?: string;
+  ctaLabel?: string;
   successLines: readonly InterstitialSuccessLine[];
-  completionAnswer?: "completed";
-  seenAnswer?: "seen";
+  completionAnswer?: string;
+  seenAnswer?: string;
   benefits: readonly string[];
 };
 
@@ -948,6 +953,21 @@ export type ForwardDynamicResolverDependencyKeys<
           >
     : ForwardDynamicResolverDependencyKeys<TTail extends readonly FormStep[] ? TTail : readonly [], TSeenAnswerKeys>
   : never;
+export type WelcomeInterstitialStepKey<TStep> = TStep extends {
+  kind: "interstitial";
+  interstitialTiming: "welcome";
+  key: infer TKey;
+}
+  ? NarrowString<TKey>
+  : never;
+export type LaterWelcomeInterstitialStepKeys<TSteps extends readonly FormStep[]> =
+  TSteps extends readonly [unknown, ...infer TTail]
+    ? TTail[number] extends infer TStep
+      ? TStep extends FormStep
+        ? WelcomeInterstitialStepKey<TStep>
+        : never
+      : never
+    : never;
 export type PriorAnswerStepKeys<TSteps extends readonly FormStep[], TSeenAnswerKeys extends string = never> =
   TSteps extends readonly [infer THead, ...infer TTail]
     ? THead extends FormStep
@@ -992,7 +1012,10 @@ export type EnforceAnswerStepKeys<TContract extends FormContract, TSteps extends
     : { readonly __unknownDynamicResolverDependencyKeys: UnknownDynamicResolverDependencyKeys<TContract, TSteps> }) &
   (ForwardDynamicResolverDependencyKeys<TSteps> extends never
     ? unknown
-    : { readonly __forwardDynamicResolverDependencyKeys: ForwardDynamicResolverDependencyKeys<TSteps> });
+    : { readonly __forwardDynamicResolverDependencyKeys: ForwardDynamicResolverDependencyKeys<TSteps> }) &
+  (LaterWelcomeInterstitialStepKeys<TSteps> extends never
+    ? unknown
+    : { readonly __welcomeInterstitialMustBeFirstStep: LaterWelcomeInterstitialStepKeys<TSteps> });
 
 export type FormFlowDefinitionBase<TContract extends FormContract = FormContract> = {
   name: string;

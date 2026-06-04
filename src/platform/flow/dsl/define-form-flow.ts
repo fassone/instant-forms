@@ -98,8 +98,9 @@ function assertAnswerStepContract(
   const expectedAnswerKeys = new Set(getSchemaKeys(contract.answers));
   const seenAnswerKeys = new Set<string>();
 
-  for (const stepDefinition of steps) {
+  for (const [index, stepDefinition] of steps.entries()) {
     assertStepPresentation(stepDefinition);
+    assertWelcomeInterstitialPlacement(stepDefinition, index);
     assertShowWhenContract(contract, stepDefinition, seenAnswerKeys);
     assertDynamicResolverDependencies(contract, stepDefinition, seenAnswerKeys);
     assertStepTrackingContract(contract, stepDefinition);
@@ -129,6 +130,14 @@ function assertAnswerStepContract(
   if (missingAnswerKeys.length > 0) {
     throw new Error(`contract.answers includes keys without answer-producing steps: ${missingAnswerKeys.join(", ")}.`);
   }
+}
+
+function assertWelcomeInterstitialPlacement(stepDefinition: FormStep, index: number): void {
+  if (stepDefinition.kind !== "interstitial" || stepDefinition.interstitialTiming !== "welcome" || index === 0) {
+    return;
+  }
+
+  throw new Error(`Welcome interstitial step "${stepDefinition.key}" must be the first step.`);
 }
 
 function assertDynamicResolverDependencies(
@@ -586,6 +595,7 @@ function getStepTemplateStrings(stepDefinition: FormStep): string[] {
   if (stepDefinition.kind === "interstitial") {
     values.push(
       stepDefinition.loadingLabel,
+      stepDefinition.ctaLabel,
       ...stepDefinition.benefits,
       ...stepDefinition.successLines.map((line) => line.text),
     );
