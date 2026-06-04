@@ -137,6 +137,10 @@ export function createPostHogCaptureEffect<TContract extends FormContract>({
         throw new Error("PostHog visitor id is unavailable.");
       }
 
+      if (!input.session?.id) {
+        throw new Error("PostHog session id is unavailable.");
+      }
+
       const response = await fetch(captureUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -149,7 +153,6 @@ export function createPostHogCaptureEffect<TContract extends FormContract>({
             ...createSafePostHogProperties(input),
             ...createAnswerProperties(input, getSafeAnswerValue),
             ...(getProperties?.(input) ?? {}),
-            $process_person_profile: false,
           }),
         }),
       });
@@ -181,6 +184,7 @@ function createSafePostHogProperties(input: TrackingServerEventInput): Record<st
     answer_key: getStringProperty(input.event.answer_key),
     trusted_form_substep: getStringProperty(input.event.trusted_form_substep),
     submission_id: input.submission?.id,
+    $session_id: input.session?.id,
     $current_url: currentUrl,
     ...urlProperties,
     ...referrerProperties,

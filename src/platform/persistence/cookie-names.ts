@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-type PlatformCookiePurpose = "checkpoint" | "postSubmit" | "trackingVisitorId";
+type PlatformCookiePurpose = "checkpoint" | "postSubmit" | "trackingVisitorId" | "trackingSessionId";
 
 const COOKIE_NAME_PREFIX = "if_";
 const COOKIE_NAME_HASH_LENGTH = 16;
@@ -24,6 +24,10 @@ export function getLegacyPostSubmitCookieName(routeKey: string): string {
 
 export function getTrackingVisitorIdCookieName(): string {
   return createOpaqueCookieName("trackingVisitorId");
+}
+
+export function getTrackingSessionIdCookieName(): string {
+  return createOpaqueCookieName("trackingSessionId");
 }
 
 export function getLegacyTrackingVisitorIdCookieName(): string {

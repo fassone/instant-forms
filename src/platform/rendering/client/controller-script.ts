@@ -88,6 +88,8 @@ function getCoreRuntimeScript(): string {
   const trustedFormPreloadedResources = new Set();
   const initialTrackingEventKeys = new Set((Array.isArray(config.initialTrackingEvents) ? config.initialTrackingEvents : []).map(getTrackingEventKey));
   let lastTrackedStepViewKey = "";
+  let lastServerTrackedStepViewKey = "";
+  let hasCompletedInitialStepViewTracking = false;
 
   function registerBehaviorModule(kind, module) {
     behaviorModules[kind] = module;
@@ -1599,12 +1601,61 @@ function getCoreRuntimeScript(): string {
 
   function trackStepView(question, stepIndex) {
     const trackingKey = question ? question.url + "|" + question.key : "";
-    if (!question || trackingKey === lastTrackedStepViewKey) {
+    if (!question) {
       return;
     }
 
-    lastTrackedStepViewKey = trackingKey;
-    trackFormEvent("stepView", getStepTrackingPayload(question, stepIndex));
+    if (trackingKey !== lastTrackedStepViewKey) {
+      lastTrackedStepViewKey = trackingKey;
+      trackFormEvent("stepView", getStepTrackingPayload(question, stepIndex));
+    }
+
+    if (!hasCompletedInitialStepViewTracking) {
+      hasCompletedInitialStepViewTracking = true;
+      lastServerTrackedStepViewKey = trackingKey;
+      return;
+    }
+
+    if (trackingKey === lastServerTrackedStepViewKey) {
+      return;
+    }
+
+    lastServerTrackedStepViewKey = trackingKey;
+    trackServerStepViewTransition(question);
+  }
+
+  function trackServerStepViewTransition(question) {
+    if (!question || config.previewMode) {
+      return;
+    }
+
+    const eventKinds = [];
+    if (isServerTrackedEvent("stepView", question)) {
+      eventKinds.push("stepView");
+    }
+    if (config.tracking?.serverEvents?.postHogPageView) {
+      eventKinds.push("postHogPageView");
+    }
+    if (eventKinds.length === 0) {
+      return;
+    }
+
+    const tracking = {
+      ...getMetaBrowserTrackingData(),
+      eventSourceUrl: window.location.href,
+    };
+
+    void fetch("/api/forms/" + encodeURIComponent(config.routeKey) + "/tracking-events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        eventKinds,
+        stepKey: question.key,
+        answers,
+        currentUrl: window.location.href,
+        tracking,
+      }),
+    }).catch(() => undefined);
   }
 
   function trackFormEvent(eventKind, payload = {}) {

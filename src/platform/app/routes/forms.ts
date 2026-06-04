@@ -57,6 +57,8 @@ type NativeFormData = {
   get(name: string): unknown;
 };
 
+type TrackingEventRequestKind = "stepView" | "postHogPageView" | "trustedFormSubstepView";
+
 export function registerFormRoutes(
   app: Hono,
   routes: FormRoutes,
@@ -393,22 +395,24 @@ export function registerFormRoutes(
       return jsonResponse(c, { ok: false, errors: [{ field: "body", message: routeEntry.form.ui.errors.submissionFailed }] }, 400);
     }
 
-    const eventKind = typeof body.value.eventKind === "string" ? body.value.eventKind : "";
-    if (eventKind !== "trustedFormSubstepView") {
+    const requestBody = body.value;
+    const eventKinds = getTrackingEventKinds(requestBody);
+    if (eventKinds.length === 0 || eventKinds.some((eventKind) => !isSupportedTrackingEventKind(eventKind))) {
       logFormEvent(c, eventLogger, {
         level: "warn",
         event: "tracking_event.rejected",
         routeKey: routeEntry.routeKey,
         form: routeEntry.form,
         status: 400,
-        data: { eventKind, reason: "unsupported_event" },
+        data: { eventKinds, reason: "unsupported_event" },
       });
       return jsonResponse(c, { ok: false, errors: [{ field: "eventKind", message: "Tracking event is not available." }] }, 400);
     }
 
-    const stepKey = typeof body.value.stepKey === "string" ? body.value.stepKey : "";
+    const stepKey = typeof requestBody.stepKey === "string" ? requestBody.stepKey : "";
     const stepDefinition = getStepByKey(routeEntry.form, stepKey);
-    if (!stepDefinition || stepDefinition.kind !== "trusted_form_consent") {
+    const includesTrustedFormSubstepView = eventKinds.includes("trustedFormSubstepView");
+    if (!stepDefinition || (includesTrustedFormSubstepView && stepDefinition.kind !== "trusted_form_consent")) {
       logFormEvent(c, eventLogger, {
         level: "warn",
         event: "tracking_event.rejected",
@@ -421,7 +425,7 @@ export function registerFormRoutes(
     }
 
     const stepIndex = routeEntry.form.steps.findIndex((candidate) => candidate.key === stepDefinition.key);
-    const answerSnapshot = isRecord(body.value.answers) ? body.value.answers : {};
+    const answerSnapshot = isRecord(requestBody.answers) ? requestBody.answers : {};
     const checkpointAnswers = readCheckpointAnswers(c, routeEntry.form, routeEntry.routeKey);
     const sanitizedAnswers = sanitizeCheckpointAnswers(routeEntry.form, { ...checkpointAnswers, ...answerSnapshot });
 
@@ -433,24 +437,45 @@ export function registerFormRoutes(
         form: routeEntry.form,
         stepKey: stepDefinition.key,
         status: 400,
-        data: { eventKind, reason: "step_not_accessible" },
+        data: { eventKinds, reason: "step_not_accessible" },
       });
       return jsonResponse(c, { ok: false, errors: [{ field: "stepKey", message: routeEntry.form.ui.errors.unavailableQuestion }] }, 400);
     }
 
-    const trustedFormSubstep = body.value.trustedFormSubstep === "consent" ? "consent" : "review";
-    const trackingEvents = createTrustedFormSubstepTrackingEvents(
-      c,
-      routeEntry.form,
-      routeEntry.routeKey,
-      getFormRouteStepUrl(routeEntry.routeSegments, stepDefinition),
-      stepDefinition,
-      stepIndex,
-      trustedFormSubstep,
-      sanitizedAnswers,
-      getJsonMetaBrowserIds(body.value),
-      eventLogger,
-    );
+    const trustedFormSubstep = requestBody.trustedFormSubstep === "consent" ? "consent" : "review";
+    const stepUrl = getFormRouteStepUrl(routeEntry.routeSegments, stepDefinition);
+    const browserIds = getJsonMetaBrowserIds(requestBody);
+    const trackingEvents = eventKinds.flatMap((eventKind) => {
+      if (eventKind === "trustedFormSubstepView") {
+        return createTrustedFormSubstepTrackingEvents(
+          c,
+          routeEntry.form,
+          routeEntry.routeKey,
+          stepUrl,
+          stepDefinition,
+          stepIndex,
+          trustedFormSubstep,
+          sanitizedAnswers,
+          browserIds,
+          eventLogger,
+        );
+      }
+
+      createViewTrackingEvent(
+        c,
+        routeEntry.form,
+        routeEntry.routeKey,
+        stepUrl,
+        stepDefinition,
+        stepIndex,
+        eventKind,
+        sanitizedAnswers,
+        getClientCurrentUrl(requestBody),
+        browserIds,
+        eventLogger,
+      );
+      return [];
+    });
     logFormEvent(c, eventLogger, {
       level: "info",
       event: "tracking_event.accepted",
@@ -458,7 +483,7 @@ export function registerFormRoutes(
       form: routeEntry.form,
       stepKey: stepDefinition.key,
       status: 200,
-      data: { eventKind, trustedFormSubstep, trackingEventCount: trackingEvents.length },
+      data: { eventKinds, trustedFormSubstep, trackingEventCount: trackingEvents.length },
     });
 
     return jsonResponse(c, { ok: true, trackingEvents }, 200);
@@ -983,6 +1008,78 @@ function createTrustedFormSubstepTrackingEvents(
   });
 
   return lifecycleEvent ? [lifecycleEvent.payload] : [];
+}
+
+function createViewTrackingEvent(
+  c: Context,
+  form: InstantForm,
+  routeKey: string,
+  stepUrl: string,
+  step: FormStep,
+  stepIndex: number,
+  kind: "stepView" | "postHogPageView",
+  answers: Record<string, string>,
+  clientCurrentUrl: string | undefined,
+  browserIds: MetaBrowserIds = {},
+  eventLogger?: InstantFormLogger,
+): void {
+  const eventSourceUrl = getTrackingEventSourceUrl(c.req.raw.url, stepUrl, clientCurrentUrl, browserIds.eventSourceUrl);
+  const lifecycleEvent = createLifecycleTrackingEvent({
+    form,
+    routeKey,
+    kind,
+    step,
+    stepIndex: stepIndex === -1 ? undefined : stepIndex,
+    answers,
+    browserIds,
+    eventId: crypto.randomUUID(),
+    eventSourceUrl,
+    requireServerBuilt: true,
+  });
+  scheduleTrackingServerCallback(c, form, routeKey, lifecycleEvent, {
+    answers,
+    step,
+    stepIndex: stepIndex === -1 ? undefined : stepIndex,
+    logger: eventLogger,
+  });
+}
+
+function getTrackingEventKinds(input: Record<string, unknown>): TrackingEventRequestKind[] {
+  const rawEventKinds = Array.isArray(input.eventKinds) ? input.eventKinds : [input.eventKind];
+  return rawEventKinds.flatMap((eventKind) => (typeof eventKind === "string" ? [eventKind as TrackingEventRequestKind] : []));
+}
+
+function isSupportedTrackingEventKind(eventKind: TrackingEventRequestKind): boolean {
+  return eventKind === "stepView" || eventKind === "postHogPageView" || eventKind === "trustedFormSubstepView";
+}
+
+function getClientCurrentUrl(input: Record<string, unknown>): string | undefined {
+  return typeof input.currentUrl === "string" && input.currentUrl.trim() ? input.currentUrl.trim() : undefined;
+}
+
+function getTrackingEventSourceUrl(
+  requestUrl: string,
+  stepUrl: string,
+  clientCurrentUrl: string | undefined,
+  browserEventSourceUrl: string | undefined,
+): string {
+  return (
+    getAbsoluteUrlCandidate(clientCurrentUrl) ??
+    getAbsoluteUrlCandidate(browserEventSourceUrl) ??
+    getRequestAbsoluteUrl(requestUrl, stepUrl)
+  );
+}
+
+function getAbsoluteUrlCandidate(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  try {
+    return new URL(value).toString();
+  } catch {
+    return undefined;
+  }
 }
 
 function getJsonMetaBrowserIds(input: unknown): MetaBrowserIds {

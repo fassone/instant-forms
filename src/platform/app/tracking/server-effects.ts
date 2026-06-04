@@ -1,8 +1,17 @@
 import type { Context } from "hono";
 import { getCookie } from "hono/cookie";
 
-import { ensureTrackingVisitorId, readTrackingVisitorId } from "../http/cookies";
-import { getLegacyTrackingVisitorIdCookieName, getTrackingVisitorIdCookieName } from "../../persistence/cookie-names";
+import {
+  ensureTrackingSessionId,
+  ensureTrackingVisitorId,
+  readTrackingSessionId,
+  readTrackingVisitorId,
+} from "../http/cookies";
+import {
+  getLegacyTrackingVisitorIdCookieName,
+  getTrackingSessionIdCookieName,
+  getTrackingVisitorIdCookieName,
+} from "../../persistence/cookie-names";
 import type {
   FormStep,
   InstantForm,
@@ -35,6 +44,7 @@ export function scheduleTrackingServerCallback(
   }
 
   ensureTrackingVisitorId(c, form.tracking?.visitorId);
+  ensureTrackingSessionId(c, form.tracking?.sessionId);
 
   const input = createTrackingServerEventInput(c, form, routeKey, lifecycleEvent.payload, options);
   logInstantFormEvent(options.logger, {
@@ -107,6 +117,7 @@ function createTrackingServerEventInput(
   const userAgent = c.req.raw.headers.get("user-agent")?.trim() || undefined;
   const ip = getRequestIp(c.req.raw.headers);
   const visitorId = readTrackingVisitorId(c, form.tracking?.visitorId);
+  const sessionId = readTrackingSessionId(c, form.tracking?.sessionId);
 
   return {
     event,
@@ -121,6 +132,10 @@ function createTrackingServerEventInput(
           return visitorId;
         }
 
+        if (sessionId && name === getTrackingSessionIdCookieName()) {
+          return sessionId;
+        }
+
         return getCookie(c, name);
       },
     },
@@ -133,6 +148,7 @@ function createTrackingServerEventInput(
     ...(options.submission ? { submission: { id: options.submission.submissionId } } : {}),
     ...(step ? { step } : {}),
     ...(visitorId ? { visitor: { id: visitorId } } : {}),
+    ...(sessionId ? { session: { id: sessionId } } : {}),
     runtime: {
       requestId: getRequestId(c.req.raw),
       routeKey,

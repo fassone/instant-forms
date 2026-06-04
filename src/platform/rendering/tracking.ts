@@ -30,6 +30,7 @@ export type ClientGoogleTagManagerConfig = {
 
 export type ClientTrackingConfig = {
   googleTagManager?: ClientGoogleTagManagerConfig;
+  serverEvents?: Readonly<Record<string, boolean>>;
 };
 
 export type ClientTrackingEventConfig = {

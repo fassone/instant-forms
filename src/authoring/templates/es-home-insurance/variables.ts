@@ -21,6 +21,7 @@ export const esHomeInsuranceVariables = z.object({
   postHogProjectApiKey: z.string().min(1, "Expected a PostHog project API key").optional(),
   postHogApiHost: z.string().url("Expected a PostHog API host URL").optional(),
   trackingVisitorIdCookieMaxAgeSeconds: z.number().int().positive(),
+  trackingSessionIdCookieMaxAgeSeconds: z.number().int().positive(),
 });
 
 export type EsHomeInsuranceVariables = z.output<typeof esHomeInsuranceVariables>;

@@ -115,6 +115,7 @@ export type GoogleTagManagerConfig<TContextKey extends string = string> = {
 export type TrackingEventKind =
   | "formView"
   | "stepView"
+  | "postHogPageView"
   | "stepAnswer"
   | "validationError"
   | "trustedFormSubstepView"
@@ -125,6 +126,7 @@ export type TrackingEventKind =
 export type ServerTrackingEventKind =
   | "formView"
   | "stepView"
+  | "postHogPageView"
   | "stepAnswer"
   | "trustedFormSubstepView"
   | "submitSuccess";
@@ -136,6 +138,10 @@ export type TrackingSubmissionContext = {
 };
 
 export type TrackingVisitorContext = {
+  id: string;
+};
+
+export type TrackingSessionContext = {
   id: string;
 };
 
@@ -204,10 +210,17 @@ export type TrackingServerEventInput<TContract extends FormContract = FormContra
   submission?: TrackingSubmissionContext;
   step?: TrackingRuntimeStepContext;
   visitor?: TrackingVisitorContext;
+  session?: TrackingSessionContext;
   runtime?: TrackingServerRuntimeContext;
 };
 
 export type TrackingVisitorIdConfig = {
+  cookie: {
+    maxAgeSeconds: number;
+  };
+};
+
+export type TrackingSessionIdConfig = {
   cookie: {
     maxAgeSeconds: number;
   };
@@ -278,11 +291,15 @@ export type StepTrackingEventOverride<TContextKey extends string = string> =
     };
 
 export type StepTracking<TContextKey extends string = string> = Partial<
-  Record<Exclude<TrackingEventKind, "formView" | "submitSuccess">, StepTrackingEventOverride<TContextKey>>
+  Record<
+    Exclude<TrackingEventKind, "formView" | "postHogPageView" | "submitSuccess">,
+    StepTrackingEventOverride<TContextKey>
+  >
 >;
 
 export type FormTracking<TContract extends FormContract = FormContract> = {
   visitorId?: TrackingVisitorIdConfig;
+  sessionId?: TrackingSessionIdConfig;
   googleTagManager?: GoogleTagManagerConfig<ContractSchemaKeys<TContract["context"]>>;
   events?: readonly TrackingEventConfig<
     TrackingEventKind,
@@ -996,6 +1013,9 @@ export type TrackingEventAuthoringHelpers<TContract extends FormContract> = {
   readonly stepView: (
     input: TrackingEventInput<"stepView", ContractSchemaKeys<TContract["context"]>, TContract>,
   ) => TrackingEventConfig<"stepView", ContractSchemaKeys<TContract["context"]>, TContract>;
+  readonly postHogPageView: (
+    input: TrackingEventInput<"postHogPageView", ContractSchemaKeys<TContract["context"]>, TContract>,
+  ) => TrackingEventConfig<"postHogPageView", ContractSchemaKeys<TContract["context"]>, TContract>;
   readonly stepAnswer: (
     input: TrackingEventInput<"stepAnswer", ContractSchemaKeys<TContract["context"]>, TContract>,
   ) => TrackingEventConfig<"stepAnswer", ContractSchemaKeys<TContract["context"]>, TContract>;

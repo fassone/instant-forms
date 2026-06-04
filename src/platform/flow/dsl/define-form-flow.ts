@@ -472,6 +472,17 @@ function assertTrackingContract(contract: FormContract, tracking: FormTracking |
     }
   }
 
+  const sessionId = tracking?.sessionId;
+  if (sessionId) {
+    if (
+      !Number.isInteger(sessionId.cookie.maxAgeSeconds) ||
+      sessionId.cookie.maxAgeSeconds < 60 ||
+      sessionId.cookie.maxAgeSeconds > 400 * 24 * 60 * 60
+    ) {
+      throw new Error("tracking.sessionId.cookie.maxAgeSeconds must be an integer between 60 and 34560000.");
+    }
+  }
+
   const googleTagManager = tracking?.googleTagManager;
   if (!tracking) {
     return;
@@ -526,12 +537,13 @@ function assertTrackingContract(contract: FormContract, tracking: FormTracking |
       eventConfig.server &&
       eventConfig.kind !== "formView" &&
       eventConfig.kind !== "stepView" &&
+      eventConfig.kind !== "postHogPageView" &&
       eventConfig.kind !== "submitSuccess" &&
       eventConfig.kind !== "stepAnswer" &&
       eventConfig.kind !== "trustedFormSubstepView"
     ) {
       throw new Error(
-        `tracking.events.${eventConfig.kind}.server is only supported on formView, stepView, submitSuccess, stepAnswer, and trustedFormSubstepView events.`,
+        `tracking.events.${eventConfig.kind}.server is only supported on formView, stepView, postHogPageView, submitSuccess, stepAnswer, and trustedFormSubstepView events.`,
       );
     }
   }

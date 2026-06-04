@@ -30,6 +30,7 @@ type CreateAutoInsuranceTrackingInput = {
   postHogProjectApiKey?: string;
   postHogApiHost?: string;
   trackingVisitorIdCookieMaxAgeSeconds: number;
+  trackingSessionIdCookieMaxAgeSeconds: number;
 };
 
 export function createAutoInsuranceTracking({
@@ -40,32 +41,33 @@ export function createAutoInsuranceTracking({
   postHogProjectApiKey,
   postHogApiHost,
   trackingVisitorIdCookieMaxAgeSeconds,
+  trackingSessionIdCookieMaxAgeSeconds,
 }: CreateAutoInsuranceTrackingInput):
   | ((helpers: TrackingAuthoringHelpers<AutoInsuranceContract>) => FormTracking<AutoInsuranceContract>)
   | undefined {
+  const postHogEffect =
+    postHogProjectApiKey && postHogApiHost
+      ? createPostHogCaptureEffect<AutoInsuranceContract>({
+          projectApiKey: postHogProjectApiKey,
+          apiHost: postHogApiHost,
+          getProperties: ({ cookies }) => {
+            const attribution = getCapturedLeadAttribution(cookies);
+
+            return {
+              source_channel: attribution.sourceChannel,
+              acquisition_channel: attribution.acquisitionChannel,
+              platform: attribution.platform,
+            };
+          },
+          getSafeAnswerValue: ({ answerKey, answers }) =>
+            safePostHogAnswerKeys.has(answerKey) ? getStringAnswerValue(answers, answerKey) : undefined,
+        })
+      : undefined;
   const serverEffects = createTrackingServerEffects<AutoInsuranceContract>([
     ...(metaPixelId && metaConversionsAccessToken
       ? [createMetaConversionsEffect<AutoInsuranceContract>(metaConversionsAccessToken)]
       : []),
-    ...(postHogProjectApiKey && postHogApiHost
-      ? [
-          createPostHogCaptureEffect<AutoInsuranceContract>({
-            projectApiKey: postHogProjectApiKey,
-            apiHost: postHogApiHost,
-            getProperties: ({ cookies }) => {
-              const attribution = getCapturedLeadAttribution(cookies);
-
-              return {
-                source_channel: attribution.sourceChannel,
-                acquisition_channel: attribution.acquisitionChannel,
-                platform: attribution.platform,
-              };
-            },
-            getSafeAnswerValue: ({ answerKey, answers }) =>
-              safePostHogAnswerKeys.has(answerKey) ? getStringAnswerValue(answers, answerKey) : undefined,
-          }),
-        ]
-      : []),
+    ...(postHogEffect ? [postHogEffect] : []),
   ]);
 
   if (!gtmContainerId && !serverEffects) {
@@ -78,6 +80,15 @@ export function createAutoInsuranceTracking({
           visitorId: {
             cookie: {
               maxAgeSeconds: trackingVisitorIdCookieMaxAgeSeconds,
+            },
+          },
+        }
+      : {}),
+    ...(postHogEffect
+      ? {
+          sessionId: {
+            cookie: {
+              maxAgeSeconds: trackingSessionIdCookieMaxAgeSeconds,
             },
           },
         }
@@ -103,6 +114,16 @@ export function createAutoInsuranceTracking({
         includeStep: true,
         ...(serverEffects ? { server: serverEffects } : {}),
       }),
+      ...(postHogEffect && serverEffects
+        ? [
+            event.postHogPageView({
+              name: "$pageview",
+              includeContext: ["areaCode", "product"],
+              includeStep: true,
+              server: serverEffects,
+            }),
+          ]
+        : []),
       event.stepAnswer({
         name: "instant_form_step_answer",
         includeStep: true,

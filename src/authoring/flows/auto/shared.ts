@@ -20,6 +20,7 @@ export const defaultAutoInsuranceVariables = {
   postHogProjectApiKey: process.env.POSTHOG_PROJECT_API_KEY || undefined,
   postHogApiHost: process.env.POSTHOG_API_HOST || "https://us.i.posthog.com",
   trackingVisitorIdCookieMaxAgeSeconds: 365 * 24 * 60 * 60,
+  trackingSessionIdCookieMaxAgeSeconds: 30 * 60,
 } as const satisfies Pick<
   EsAutoInsuranceVariables,
   | "advertiserName"
@@ -31,6 +32,7 @@ export const defaultAutoInsuranceVariables = {
   | "postHogProjectApiKey"
   | "product"
   | "submissionUrl"
+  | "trackingSessionIdCookieMaxAgeSeconds"
   | "trackingVisitorIdCookieMaxAgeSeconds"
 >;
 
@@ -46,6 +48,7 @@ export type CreateAutoInsuranceFlowInput = Pick<
       | "metaTestEventCode"
       | "postHogApiHost"
       | "postHogProjectApiKey"
+      | "trackingSessionIdCookieMaxAgeSeconds"
       | "trackingVisitorIdCookieMaxAgeSeconds"
     >
   >;

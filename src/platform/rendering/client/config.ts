@@ -377,27 +377,35 @@ function createClientTrackingConfig(
     }),
   );
   const events = Object.fromEntries(
-    (form.tracking?.events ?? []).map((eventConfig) => [
-      eventConfig.kind,
-      {
-        name: eventConfig.name,
-        includeContext: eventConfig.includeContext ?? [],
-        includeStep: eventConfig.includeStep === true,
-        ...(eventConfig.server ? { server: true } : {}),
-        ...(eventConfig.meta
-          ? {
-              meta: {
-                pixelId: eventConfig.meta.pixelId,
-                eventName: eventConfig.meta.eventName,
-              },
-            }
-          : {}),
-      },
-    ]),
+    (form.tracking?.events ?? [])
+      .filter((eventConfig) => eventConfig.kind !== "postHogPageView")
+      .map((eventConfig) => [
+        eventConfig.kind,
+        {
+          name: eventConfig.name,
+          includeContext: eventConfig.includeContext ?? [],
+          includeStep: eventConfig.includeStep === true,
+          ...(eventConfig.server ? { server: true } : {}),
+          ...(eventConfig.meta
+            ? {
+                meta: {
+                  pixelId: eventConfig.meta.pixelId,
+                  eventName: eventConfig.meta.eventName,
+                },
+              }
+            : {}),
+        },
+      ]),
+  );
+  const serverEvents = Object.fromEntries(
+    (form.tracking?.events ?? []).flatMap((eventConfig) =>
+      eventConfig.server ? [[eventConfig.kind, true] as const] : [],
+    ),
   );
 
   return {
     tracking: {
+      ...(Object.keys(serverEvents).length > 0 ? { serverEvents } : {}),
       googleTagManager: {
         containerId: googleTagManager.containerId,
         dataLayerName: googleTagManager.dataLayerName,

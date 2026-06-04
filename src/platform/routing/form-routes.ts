@@ -509,6 +509,24 @@ function createInitialRouteTrackingEvents(
     logger: eventLogger,
   });
 
+  const postHogPageViewEvent = createLifecycleTrackingEvent({
+    form,
+    routeKey,
+    kind: "postHogPageView",
+    step,
+    stepIndex,
+    answers,
+    eventId: crypto.randomUUID(),
+    eventSourceUrl: c.req.raw.url,
+    requireServerBuilt: true,
+  });
+  scheduleTrackingServerCallback(c, form, routeKey, postHogPageViewEvent, {
+    answers,
+    step,
+    stepIndex,
+    logger: eventLogger,
+  });
+
   const stepViewEvent = createLifecycleTrackingEvent({
     form,
     routeKey,

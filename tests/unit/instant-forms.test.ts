@@ -40,7 +40,7 @@ import {
 } from "../../src/authoring/flows/meta-pixels";
 import { createFetchHandler } from "../../src/platform/app/server";
 import { createCompressionMiddleware } from "../../src/platform/app/http/compression";
-import { ensureTrackingVisitorId } from "../../src/platform/app/http/cookies";
+import { ensureTrackingSessionId, ensureTrackingVisitorId } from "../../src/platform/app/http/cookies";
 import { registerFormRoutes } from "../../src/platform/app/routes/forms";
 import { registerScriptRoutes } from "../../src/platform/app/routes/scripts";
 import {
@@ -68,6 +68,7 @@ import {
   getLegacyPostSubmitCookieName,
   getLegacyTrackingVisitorIdCookieName,
   getPostSubmitCookieName,
+  getTrackingSessionIdCookieName,
   getTrackingVisitorIdCookieName,
 } from "../../src/platform/persistence/cookie-names";
 import {
@@ -473,10 +474,38 @@ describe("form registry", () => {
     for (const form of [autoFlow, homeFlow]) {
       expect(typeof form.tracking?.events?.find((event) => event.kind === "formView")?.server).toBe("function");
       expect(typeof form.tracking?.events?.find((event) => event.kind === "stepView")?.server).toBe("function");
+      expect(typeof form.tracking?.events?.find((event) => event.kind === "postHogPageView")?.server).toBe(
+        "function",
+      );
       expect(form.tracking?.events?.find((event) => event.kind === "validationError")?.server).toBeUndefined();
       expect(form.tracking?.events?.find((event) => event.kind === "submitAttempt")?.server).toBeUndefined();
       expect(form.tracking?.events?.find((event) => event.kind === "submitError")?.server).toBeUndefined();
     }
+  });
+
+  it("authors PostHog native pageviews only when PostHog is configured", () => {
+    const metaOnlyFlow = createAutoInsuranceFlow({
+      flowName: "ES - TX Auto - Meta Only Test",
+      areaCode: "TX",
+      areaName: "Texas",
+      metaPixelId: "1234567890",
+      metaConversionsAccessToken: "test_meta_token",
+      postHogProjectApiKey: undefined,
+    });
+    const postHogFlow = createAutoInsuranceFlow({
+      flowName: "ES - TX Auto - PostHog Pageview Test",
+      areaCode: "TX",
+      areaName: "Texas",
+      postHogProjectApiKey: "phc_test_key",
+      postHogApiHost: "https://us.i.posthog.com",
+    });
+
+    expect(metaOnlyFlow.tracking?.events?.find((event) => event.kind === "postHogPageView")).toBeUndefined();
+    expect(postHogFlow.tracking?.events?.find((event) => event.kind === "postHogPageView")).toMatchObject({
+      kind: "postHogPageView",
+      name: "$pageview",
+      includeStep: true,
+    });
   });
 
   it("centralizes optional Meta Pixel IDs by product and area", () => {
@@ -586,6 +615,7 @@ describe("form registry", () => {
       advertiserName: "Liderna Inc",
       gtmContainerId: "GTM-ABC123",
       trackingVisitorIdCookieMaxAgeSeconds: 365 * 24 * 60 * 60,
+      trackingSessionIdCookieMaxAgeSeconds: 30 * 60,
     });
 
     expect(flow.name).toBe("ES - TX Home - Template Test");
@@ -1334,6 +1364,49 @@ describe("form registry", () => {
       }),
     ).toThrow("meta is only supported on submitSuccess, stepAnswer, and trustedFormSubstepView events");
 
+    expect(() =>
+      defineFormFlow({
+        name: "Invalid PostHog PageView Meta Event Test",
+        status: "ACTIVE",
+        ...testFlowCopy,
+        contract: {
+          context: z.object({ areaCode: z.string() }),
+          answers: z.object({ wants_quote: z.enum(["yes", "no"]) }),
+          payload: z.object({ wantsQuote: z.string() }),
+        },
+        context: { areaCode: "TN" },
+        payload: {
+          url: "https://example.test/lead-submissions",
+          method: "POST",
+          encoding: "json",
+          mapping: ({ answers }) => ({ wantsQuote: answers.wants_quote }),
+        },
+        page: { name: "Invalid PostHog PageView Meta Event Test" },
+        tracking: ({ event }) => ({
+          events: [
+            event.postHogPageView({
+              name: "$pageview",
+              meta: {
+                pixelId: "1234567890",
+                eventName: "PageView",
+              },
+            }),
+          ],
+        }),
+        steps: [
+          step.choice({
+            key: "wants_quote",
+            slug: "quote",
+            label: "Do you want a quote?",
+            options: [
+              { key: "yes", label: "Yes" },
+              { key: "no", label: "No" },
+            ],
+          }),
+        ],
+      }),
+    ).toThrow("meta is only supported on submitSuccess, stepAnswer, and trustedFormSubstepView events");
+
     const flow = createMetaRemarketingTestFlow();
     const residenceStep = requireStep(flow, "residence_state");
     const payload = createLifecycleTrackingPayload({
@@ -1435,7 +1508,9 @@ describe("form registry", () => {
           }),
         ],
       }),
-    ).toThrow("server is only supported on formView, stepView, submitSuccess, stepAnswer, and trustedFormSubstepView events");
+    ).toThrow(
+      "server is only supported on formView, stepView, postHogPageView, submitSuccess, stepAnswer, and trustedFormSubstepView events",
+    );
 
     const flow = defineFormFlow({
       name: "Valid Server Callback Event Test",
@@ -1468,6 +1543,11 @@ describe("form registry", () => {
             includeStep: true,
             server: () => undefined,
           }),
+          event.postHogPageView({
+            name: "$pageview",
+            includeStep: true,
+            server: () => undefined,
+          }),
           event.stepAnswer({
             name: "step_answer",
             server: () => undefined,
@@ -1490,6 +1570,7 @@ describe("form registry", () => {
     expect(typeof flow.tracking?.events?.[0]?.server).toBe("function");
     expect(typeof flow.tracking?.events?.[1]?.server).toBe("function");
     expect(typeof flow.tracking?.events?.[2]?.server).toBe("function");
+    expect(typeof flow.tracking?.events?.[3]?.server).toBe("function");
   });
 
   it("returns partial Meta remarketing events from validated checkpoints", async () => {
@@ -1819,6 +1900,7 @@ describe("form registry", () => {
           }),
         },
         visitor: { id: "AbC123xYz789LmN456OpQrSt" },
+        session: { id: "ZyX987wVu654TsR321QpOnMl" },
       } as any);
       const request = requests[0];
       const serializedBody = JSON.stringify(request?.body);
@@ -1840,6 +1922,7 @@ describe("form registry", () => {
           step_kind: "phone",
           answer_key: "phone_number",
           answer_present: true,
+          $session_id: "ZyX987wVu654TsR321QpOnMl",
           $current_url: "https://cotiza.example/hogar/tx/telefono",
           $host: "cotiza.example",
           $pathname: "/hogar/tx/telefono",
@@ -1851,10 +1934,10 @@ describe("form registry", () => {
           source_channel: "facebook",
           acquisition_channel: "paid",
           platform: "facebook",
-          $process_person_profile: false,
         },
       });
       expect(request?.body.properties).not.toHaveProperty("answer_value");
+      expect(request?.body.properties).not.toHaveProperty("$process_person_profile");
       expect(request?.body.properties).not.toHaveProperty("$hostname");
       expect(request?.body.properties).not.toHaveProperty("$user_agent");
       expect(serializedBody).not.toContain("+14435707047");
@@ -1906,11 +1989,13 @@ describe("form registry", () => {
           headers: new Headers({ Referer: "not a valid url" }),
         },
         visitor: { id: "AbC123xYz789LmN456OpQrSt" },
+        session: { id: "ZyX987wVu654TsR321QpOnMl" },
       } as any);
 
       expect(requests[0]?.body.properties).toMatchObject({
         answer_key: "property_type",
         answer_value: "condo",
+        $session_id: "ZyX987wVu654TsR321QpOnMl",
         $current_url: "http://127.0.0.1:3177/hogar/tx/tipo-de-propiedad",
         $host: "127.0.0.1:3177",
         $pathname: "/hogar/tx/tipo-de-propiedad",
@@ -1924,7 +2009,7 @@ describe("form registry", () => {
     }
   });
 
-  it("adds hostname to every server-side PostHog event kind", async () => {
+  it("adds URL request properties to every server-side PostHog event kind", async () => {
     const requests: Array<{ body: any }> = [];
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (_input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
@@ -1938,6 +2023,7 @@ describe("form registry", () => {
         apiHost: "https://us.i.posthog.com",
       });
       const serverEventNames = [
+        "$pageview",
         "instant_form_view",
         "instant_form_step_view",
         "instant_form_step_answer",
@@ -1976,6 +2062,7 @@ describe("form registry", () => {
               ? { id: "submission_123", submittedAt: "2026-06-04T00:00:00.000Z" }
               : undefined,
           visitor: { id: "AbC123xYz789LmN456OpQrSt" },
+          session: { id: "ZyX987wVu654TsR321QpOnMl" },
         } as any);
       }
 
@@ -1983,6 +2070,7 @@ describe("form registry", () => {
       for (const request of requests) {
         expect(request.body.properties).toMatchObject({
           $current_url: "https://cotiza.seguros-aseguranza.com:8443/hogar/tx/tipo-de-propiedad",
+          $session_id: "ZyX987wVu654TsR321QpOnMl",
           $host: "cotiza.seguros-aseguranza.com:8443",
           $pathname: "/hogar/tx/tipo-de-propiedad",
           hostname: "cotiza.seguros-aseguranza.com",
@@ -1992,6 +2080,7 @@ describe("form registry", () => {
         });
         expect(request.body.properties).not.toHaveProperty("$hostname");
         expect(request.body.properties).not.toHaveProperty("$user_agent");
+        expect(request.body.properties).not.toHaveProperty("$process_person_profile");
       }
     } finally {
       globalThis.fetch = originalFetch;
@@ -4196,19 +4285,21 @@ describe("tracking identity", () => {
     const checkpointCookieName = getCheckpointCookieName("auto_tn");
     const postSubmitCookieName = getPostSubmitCookieName("auto_tn");
     const visitorIdCookieName = getTrackingVisitorIdCookieName();
+    const sessionIdCookieName = getTrackingSessionIdCookieName();
 
-    for (const cookieName of [checkpointCookieName, postSubmitCookieName, visitorIdCookieName]) {
+    for (const cookieName of [checkpointCookieName, postSubmitCookieName, visitorIdCookieName, sessionIdCookieName]) {
       expect(cookieName).toMatch(/^if_[0-9A-Za-z_-]{16}$/u);
       expect(cookieName).not.toContain("auto");
       expect(cookieName).not.toContain("tn");
       expect(cookieName).not.toContain("answers");
       expect(cookieName).not.toContain("post_submit");
       expect(cookieName).not.toContain("visitor");
+      expect(cookieName).not.toContain("session");
     }
 
     expect(getCheckpointCookieName("AUTO_TN")).toBe(checkpointCookieName);
     expect(createOpaqueCookieName("checkpoint", "auto_tn")).toBe(checkpointCookieName);
-    expect(new Set([checkpointCookieName, postSubmitCookieName, visitorIdCookieName]).size).toBe(3);
+    expect(new Set([checkpointCookieName, postSubmitCookieName, visitorIdCookieName, sessionIdCookieName]).size).toBe(4);
   });
 
   it("creates alphanumeric visitor IDs with the authored cookie lifetime", async () => {
@@ -4262,6 +4353,41 @@ describe("tracking identity", () => {
     expect(setCookie).toContain(`${getTrackingVisitorIdCookieName()}=${legacyVisitorId}`);
     expect(setCookie).toContain(`${getLegacyTrackingVisitorIdCookieName()}=`);
     expect(setCookie).toContain("Max-Age=0");
+  });
+
+  it("creates and renews alphanumeric tracking session IDs with the authored cookie lifetime", async () => {
+    const app = new Hono();
+    app.get("/", (c) => {
+      const sessionId = ensureTrackingSessionId(c, {
+        cookie: {
+          maxAgeSeconds: 1800,
+        },
+      });
+
+      return c.json({ sessionId });
+    });
+
+    const response = await app.request("https://example.test/");
+    const body = await response.json() as { sessionId?: string };
+    const setCookie = response.headers.get("Set-Cookie") ?? "";
+
+    expect(body.sessionId).toMatch(/^[0-9A-Za-z]{24}$/u);
+    expect(setCookie).toContain(`${getTrackingSessionIdCookieName()}=${body.sessionId}`);
+    expect(setCookie).toContain("Max-Age=1800");
+    expect(setCookie).toContain("SameSite=Lax");
+    expect(setCookie).toContain("Path=/");
+    expect(setCookie).toContain("Secure");
+    expect(setCookie).not.toContain("HttpOnly");
+
+    const renewResponse = await app.request("https://example.test/", {
+      headers: { Cookie: `${getTrackingSessionIdCookieName()}=${body.sessionId}` },
+    });
+    const renewBody = await renewResponse.json() as { sessionId?: string };
+    const renewSetCookie = renewResponse.headers.get("Set-Cookie") ?? "";
+
+    expect(renewBody.sessionId).toBe(body.sessionId);
+    expect(renewSetCookie).toContain(`${getTrackingSessionIdCookieName()}=${body.sessionId}`);
+    expect(renewSetCookie).toContain("Max-Age=1800");
   });
 });
 
@@ -6639,6 +6765,11 @@ describe("server routing", () => {
               maxAgeSeconds: 12345,
             },
           },
+          sessionId: {
+            cookie: {
+              maxAgeSeconds: 1800,
+            },
+          },
           events: [
             event.stepAnswer({
               name: "instant_form_step_answer",
@@ -6695,10 +6826,14 @@ describe("server routing", () => {
       const body = await response.json() as { trackingEvents?: Array<{ id: string }> };
       const setCookie = response.headers.get("Set-Cookie") ?? "";
       const visitorId = getCookieValueFromSetCookie(setCookie, getTrackingVisitorIdCookieName());
+      const sessionId = getCookieValueFromSetCookie(setCookie, getTrackingSessionIdCookieName());
       const contactResponse = await app.fetch(
         new Request("http://localhost/api/forms/posthog/checkpoints", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            Cookie: `${getTrackingVisitorIdCookieName()}=${visitorId}; ${getTrackingSessionIdCookieName()}=${sessionId}`,
+          },
           body: JSON.stringify({
             questionKey: "first_name",
             answer: "Michel",
@@ -6712,7 +6847,9 @@ describe("server routing", () => {
       expect(response.status).toBe(200);
       expect(contactResponse.status).toBe(200);
       expect(visitorId).toBeTruthy();
+      expect(sessionId).toBeTruthy();
       expect(setCookie).toContain("Max-Age=12345");
+      expect(setCookie).toContain("Max-Age=1800");
       expect(postHogRequests).toHaveLength(2);
       expect(postHogRequests[0]).toMatchObject({
         api_key: "phc_test_key",
@@ -6729,14 +6866,15 @@ describe("server routing", () => {
           step_kind: "choice",
           answer_key: "wants_quote",
           answer_value: "yes",
+          $session_id: sessionId,
           $current_url: "https://cotiza.example/posthog/quote",
           $host: "cotiza.example",
           $pathname: "/posthog/quote",
           hostname: "cotiza.example",
-          $process_person_profile: false,
         },
       });
       expect(postHogRequests[0].properties).not.toHaveProperty("answer_present");
+      expect(postHogRequests[0].properties).not.toHaveProperty("$process_person_profile");
       expect(postHogRequests[1]).toMatchObject({
         api_key: "phc_test_key",
         event: "instant_form_step_answer",
@@ -6750,14 +6888,15 @@ describe("server routing", () => {
           step_kind: "text",
           answer_key: "first_name",
           answer_present: true,
+          $session_id: sessionId,
           $current_url: "https://cotiza.example/posthog/first-name",
           $host: "cotiza.example",
           $pathname: "/posthog/first-name",
           hostname: "cotiza.example",
-          $process_person_profile: false,
         },
       });
       expect(postHogRequests[1].properties).not.toHaveProperty("answer_value");
+      expect(postHogRequests[1].properties).not.toHaveProperty("$process_person_profile");
       expect(unsafeRequestBody).not.toContain("Michel");
     } finally {
       globalThis.fetch = originalFetch;
@@ -6804,6 +6943,11 @@ describe("server routing", () => {
               maxAgeSeconds: 12345,
             },
           },
+          sessionId: {
+            cookie: {
+              maxAgeSeconds: 1800,
+            },
+          },
           events: [
             event.formView({
               name: "instant_form_view",
@@ -6812,6 +6956,12 @@ describe("server routing", () => {
             }),
             event.stepView({
               name: "instant_form_step_view",
+              includeContext: ["areaCode"],
+              includeStep: true,
+              server: serverEffects,
+            }),
+            event.postHogPageView({
+              name: "$pageview",
               includeContext: ["areaCode"],
               includeStep: true,
               server: serverEffects,
@@ -6839,16 +6989,43 @@ describe("server routing", () => {
       registerFormRoutePages(app, routes);
 
       const response = await app.fetch(new Request("http://localhost/posthog/quote"));
+      const html = await response.text();
       await new Promise((resolve) => setTimeout(resolve, 0));
       const setCookie = response.headers.get("Set-Cookie") ?? "";
       const visitorId = getCookieValueFromSetCookie(setCookie, getTrackingVisitorIdCookieName());
+      const sessionId = getCookieValueFromSetCookie(setCookie, getTrackingSessionIdCookieName());
       const viewRequest = postHogRequests.find((request) => request.event === "instant_form_view");
       const stepViewRequest = postHogRequests.find((request) => request.event === "instant_form_step_view");
+      const pageViewRequest = postHogRequests.find((request) => request.event === "$pageview");
 
       expect(response.status).toBe(200);
+      expect(html).not.toContain("$pageview");
       expect(visitorId).toBeTruthy();
+      expect(sessionId).toBeTruthy();
       expect(setCookie).toContain("Max-Age=12345");
-      expect(postHogRequests).toHaveLength(2);
+      expect(setCookie).toContain("Max-Age=1800");
+      expect(postHogRequests).toHaveLength(3);
+      expect(pageViewRequest).toMatchObject({
+        api_key: "phc_test_key",
+        event: "$pageview",
+        distinct_id: visitorId,
+        properties: {
+          route_key: "posthog",
+          form_name: "PostHog View Test",
+          page_name: "PostHog View Test",
+          context: JSON.stringify({ areaCode: "TX" }),
+          step_key: "wants_quote",
+          step_slug: "quote",
+          step_index: 0,
+          step_kind: "choice",
+          $session_id: sessionId,
+          $current_url: "http://localhost/posthog/quote",
+          $host: "localhost",
+          $pathname: "/posthog/quote",
+          hostname: "localhost",
+        },
+      });
+      expect(pageViewRequest?.properties).not.toHaveProperty("$process_person_profile");
       expect(viewRequest).toMatchObject({
         api_key: "phc_test_key",
         event: "instant_form_view",
@@ -6858,13 +7035,14 @@ describe("server routing", () => {
           form_name: "PostHog View Test",
           page_name: "PostHog View Test",
           context: JSON.stringify({ areaCode: "TX" }),
+          $session_id: sessionId,
           $current_url: "http://localhost/posthog/quote",
           $host: "localhost",
           $pathname: "/posthog/quote",
           hostname: "localhost",
-          $process_person_profile: false,
         },
       });
+      expect(viewRequest?.properties).not.toHaveProperty("$process_person_profile");
       expect(viewRequest?.properties).not.toHaveProperty("step_key");
       expect(stepViewRequest).toMatchObject({
         api_key: "phc_test_key",
@@ -6879,11 +7057,177 @@ describe("server routing", () => {
           step_slug: "quote",
           step_index: 0,
           step_kind: "choice",
+          $session_id: sessionId,
           $current_url: "http://localhost/posthog/quote",
           $host: "localhost",
           $pathname: "/posthog/quote",
           hostname: "localhost",
-          $process_person_profile: false,
+        },
+      });
+      expect(stepViewRequest?.properties).not.toHaveProperty("$process_person_profile");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("schedules PostHog step view and native pageview captures for client step transitions", async () => {
+    const postHogRequests: Array<any> = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (_input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+      postHogRequests.push(JSON.parse(String(init?.body)));
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+
+    try {
+      const serverEffects = createTrackingServerEffects([
+        createPostHogCaptureEffect({
+          projectApiKey: "phc_test_key",
+          apiHost: "https://us.i.posthog.com",
+        }),
+      ]);
+      const flow = defineFormFlow({
+        name: "PostHog Transition View Test",
+        status: "ACTIVE",
+        ...testFlowCopy,
+        contract: {
+          context: z.object({ areaCode: z.string() }),
+          answers: z.object({
+            wants_quote: z.enum(["yes", "no"]),
+            contact_preference: z.enum(["phone", "email"]),
+          }),
+          payload: z.object({ wantsQuote: z.string(), contactPreference: z.string() }),
+        },
+        context: { areaCode: "TX" },
+        payload: {
+          url: "https://example.test/lead-submissions",
+          method: "POST",
+          encoding: "json",
+          mapping: ({ answers }) => ({
+            wantsQuote: answers.wants_quote,
+            contactPreference: answers.contact_preference,
+          }),
+        },
+        page: { name: "PostHog Transition View Test" },
+        tracking: ({ event }) => ({
+          visitorId: {
+            cookie: {
+              maxAgeSeconds: 12345,
+            },
+          },
+          sessionId: {
+            cookie: {
+              maxAgeSeconds: 1800,
+            },
+          },
+          events: [
+            event.stepView({
+              name: "instant_form_step_view",
+              includeContext: ["areaCode"],
+              includeStep: true,
+              server: serverEffects,
+            }),
+            event.postHogPageView({
+              name: "$pageview",
+              includeContext: ["areaCode"],
+              includeStep: true,
+              server: serverEffects,
+            }),
+          ],
+        }),
+        steps: [
+          step.choice({
+            key: "wants_quote",
+            slug: "quote",
+            label: "Do you want a quote?",
+            options: [
+              { key: "yes", label: "Yes" },
+              { key: "no", label: "No" },
+            ],
+          }),
+          step.choice({
+            key: "contact_preference",
+            slug: "contact",
+            label: "How should we contact you?",
+            options: [
+              { key: "phone", label: "Phone" },
+              { key: "email", label: "Email" },
+            ],
+          }),
+        ],
+      });
+      const routes = defineFormRoutes({
+        index: redirectTo("/posthog"),
+        folders: { posthog: flow },
+        notFound: unavailable(unavailableContent),
+      });
+      const app = new Hono();
+      registerFormRoutes(app, routes, () => undefined);
+
+      const response = await app.fetch(
+        new Request("http://localhost/api/forms/posthog/tracking-events", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Cookie: `${getCheckpointCookieName("posthog")}=${encodeCheckpointAnswers({ wants_quote: "yes" })}`,
+          },
+          body: JSON.stringify({
+            eventKinds: ["stepView", "postHogPageView"],
+            stepKey: "contact_preference",
+            answers: { wants_quote: "yes" },
+            currentUrl: "http://localhost/posthog/contact?source=transition",
+            tracking: {
+              eventSourceUrl: "https://ignored.example/wrong",
+            },
+          }),
+        }),
+      );
+      const body = await response.json();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const setCookie = response.headers.get("Set-Cookie") ?? "";
+      const visitorId = getCookieValueFromSetCookie(setCookie, getTrackingVisitorIdCookieName());
+      const sessionId = getCookieValueFromSetCookie(setCookie, getTrackingSessionIdCookieName());
+      const stepViewRequest = postHogRequests.find((request) => request.event === "instant_form_step_view");
+      const pageViewRequest = postHogRequests.find((request) => request.event === "$pageview");
+
+      expect(response.status).toBe(200);
+      expect(body).toEqual({ ok: true, trackingEvents: [] });
+      expect(visitorId).toBeTruthy();
+      expect(sessionId).toBeTruthy();
+      expect(postHogRequests).toHaveLength(2);
+      expect(stepViewRequest).toMatchObject({
+        api_key: "phc_test_key",
+        event: "instant_form_step_view",
+        distinct_id: visitorId,
+        properties: {
+          route_key: "posthog",
+          form_name: "PostHog Transition View Test",
+          page_name: "PostHog Transition View Test",
+          context: JSON.stringify({ areaCode: "TX" }),
+          step_key: "contact_preference",
+          step_slug: "contact",
+          step_index: 1,
+          step_kind: "choice",
+          $session_id: sessionId,
+          $current_url: "http://localhost/posthog/contact?source=transition",
+          $pathname: "/posthog/contact",
+        },
+      });
+      expect(pageViewRequest).toMatchObject({
+        api_key: "phc_test_key",
+        event: "$pageview",
+        distinct_id: visitorId,
+        properties: {
+          route_key: "posthog",
+          form_name: "PostHog Transition View Test",
+          page_name: "PostHog Transition View Test",
+          context: JSON.stringify({ areaCode: "TX" }),
+          step_key: "contact_preference",
+          step_slug: "contact",
+          step_index: 1,
+          step_kind: "choice",
+          $session_id: sessionId,
+          $current_url: "http://localhost/posthog/contact?source=transition",
+          $pathname: "/posthog/contact",
         },
       });
     } finally {
@@ -8237,6 +8581,12 @@ describe("form rendering", () => {
             includeContext: ["areaCode", "product"],
             includeStep: true,
           }),
+          event.postHogPageView({
+            name: "$pageview",
+            includeContext: ["areaCode", "product"],
+            includeStep: true,
+            server: () => undefined,
+          }),
           event.stepAnswer({ name: "instant_form_step_answer", includeStep: true }),
           event.validationError({ name: "instant_form_validation_error", includeStep: true }),
           event.submitAttempt({ name: "instant_form_submit_attempt", includeStep: true }),
@@ -8308,8 +8658,15 @@ describe("form rendering", () => {
     expect(html).toContain("instant_form_submit_attempt");
     expect(html).toContain("instant_form_submit_success");
     expect(html).toContain("instant_form_submit_error");
+    expect(html).toContain("trackServerStepViewTransition");
+    expect(html).toContain('eventKinds.push("stepView")');
+    expect(html).toContain('eventKinds.push("postHogPageView")');
+    expect(html).toContain("hasCompletedInitialStepViewTracking");
+    expect(html).toContain('"serverEvents":{"postHogPageView":true}');
+    expect(html).not.toContain("$pageview");
     expect(html).toContain('"routeKey":"tracking_custom"');
-    expect(html).toContain('"tracking":{"googleTagManager"');
+    expect(html).toContain('"tracking":{"serverEvents"');
+    expect(html).toContain('"googleTagManager"');
     expect(html).toContain('"context":{"areaCode":"TN","product":"auto_insurance"}');
     expect(html).not.toContain('"context":{"areaCode":"TN","product":"auto_insurance","advertiserName"');
   });
@@ -9625,6 +9982,7 @@ function createAutoInsuranceTemplateTestFlow(metaTestEventCode?: string) {
     gtmContainerId: "GTM-ABC123",
     metaPixelId: "1234567890",
     trackingVisitorIdCookieMaxAgeSeconds: 365 * 24 * 60 * 60,
+    trackingSessionIdCookieMaxAgeSeconds: 30 * 60,
     ...(metaTestEventCode !== undefined ? { metaTestEventCode } : {}),
   });
 }

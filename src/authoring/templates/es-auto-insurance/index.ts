@@ -21,6 +21,7 @@ export const esAutoInsuranceTemplate = defineFormTemplate({
       postHogProjectApiKey: variables.postHogProjectApiKey,
       postHogApiHost: variables.postHogApiHost,
       trackingVisitorIdCookieMaxAgeSeconds: variables.trackingVisitorIdCookieMaxAgeSeconds,
+      trackingSessionIdCookieMaxAgeSeconds: variables.trackingSessionIdCookieMaxAgeSeconds,
     });
 
     return defineFormFlow({

@@ -15,9 +15,16 @@ import {
   getLegacyPostSubmitCookieName,
   getLegacyTrackingVisitorIdCookieName,
   getPostSubmitCookieName,
+  getTrackingSessionIdCookieName,
   getTrackingVisitorIdCookieName,
 } from "../../persistence/cookie-names";
-import type { AttributionCookieHelpers, AttributionCookieOptions, InstantForm, TrackingVisitorIdConfig } from "../../flow";
+import type {
+  AttributionCookieHelpers,
+  AttributionCookieOptions,
+  InstantForm,
+  TrackingSessionIdConfig,
+  TrackingVisitorIdConfig,
+} from "../../flow";
 import type { TrackingEventPayload } from "../../rendering";
 
 const POST_SUBMIT_COOKIE_MAX_AGE_SECONDS = 5 * 60;
@@ -26,6 +33,7 @@ const TRACKING_VISITOR_ID_LENGTH = 24;
 const trackingVisitorIdPattern = /^[0-9A-Za-z]{24}$/u;
 const createTrackingVisitorId = customAlphabet(TRACKING_VISITOR_ID_ALPHABET, TRACKING_VISITOR_ID_LENGTH);
 const requestTrackingVisitorIds = new WeakMap<Request, string>();
+const requestTrackingSessionIds = new WeakMap<Request, string>();
 const requestPlatformCookieHeaders = new WeakMap<Request, string[]>();
 
 export type PostSubmitState = {
@@ -177,6 +185,31 @@ export function ensureTrackingVisitorId(c: Context, config: TrackingVisitorIdCon
   return generatedValue;
 }
 
+export function ensureTrackingSessionId(c: Context, config: TrackingSessionIdConfig | undefined): string | undefined {
+  if (!config) {
+    return undefined;
+  }
+
+  const requestValue = requestTrackingSessionIds.get(c.req.raw);
+  if (isTrackingVisitorId(requestValue)) {
+    return requestValue;
+  }
+
+  const cookieName = getTrackingSessionIdCookieName();
+  const existingValue = getCookie(c, cookieName);
+  if (isTrackingVisitorId(existingValue)) {
+    requestTrackingSessionIds.set(c.req.raw, existingValue);
+    setTrackingSessionIdCookie(c, cookieName, existingValue, config.cookie.maxAgeSeconds);
+    return existingValue;
+  }
+
+  const generatedValue = createTrackingVisitorId();
+  requestTrackingSessionIds.set(c.req.raw, generatedValue);
+  setTrackingSessionIdCookie(c, cookieName, generatedValue, config.cookie.maxAgeSeconds);
+
+  return generatedValue;
+}
+
 export function applyTrackingVisitorIdCookie(c: Context, response: Response): Response {
   return applyPlatformCookieHeaders(c, response);
 }
@@ -210,6 +243,25 @@ export function readTrackingVisitorId(c: Context, config: TrackingVisitorIdConfi
   if (isTrackingVisitorId(legacyCookieValue)) {
     requestTrackingVisitorIds.set(c.req.raw, legacyCookieValue);
     return legacyCookieValue;
+  }
+
+  return undefined;
+}
+
+export function readTrackingSessionId(c: Context, config: TrackingSessionIdConfig | undefined): string | undefined {
+  if (!config) {
+    return undefined;
+  }
+
+  const requestValue = requestTrackingSessionIds.get(c.req.raw);
+  if (isTrackingVisitorId(requestValue)) {
+    return requestValue;
+  }
+
+  const cookieValue = getCookie(c, getTrackingSessionIdCookieName());
+  if (isTrackingVisitorId(cookieValue)) {
+    requestTrackingSessionIds.set(c.req.raw, cookieValue);
+    return cookieValue;
   }
 
   return undefined;
@@ -254,6 +306,15 @@ function setPostSubmitCookie(c: Context, cookieName: string, state: PostSubmitSt
 }
 
 function setTrackingVisitorIdCookie(c: Context, cookieName: string, value: string, maxAgeSeconds: number): void {
+  setPlatformCookie(c, cookieName, value, {
+    path: "/",
+    maxAge: maxAgeSeconds,
+    sameSite: "Lax",
+    secure: isSecureRequest(c.req.raw),
+  });
+}
+
+function setTrackingSessionIdCookie(c: Context, cookieName: string, value: string, maxAgeSeconds: number): void {
   setPlatformCookie(c, cookieName, value, {
     path: "/",
     maxAge: maxAgeSeconds,
