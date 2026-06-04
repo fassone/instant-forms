@@ -60,7 +60,16 @@ import {
   tfTag,
   z,
 } from "../../src/platform/flow";
-import { encodeCheckpointAnswers, getCheckpointCookieName } from "../../src/platform/persistence/checkpoints";
+import { encodeCheckpointAnswers } from "../../src/platform/persistence/checkpoints";
+import {
+  createOpaqueCookieName,
+  getCheckpointCookieName,
+  getLegacyCheckpointCookieName,
+  getLegacyPostSubmitCookieName,
+  getLegacyTrackingVisitorIdCookieName,
+  getPostSubmitCookieName,
+  getTrackingVisitorIdCookieName,
+} from "../../src/platform/persistence/cookie-names";
 import {
   FORM_CONFIG_PLACEHOLDER_EXPRESSION,
   buildTransitionAsset,
@@ -2171,7 +2180,7 @@ describe("form registry", () => {
       }),
     );
     const setCookie = response.headers.get("set-cookie") ?? "";
-    const postSubmitCookie = /instant_forms_callback_post_submit=([^;,]+)/u.exec(setCookie)?.[1] ?? "";
+    const postSubmitCookie = getCookieValueFromSetCookie(setCookie, getPostSubmitCookieName("callback")) ?? "";
     const postSubmitState = JSON.parse(
       Buffer.from(postSubmitCookie, "base64url").toString("utf8"),
     ) as { trackingEvents?: Array<{ id?: string }> };
@@ -4183,12 +4192,30 @@ describe("production logging", () => {
 });
 
 describe("tracking identity", () => {
+  it("derives opaque deterministic names for platform cookies", () => {
+    const checkpointCookieName = getCheckpointCookieName("auto_tn");
+    const postSubmitCookieName = getPostSubmitCookieName("auto_tn");
+    const visitorIdCookieName = getTrackingVisitorIdCookieName();
+
+    for (const cookieName of [checkpointCookieName, postSubmitCookieName, visitorIdCookieName]) {
+      expect(cookieName).toMatch(/^if_[0-9A-Za-z_-]{16}$/u);
+      expect(cookieName).not.toContain("auto");
+      expect(cookieName).not.toContain("tn");
+      expect(cookieName).not.toContain("answers");
+      expect(cookieName).not.toContain("post_submit");
+      expect(cookieName).not.toContain("visitor");
+    }
+
+    expect(getCheckpointCookieName("AUTO_TN")).toBe(checkpointCookieName);
+    expect(createOpaqueCookieName("checkpoint", "auto_tn")).toBe(checkpointCookieName);
+    expect(new Set([checkpointCookieName, postSubmitCookieName, visitorIdCookieName]).size).toBe(3);
+  });
+
   it("creates alphanumeric visitor IDs with the authored cookie lifetime", async () => {
     const app = new Hono();
     app.get("/", (c) => {
       const visitorId = ensureTrackingVisitorId(c, {
         cookie: {
-          name: "instant_forms_visitor_id",
           maxAgeSeconds: 12345,
         },
       });
@@ -4201,12 +4228,40 @@ describe("tracking identity", () => {
     const setCookie = response.headers.get("Set-Cookie") ?? "";
 
     expect(body.visitorId).toMatch(/^[0-9A-Za-z]{24}$/u);
-    expect(setCookie).toContain(`instant_forms_visitor_id=${body.visitorId}`);
+    expect(setCookie).toContain(`${getTrackingVisitorIdCookieName()}=${body.visitorId}`);
+    expect(setCookie).not.toContain(getLegacyTrackingVisitorIdCookieName());
     expect(setCookie).toContain("Max-Age=12345");
     expect(setCookie).toContain("SameSite=Lax");
     expect(setCookie).toContain("Path=/");
     expect(setCookie).toContain("Secure");
     expect(setCookie).not.toContain("HttpOnly");
+  });
+
+  it("migrates legacy visitor ID cookies to the opaque platform name", async () => {
+    const app = new Hono();
+    app.get("/", (c) => {
+      const visitorId = ensureTrackingVisitorId(c, {
+        cookie: {
+          maxAgeSeconds: 12345,
+        },
+      });
+
+      return c.json({ visitorId });
+    });
+
+    const legacyVisitorId = "AbC123xYz789LmN456OpQrSt";
+    const response = await app.request("https://example.test/", {
+      headers: {
+        Cookie: `${getLegacyTrackingVisitorIdCookieName()}=${legacyVisitorId}`,
+      },
+    });
+    const body = await response.json() as { visitorId?: string };
+    const setCookie = response.headers.get("Set-Cookie") ?? "";
+
+    expect(body.visitorId).toBe(legacyVisitorId);
+    expect(setCookie).toContain(`${getTrackingVisitorIdCookieName()}=${legacyVisitorId}`);
+    expect(setCookie).toContain(`${getLegacyTrackingVisitorIdCookieName()}=`);
+    expect(setCookie).toContain("Max-Age=0");
   });
 });
 
@@ -6503,6 +6558,52 @@ describe("server routing", () => {
     }));
   });
 
+  it("migrates legacy checkpoint cookies and writes only opaque checkpoint names", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(
+      new Request("http://localhost/api/forms/auto_tn/checkpoints", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `${getLegacyCheckpointCookieName(routeKey)}=${encodeCheckpointAnswers({ belongs_to_state: "yes" })}`,
+        },
+        body: JSON.stringify({ questionKey: "has_license", answer: "yes" }),
+      }),
+    );
+    const body = await response.json();
+    const setCookie = response.headers.get("Set-Cookie") ?? "";
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({ ok: true, nextUrl: "/auto/tn/tiene-seguro" });
+    expect(setCookie).toContain(`${getCheckpointCookieName(routeKey)}=`);
+    expect(setCookie).toContain(`${getLegacyCheckpointCookieName(routeKey)}=`);
+    expect(setCookie).toContain("Max-Age=0");
+  });
+
+  it("uses the opaque checkpoint cookie when both opaque and legacy names are present", async () => {
+    const handler = createFetchHandler();
+    const response = await handler(
+      new Request("http://localhost/api/forms/auto_tn/checkpoints", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: [
+            `${getCheckpointCookieName(routeKey)}=${encodeCheckpointAnswers({ belongs_to_state: "yes" })}`,
+            `${getLegacyCheckpointCookieName(routeKey)}=${encodeCheckpointAnswers({ belongs_to_state: "no" })}`,
+          ].join("; "),
+        },
+        body: JSON.stringify({ questionKey: "has_license", answer: "yes" }),
+      }),
+    );
+    const body = await response.json();
+    const setCookie = response.headers.get("Set-Cookie") ?? "";
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({ ok: true, nextUrl: "/auto/tn/tiene-seguro" });
+    expect(setCookie).toContain(`${getCheckpointCookieName(routeKey)}=`);
+    expect(setCookie).not.toContain(`${getLegacyCheckpointCookieName(routeKey)}=`);
+  });
+
   it("sets a generic visitor id cookie and schedules PostHog capture for accepted checkpoints", async () => {
     const postHogRequests: Array<any> = [];
     const originalFetch = globalThis.fetch;
@@ -6535,7 +6636,6 @@ describe("server routing", () => {
         tracking: ({ event }) => ({
           visitorId: {
             cookie: {
-              name: "instant_forms_visitor_id",
               maxAgeSeconds: 12345,
             },
           },
@@ -6594,7 +6694,7 @@ describe("server routing", () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
       const body = await response.json() as { trackingEvents?: Array<{ id: string }> };
       const setCookie = response.headers.get("Set-Cookie") ?? "";
-      const visitorId = /instant_forms_visitor_id=([0-9A-Za-z]{24})/u.exec(setCookie)?.[1];
+      const visitorId = getCookieValueFromSetCookie(setCookie, getTrackingVisitorIdCookieName());
       const contactResponse = await app.fetch(
         new Request("http://localhost/api/forms/posthog/checkpoints", {
           method: "POST",
@@ -6701,7 +6801,6 @@ describe("server routing", () => {
         tracking: ({ event }) => ({
           visitorId: {
             cookie: {
-              name: "instant_forms_visitor_id",
               maxAgeSeconds: 12345,
             },
           },
@@ -6742,7 +6841,7 @@ describe("server routing", () => {
       const response = await app.fetch(new Request("http://localhost/posthog/quote"));
       await new Promise((resolve) => setTimeout(resolve, 0));
       const setCookie = response.headers.get("Set-Cookie") ?? "";
-      const visitorId = /instant_forms_visitor_id=([0-9A-Za-z]{24})/u.exec(setCookie)?.[1];
+      const visitorId = getCookieValueFromSetCookie(setCookie, getTrackingVisitorIdCookieName());
       const viewRequest = postHogRequests.find((request) => request.event === "instant_form_view");
       const stepViewRequest = postHogRequests.find((request) => request.event === "instant_form_step_view");
 
@@ -7430,8 +7529,8 @@ describe("server routing", () => {
     expect(response.headers.get("Location")).toBe("/auto/tn/gracias");
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(setCookie).toContain("Max-Age=0");
-    expect(setCookie).toContain("instant_forms_auto_tn_post_submit=");
-    expect(postSubmitCookie).toStartWith("instant_forms_auto_tn_post_submit=");
+    expect(setCookie).toContain(`${getPostSubmitCookieName(routeKey)}=`);
+    expect(postSubmitCookie).toStartWith(`${getPostSubmitCookieName(routeKey)}=`);
     expectTrustedFormConsentAnswer((logs[0] as { answers?: Record<string, unknown> }).answers?.trustedform_consent);
     const postSubmitResponse = await handler(
       new Request("http://localhost/auto/tn/gracias", {
@@ -7524,6 +7623,30 @@ describe("server routing", () => {
     }));
   });
 
+  it("renders post-submit state from a legacy cookie and clears legacy state", async () => {
+    const handler = createFetchHandler();
+    const postSubmitState = encodeCookieJsonForTest({
+      trackingEvents: [{ event: "instant_form_submit_success", id: "evt_legacy" }],
+      stepCountLabel: "Paso 12 de 12",
+    });
+    const response = await handler(
+      new Request("http://localhost/auto/tn/gracias", {
+        headers: {
+          Cookie: `${getLegacyPostSubmitCookieName(routeKey)}=${postSubmitState}`,
+        },
+      }),
+    );
+    const html = await response.text();
+    const setCookie = response.headers.get("Set-Cookie") ?? "";
+
+    expect(response.status).toBe(200);
+    expect(html).toContain('data-form-view="post-submit"');
+    expect(html).toContain("instant_form_submit_success");
+    expect(setCookie).toContain(`${getPostSubmitCookieName(routeKey)}=`);
+    expect(setCookie).toContain(`${getLegacyPostSubmitCookieName(routeKey)}=`);
+    expect(setCookie).toContain("Max-Age=0");
+  });
+
   it("returns an iframe bridge for successful native TrustedForm submissions", async () => {
     const logs: unknown[] = [];
     const deliveryRequests: RecordedDeliveryRequest[] = [];
@@ -7556,7 +7679,7 @@ describe("server routing", () => {
     expect(response.headers.get("X-Request-Id")).toBeTruthy();
     expect(deliveryRequests).toHaveLength(1);
     expect(setCookie).toContain("Max-Age=0");
-    expect(setCookie).toContain("instant_forms_auto_tn_post_submit=");
+    expect(setCookie).toContain(`${getPostSubmitCookieName(routeKey)}=`);
     expect(html).toContain("instant_form_native_submission_result");
     expect(html).toContain('"ok":true');
     expect(html).toContain('"redirectUrl":"/auto/tn/gracias"');
@@ -7649,7 +7772,7 @@ describe("server routing", () => {
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(html).toContain("No pudimos enviar el formulario.");
     expect(setCookie).not.toContain(`${getCheckpointCookieName(routeKey)}=`);
-    expect(setCookie).not.toContain("instant_forms_auto_tn_post_submit=");
+    expect(setCookie).not.toContain(`${getPostSubmitCookieName(routeKey)}=`);
     expect(logs).toEqual([]);
     expect(deliveryAttempts).toBe(4);
     expect(delays).toEqual([2000, 2000, 2000]);
@@ -7723,7 +7846,7 @@ describe("server routing", () => {
     expect(html).toContain("No pudimos enviar el formulario.");
     expect(html).not.toContain("native-submission-error");
     expect(setCookie).not.toContain(`${getCheckpointCookieName(routeKey)}=`);
-    expect(setCookie).not.toContain("instant_forms_auto_tn_post_submit=");
+    expect(setCookie).not.toContain(`${getPostSubmitCookieName(routeKey)}=`);
     expect(logs).toEqual([]);
     expect(deliveryAttempts).toBe(4);
     expect(delays).toEqual([2000, 2000, 2000]);
@@ -7787,7 +7910,7 @@ describe("server routing", () => {
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(html).toContain("No pudimos enviar el formulario.");
     expect(setCookie).not.toContain(`${getCheckpointCookieName(routeKey)}=`);
-    expect(setCookie).not.toContain("instant_forms_auto_tn_post_submit=");
+    expect(setCookie).not.toContain(`${getPostSubmitCookieName(routeKey)}=`);
     expect(logs).toEqual([]);
     expect(deliveryAttempts).toBe(4);
     expect(delays).toEqual([2000, 2000, 2000]);
@@ -9623,7 +9746,28 @@ function createCheckpointCookie(answers: Record<string, string>): string {
 }
 
 function getPostSubmitCookie(setCookie: string): string {
-  return /instant_forms_auto_tn_post_submit=[^;,]*/u.exec(setCookie)?.[0] ?? "";
+  const cookieName = getPostSubmitCookieName(routeKey);
+  const cookieValue = getCookieValueFromSetCookie(setCookie, cookieName);
+
+  return cookieValue ? `${cookieName}=${cookieValue}` : "";
+}
+
+function getCookieValueFromSetCookie(setCookie: string, cookieName: string): string | undefined {
+  const match = new RegExp(`(?:^|,\\s*)${escapeRegExp(cookieName)}=([^;,]*)`, "u").exec(setCookie);
+
+  return match?.[1];
+}
+
+function encodeCookieJsonForTest(value: unknown): string {
+  return Buffer.from(JSON.stringify(value), "utf8")
+    .toString("base64")
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/u, "");
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function getBunFetchSelectedScriptRegistry() {

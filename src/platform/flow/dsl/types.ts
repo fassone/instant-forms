@@ -209,7 +209,6 @@ export type TrackingServerEventInput<TContract extends FormContract = FormContra
 
 export type TrackingVisitorIdConfig = {
   cookie: {
-    name: string;
     maxAgeSeconds: number;
   };
 };

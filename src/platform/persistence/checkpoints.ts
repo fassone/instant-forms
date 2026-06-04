@@ -1,5 +1,6 @@
 import { getVisibleSteps, isStepVisible, type FormStep, type InstantForm } from "../flow";
 import { isStepAnswered, validateStepCheckpointAnswer } from "../steps/adapters";
+export { getCheckpointCookieName, getLegacyCheckpointCookieName } from "./cookie-names";
 
 export type CheckpointAnswers = Record<string, string>;
 
@@ -14,10 +15,6 @@ export type CheckpointValidationResult =
     };
 
 export const CHECKPOINT_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
-
-export function getCheckpointCookieName(routeKey: string): string {
-  return `instant_forms_${routeKey.toLowerCase()}_answers`;
-}
 
 export function encodeCheckpointAnswers(answers: CheckpointAnswers): string {
   const json = JSON.stringify(answers);

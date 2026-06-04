@@ -40,6 +40,7 @@ import {
 } from "../../rendering";
 import { createClientFormConfig } from "../../rendering/client/config";
 import {
+  applyPlatformCookieHeaders,
   clearCheckpointAnswers,
   readCheckpointAnswers,
   setCheckpointAnswers,
@@ -648,10 +649,13 @@ export function registerFormRoutes(
           400,
         );
       }
-      return htmlResponse(
-        renderNativeSubmissionErrorPage(routeEntry.form, routeEntry.routeKey, validation.errors.map((error) => error.message)),
-        400,
-        "no-store",
+      return applyPlatformCookieHeaders(
+        c,
+        htmlResponse(
+          renderNativeSubmissionErrorPage(routeEntry.form, routeEntry.routeKey, validation.errors.map((error) => error.message)),
+          400,
+          "no-store",
+        ),
       );
     }
 
@@ -692,10 +696,13 @@ export function registerFormRoutes(
           502,
         );
       }
-      return htmlResponse(
-        renderNativeSubmissionErrorPage(routeEntry.form, routeEntry.routeKey, [routeEntry.form.ui.errors.submissionFailed]),
-        502,
-        "no-store",
+      return applyPlatformCookieHeaders(
+        c,
+        htmlResponse(
+          renderNativeSubmissionErrorPage(routeEntry.form, routeEntry.routeKey, [routeEntry.form.ui.errors.submissionFailed]),
+          502,
+          "no-store",
+        ),
       );
     }
 

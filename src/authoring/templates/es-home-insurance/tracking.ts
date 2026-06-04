@@ -79,7 +79,6 @@ export function createHomeInsuranceTracking({
       ? {
           visitorId: {
             cookie: {
-              name: "instant_forms_visitor_id",
               maxAgeSeconds: trackingVisitorIdCookieMaxAgeSeconds,
             },
           },

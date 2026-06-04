@@ -463,10 +463,6 @@ function isRailwayPrivateHostname(hostname: string): boolean {
 function assertTrackingContract(contract: FormContract, tracking: FormTracking | undefined): void {
   const visitorId = tracking?.visitorId;
   if (visitorId) {
-    if (!/^[A-Za-z0-9_]{1,80}$/u.test(visitorId.cookie.name)) {
-      throw new Error("tracking.visitorId.cookie.name must use only letters, numbers, or underscores.");
-    }
-
     if (
       !Number.isInteger(visitorId.cookie.maxAgeSeconds) ||
       visitorId.cookie.maxAgeSeconds < 60 ||

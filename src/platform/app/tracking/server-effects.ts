@@ -2,6 +2,7 @@ import type { Context } from "hono";
 import { getCookie } from "hono/cookie";
 
 import { ensureTrackingVisitorId, readTrackingVisitorId } from "../http/cookies";
+import { getLegacyTrackingVisitorIdCookieName, getTrackingVisitorIdCookieName } from "../../persistence/cookie-names";
 import type {
   FormStep,
   InstantForm,
@@ -113,7 +114,10 @@ function createTrackingServerEventInput(
     answers: options.answers,
     cookies: {
       get: (name: string) => {
-        if (name === form.tracking?.visitorId?.cookie.name && visitorId) {
+        if (
+          visitorId &&
+          (name === getTrackingVisitorIdCookieName() || name === getLegacyTrackingVisitorIdCookieName())
+        ) {
           return visitorId;
         }
 
