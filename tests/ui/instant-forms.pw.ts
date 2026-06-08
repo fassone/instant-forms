@@ -65,6 +65,29 @@ test.describe("instant routed form UI", () => {
     expect(documentRequests.filter((url) => url.includes("/auto/tn/tiene-licencia"))).toHaveLength(0);
   });
 
+  test("welcome transition restores the normal two-button footer", async ({ page }) => {
+    await page.goto("/hogar/tx/inicio");
+    await expect(page.locator("footer button")).toHaveCount(1);
+    await expect(page.getByRole("button", { name: "Empezar mi cotización" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Atrás" })).toHaveCount(0);
+
+    const transitionAssetUrl = await getTransitionAssetUrl(page);
+
+    if (transitionAssetUrl) {
+      await waitForTransitionAsset(page, transitionAssetUrl);
+    }
+
+    await page.getByRole("button", { name: "Empezar mi cotización" }).click();
+    await expect(page).toHaveURL(/\/hogar\/tx\/propiedad-en-texas$/u);
+    await expect(page.getByRole("button", { name: "Atrás" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Atrás" })).toBeDisabled();
+    await expect.poll(() => page.locator("footer .actions").evaluate((element) => element.className)).toBe("actions");
+
+    await clickActiveOption(page, "Si");
+    await expect(page).toHaveURL(/\/hogar\/tx\/dueno-o-renta$/u);
+    await expect(page.getByRole("button", { name: "Atrás" })).toBeEnabled();
+  });
+
   test("preloaded dynamic consent content stays hidden on earlier steps", async ({ page }) => {
     let consentResolutionRequests = 0;
     await page.route("**/api/forms/auto_tn/resolutions", async (route) => {

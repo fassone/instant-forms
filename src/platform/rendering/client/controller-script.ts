@@ -60,7 +60,7 @@ function getCoreRuntimeScript(): string {
   let steps = Array.from(document.querySelectorAll("[data-step]"));
   const progressBar = document.getElementById("progress-bar");
   const stepCount = document.querySelector("[data-step-count]");
-  const backButton = document.getElementById("back-button");
+  let backButton = document.getElementById("back-button");
   const nextButton = document.getElementById("next-button");
   const actions = document.querySelector(".actions");
   const errorModal = document.getElementById("error-modal");
@@ -291,19 +291,7 @@ function getCoreRuntimeScript(): string {
       void handleNext();
     });
 
-    if (backButton) {
-      backButton.addEventListener("click", () => {
-        const activeBehavior = getActiveBehavior();
-        if (activeBehavior?.beforeBack?.(getContext(), getQuestion(), getStepElement())) {
-          return;
-        }
-
-        const previousUrl = getRenderedPreviousUrl();
-        if (previousUrl) {
-          navigateToUrl(previousUrl);
-        }
-      });
-    }
+    wireBackButton();
 
     form.addEventListener("submit", (event) => {
       const submitResult = getActiveBehavior()?.onSubmit?.(event, getContext(), getQuestion(), getStepElement());
@@ -594,8 +582,96 @@ function getCoreRuntimeScript(): string {
     } else {
       nextButton.removeAttribute("aria-busy");
     }
+    syncFooterActions(question, isLoading);
+  }
+
+  function syncFooterActions(question, isLoading) {
+    const isWelcome = isWelcomeInterstitialQuestion(question);
+
+    if (actions) {
+      actions.classList.toggle("actions-single", isWelcome);
+      actions.classList.toggle("actions-welcome", isWelcome);
+    }
+
+    if (isWelcome) {
+      removeBackButton();
+      return;
+    }
+
+    const activeBackButton = ensureBackButton();
+    if (activeBackButton) {
+      activeBackButton.hidden = false;
+      activeBackButton.disabled = !getRenderedPreviousUrl() || isLoading;
+      activeBackButton.setAttribute("aria-hidden", "false");
+    }
+  }
+
+  function isWelcomeInterstitialQuestion(question) {
+    return question && question.kind === "interstitial" && question.interstitialTiming === "welcome";
+  }
+
+  function ensureBackButton() {
+    if (!actions) {
+      return undefined;
+    }
+
+    if (!backButton || !actions.contains(backButton)) {
+      const existingBackButton = document.getElementById("back-button");
+      if (existingBackButton && actions.contains(existingBackButton)) {
+        backButton = existingBackButton;
+      } else {
+        backButton = createBackButton();
+        actions.insertBefore(backButton, nextButton);
+      }
+    }
+
+    wireBackButton();
+    return backButton;
+  }
+
+  function createBackButton() {
+    const template = document.querySelector("[data-back-button-template]");
+    const templateButton =
+      template instanceof HTMLTemplateElement ? template.content.querySelector("button") : undefined;
+
+    if (templateButton instanceof HTMLButtonElement) {
+      return templateButton.cloneNode(true);
+    }
+
+    const button = document.createElement("button");
+    button.className = "button button-secondary";
+    button.id = "back-button";
+    button.name = "back";
+    button.type = "button";
+    button.textContent = config.ui.actions.back;
+    return button;
+  }
+
+  function removeBackButton() {
     if (backButton) {
-      backButton.disabled = !getRenderedPreviousUrl() || isLoading;
+      backButton.remove();
+      backButton = undefined;
+    }
+  }
+
+  function wireBackButton() {
+    if (!backButton || backButton.dataset.instantBackButtonWired === "true") {
+      return;
+    }
+
+    backButton.addEventListener("click", handleBackButtonClick);
+    backButton.dataset.instantBackButtonWired = "true";
+  }
+
+  function handleBackButtonClick() {
+    const activeBehavior = getActiveBehavior();
+    if (activeBehavior?.beforeBack?.(getContext(), getQuestion(), getStepElement())) {
+      return;
+    }
+
+    const previousUrl = getRenderedPreviousUrl();
+    if (previousUrl) {
+      navigateToUrl(previousUrl);
     }
   }
 

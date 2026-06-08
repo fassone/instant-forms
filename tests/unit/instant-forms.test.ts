@@ -9486,13 +9486,25 @@ describe("form rendering", () => {
     expect(html).toContain('<li class="welcome-benefit">Cotización rápida y sencilla</li>');
     expect(html).toContain('<div class="actions actions-single actions-welcome">');
     expect(html).toContain('<button class="button button-primary" id="next-button" name="next" type="button">Empezar mi cotización</button>');
-    expect(html).not.toContain('id="back-button"');
+    const welcomeActionsStart = html.indexOf('<div class="actions actions-single actions-welcome">');
+    const welcomeActionsEnd = html.indexOf("</div>", welcomeActionsStart);
+    const welcomeActionsHtml = html.slice(welcomeActionsStart, welcomeActionsEnd);
+    expect(welcomeActionsHtml).not.toContain('id="back-button"');
+    expect(html).toContain(
+      '<template data-back-button-template><button class="button button-secondary" id="back-button" name="back" type="button">Atrás</button></template>',
+    );
     expect(html).toContain('"countsAsStep":false');
     expect(html).toContain('<p class="step-count" data-step-count aria-hidden="true">Paso 1 de 9</p>');
     expect(html).toContain('.step[data-interstitial-timing="welcome"][aria-hidden="false"]');
     expect(html).toContain(".welcome-benefit {");
     expect(html).toContain("font-size: clamp(0.95rem, 4vw, 1.05rem);");
-    expect(html).toContain("if (backButton) {");
+    expect(html).toContain("function syncFooterActions(question, isLoading)");
+    expect(html).toContain('actions.classList.toggle("actions-single", isWelcome)');
+    expect(html).toContain("function ensureBackButton()");
+    expect(html).toContain("function createBackButton()");
+    expect(html).toContain('document.querySelector("[data-back-button-template]")');
+    expect(html).toContain("function removeBackButton()");
+    expect(html).toContain("function isWelcomeInterstitialQuestion(question)");
     expect(html).toContain('registerBehaviorModule("interstitial"');
     expect(html).toContain("function isWelcomeQuestion(question)");
     expect(html).toContain('return question && question.interstitialTiming === "welcome";');
@@ -9502,6 +9514,40 @@ describe("form rendering", () => {
     expect(html).not.toContain("Estamos buscando su seguro ideal");
     expect(html).not.toContain("Preparando opciones en Tennessee");
     expect(html).not.toContain("¡Encontramos opciones para usted!");
+  });
+
+  it("renders a tokenized back-button template for production welcome transitions", async () => {
+    const html = await withNodeEnv("production", () => renderTennesseeForm());
+
+    expect(html).toContain("data-back-button-template");
+    expect(html).toMatch(
+      /<template data-back-button-template><button class="(?=[^"]*\bp\b)(?=[^"]*\bo\b)[^"]*"[^>]*id="b"[^>]*>Atrás<\/button><\/template>/u,
+    );
+    expect(html).not.toContain('<button class="button button-secondary" id="back-button"');
+  });
+
+  it("restores the normal two-button footer after the welcome interstitial", async () => {
+    const homeRoute = getRequiredHogarTexasRoute();
+    const firstQuestionIndex = homeRoute.form.steps.findIndex(
+      (stepDefinition) => stepDefinition.key === "property_in_state",
+    );
+
+    expect(firstQuestionIndex).toBeGreaterThan(-1);
+
+    const html = await renderHogarTexasForm({
+      activeStepIndex: firstQuestionIndex,
+      answers: {
+        welcome_started: "started",
+      },
+    });
+
+    expect(html).not.toContain('"previousUrl":"/hogar/tx/inicio"');
+    expect(html).toContain('<div class="actions">');
+    expect(html).toContain(
+      '<button class="button button-secondary" id="back-button" name="back" type="button">Atrás</button>',
+    );
+    expect(html).toContain('<button class="button button-primary" id="next-button" name="next" type="button">Siguiente</button>');
+    expect(html).not.toContain('<div class="actions actions-single actions-welcome">');
   });
 
   it("wires a forgiving US phone mask without blocking browser autofill", async () => {

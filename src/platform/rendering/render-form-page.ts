@@ -1825,6 +1825,10 @@ function renderFormFooter(form: InstantForm, nextButtonLabel: string, activeStep
     ? ""
     : `
             <button class="button button-secondary" id="back-button" name="back" type="button">${escapeHtml(form.ui.actions.back)}</button>`;
+  const backButtonTemplate = isWelcomeInterstitial
+    ? `
+            <template data-back-button-template><button class="button button-secondary" id="back-button" name="back" type="button">${escapeHtml(form.ui.actions.back)}</button></template>`
+    : "";
 
   return `
         <footer>
@@ -1832,6 +1836,7 @@ function renderFormFooter(form: InstantForm, nextButtonLabel: string, activeStep
             ${backButton}
             <button class="button button-primary" id="next-button" name="next" type="button">${escapeHtml(nextButtonLabel)}</button>
           </div>
+          ${backButtonTemplate}
         </footer>`;
 }
 
