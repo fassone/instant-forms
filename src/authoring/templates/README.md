@@ -19,3 +19,5 @@
 ## Change Safely
 
 Templates are authoring-time factories only. A template should validate its variables, then return a normal flow through `defineFormFlow(...)`. Keep market-specific values explicit in the template variables so each instantiation shows exactly what changes.
+
+The Spanish auto/home modules also export generic variants without authored `areaCode`/`areaName`. These require an unconditional state answer and reuse the product question builders and delivery mapping. Regional yes/no confirmation steps remain in the state variants only. `generic-tracking.ts` supplies generic analytics and optional explicitly authored Meta mapping without borrowing regional pixel IDs.

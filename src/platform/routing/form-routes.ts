@@ -1,3 +1,5 @@
+import { US_STATES } from "../../shared/data/us-states";
+import { renderQuoteEntryPage, type QuoteEntryPage } from "../rendering/quote-entry-page";
 import type { Context, Hono } from "hono";
 import { getCookie } from "hono/cookie";
 
@@ -7,11 +9,14 @@ import {
   type AttributionCookieCollector,
   clearPostSubmitState,
   readCheckpointAnswers,
+  setCheckpointAnswers,
   readPostSubmitState,
 } from "../app/http/cookies";
 import { htmlResponse, redirectNoStore } from "../app/http/responses";
 import {
   canAccessStep,
+  sanitizeCheckpointAnswers,
+  validateCheckpointAnswer,
   getNextStepIndex,
   getResumeStepIndex,
 } from "../persistence/checkpoints";
@@ -49,14 +54,18 @@ export type UnavailableRouteAction = UnavailablePageContent & {
   status: number;
 };
 
-export type FormRouteAction = RedirectRouteAction | UnavailableRouteAction;
+export type QuoteEntryRouteAction = { type: "quote_entry"; content: QuoteEntryPage; selection: boolean };
+export type GenericStateFallbackAction = { type: "generic_state"; to: string; unavailable: UnavailableRouteAction };
+export type FormRouteAction = RedirectRouteAction | UnavailableRouteAction | QuoteEntryRouteAction | GenericStateFallbackAction;
 
-export type FormRouteNodeInput = InstantForm | FormRouteGroupInput;
+export type FormRouteNodeInput = InstantForm | FormRouteGroupInput | FormRouteAction;
 
 export type FormRouteGroupInput = {
+  index?: InstantForm | FormRouteAction;
+  queryPrefill?: Record<string, string>;
   notFound?: FormRouteAction;
 } & {
-  [segment: string]: FormRouteNodeInput | FormRouteAction | undefined;
+  [segment: string]: FormRouteNodeInput | Record<string, string> | undefined;
 };
 
 export type FormRouteFlowNode = {
@@ -65,12 +74,14 @@ export type FormRouteFlowNode = {
 };
 
 export type FormRouteGroupNode = {
+  index?: FormRouteFlowNode | { type: "action"; action: FormRouteAction };
+  queryPrefill?: Record<string, string>;
   type: "group";
   children: Readonly<Record<string, FormRouteNode>>;
   notFound?: FormRouteAction;
 };
 
-export type FormRouteNode = FormRouteFlowNode | FormRouteGroupNode;
+export type FormRouteNode = FormRouteFlowNode | FormRouteGroupNode | { type: "action"; action: FormRouteAction };
 
 export type FormRoutesInput = {
   index: FormRouteAction;
@@ -114,10 +125,10 @@ export function defineFormRoutes(input: FormRoutesInput): FormRoutes {
 }
 
 export function registerFormRoutePages(app: Hono, routes: FormRoutes, eventLogger?: InstantFormLogger): void {
-  app.get("/", (c) => executeRouteAction(c, routes.index));
+  registerRouteAction(app, "/", routes.index, routes);
 
   for (const [folder, node] of Object.entries(routes.folders)) {
-    registerPublicRouteNode(app, [folder], node, routes.notFound, eventLogger);
+    registerPublicRouteNode(app, [folder], node, routes.notFound, routes, eventLogger);
     registerPreviewRouteNode(app, [folder], node, routes.notFound);
   }
 }
@@ -160,9 +171,12 @@ function getFormRouteNodeBuildEntries(routeSegments: readonly string[], node: Fo
     return [{ routeKey: getFormRouteKey(routeSegments), routeSegments, form: node.form }];
   }
 
-  return Object.entries(node.children).flatMap(([childSegment, childNode]) =>
-    getFormRouteNodeBuildEntries([...routeSegments, childSegment], childNode),
-  );
+  if (node.type === "action") return [];
+  return [
+    ...(node.index?.type === "flow" ? [{ routeKey: getFormRouteKey(routeSegments), routeSegments, form: node.index.form }] : []),
+    ...Object.entries(node.children).flatMap(([childSegment, childNode]) =>
+      getFormRouteNodeBuildEntries([...routeSegments, childSegment], childNode)),
+  ];
 }
 
 function logRouteEvent(
@@ -196,6 +210,7 @@ function registerPublicRouteNode(
   routeSegments: readonly string[],
   node: FormRouteNode,
   inheritedFallback: FormRouteAction,
+  routes: FormRoutes,
   eventLogger?: InstantFormLogger,
 ): void {
   if (node.type === "flow") {
@@ -204,15 +219,22 @@ function registerPublicRouteNode(
   }
 
   const folderRoot = getFolderRoot(routeSegments);
+  if (node.type === "action") {
+    registerRouteAction(app, folderRoot, node.action, routes);
+    return;
+  }
   const fallback = node.notFound ?? inheritedFallback;
 
-  app.get(folderRoot, (c) => executeRouteAction(c, fallback));
-
   for (const [childSegment, childNode] of Object.entries(node.children)) {
-    registerPublicRouteNode(app, [...routeSegments, childSegment], childNode, fallback, eventLogger);
+    registerPublicRouteNode(app, [...routeSegments, childSegment], childNode, fallback, routes, eventLogger);
   }
 
-  app.get(`${folderRoot}/*`, (c) => executeRouteAction(c, fallback));
+  if (node.index?.type === "flow") {
+    registerPublicFormFolder(app, routeSegments, node.index.form, eventLogger, { fallback, queryPrefill: node.queryPrefill });
+  } else {
+    registerRouteAction(app, folderRoot, node.index?.action ?? fallback, routes);
+    app.get(`${folderRoot}/*`, (c) => executeRouteAction(c, fallback));
+  }
 }
 
 function registerPublicFormFolder(
@@ -220,6 +242,7 @@ function registerPublicFormFolder(
   routeSegments: readonly string[],
   form: InstantForm,
   eventLogger?: InstantFormLogger,
+  options: { fallback?: FormRouteAction; queryPrefill?: Record<string, string> } = {},
 ): void {
   const folderRoot = getFolderRoot(routeSegments);
   const routeKey = getFormRouteKey(routeSegments);
@@ -285,6 +308,7 @@ function registerPublicFormFolder(
     const stepSlug = c.req.param("stepSlug");
     const stepIndex = getStepIndexBySlug(form, stepSlug);
 
+    if (stepIndex === -1 && options.fallback) return executeRouteAction(c, options.fallback);
     if (stepIndex === -1) {
       const legacyStepIndex = getStepIndexByLegacySlug(form, stepSlug);
 
@@ -377,7 +401,19 @@ function registerPublicFormFolder(
       eventLogger,
     );
 
+    const initialPrefill: Record<string, string> = {};
+    const prefillQuery: Record<string, string> = {};
+    for (const [queryParam, answerKey] of Object.entries(options.queryPrefill ?? {})) {
+      const step = form.steps.find((candidate) => candidate.key === answerKey);
+      if (!step) continue;
+      const validation = validateCheckpointAnswer(form, step, c.req.query(queryParam));
+      if (validation.ok) {
+        initialPrefill[answerKey] = validation.answer;
+        prefillQuery[queryParam] = validation.answer;
+      }
+    }
     const renderOptions = {
+      ...(options.queryPrefill ? { initialPrefill, prefillQuery } : {}),
       activeStepIndex: stepIndex,
       answers,
       routeKey,
@@ -414,6 +450,7 @@ function registerPublicFormFolder(
   });
 
   app.get(`${folderRoot}/*`, (c) => {
+    if (options.fallback) return executeRouteAction(c, options.fallback);
     const attribution = captureFlowAttribution(c, form);
 
     return redirectToFlowUrl(c, form, folderRoot, attribution);
@@ -432,14 +469,20 @@ function registerPreviewRouteNode(
   }
 
   const previewFolderRoot = getFolderRoot([RESERVED_PREVIEW_FOLDER, ...routeSegments]);
+  if (node.type === "action") {
+    app.get(previewFolderRoot, (c) => executeRouteAction(c, node.action));
+    return;
+  }
   const fallback = node.notFound ?? inheritedFallback;
 
-  app.get(previewFolderRoot, (c) => executeRouteAction(c, fallback, RESERVED_PREVIEW_FOLDER));
+  const indexAction = node.index?.type === "action" ? node.index.action : fallback;
+  if (node.index?.type !== "flow") app.get(previewFolderRoot, (c) => executeRouteAction(c, indexAction, RESERVED_PREVIEW_FOLDER));
 
   for (const [childSegment, childNode] of Object.entries(node.children)) {
     registerPreviewRouteNode(app, [...routeSegments, childSegment], childNode, fallback);
   }
 
+  if (node.index?.type === "flow") registerPreviewFormFolder(app, routeSegments, node.index.form);
   app.get(`${previewFolderRoot}/*`, (c) => executeRouteAction(c, fallback, RESERVED_PREVIEW_FOLDER));
 }
 
@@ -602,6 +645,16 @@ async function executeRouteAction(
     return redirectNoStore(c, appendQueryParams(getRedirectTarget(action.to, redirectPrefix), getIncomingQueryParams(c)));
   }
 
+  if (action.type === "quote_entry") {
+    return htmlResponse(await renderQuoteEntryPage(action.content, action.selection, new URL(c.req.url).search), 200, "no-store");
+  }
+  if (action.type === "generic_state") {
+    const stateSegment = c.req.path.split("/")[2]?.toUpperCase();
+    if (!US_STATES.some((state) => state.code === stateSegment)) return renderUnavailableResponse(action.unavailable);
+    const params = new URLSearchParams(getIncomingQueryParams(c));
+    params.set("state", stateSegment!);
+    return redirectNoStore(c, appendQueryParams(action.to, params));
+  }
   return renderUnavailableResponse(action, preferPrebuiltUnavailable);
 }
 
@@ -721,7 +774,7 @@ function normalizeRouteNode(segment: string, input: FormRouteNodeInput | FormRou
   }
 
   if (isFormRouteAction(input)) {
-    throw new Error(`Form route segment "${segment}" must define a flow or route group, not a route action.`);
+    return { type: "action", action: input };
   }
 
   if (!isRecord(input)) {
@@ -732,16 +785,37 @@ function normalizeRouteNode(segment: string, input: FormRouteNodeInput | FormRou
     throw new Error(`Route group "${segment}" must use a route action for "${NOT_FOUND_KEY}".`);
   }
 
-  const childEntries = Object.entries(input).filter(([childSegment]) => childSegment !== NOT_FOUND_KEY);
+  const index = input.index === undefined ? undefined
+    : isInstantForm(input.index) ? { type: "flow" as const, form: input.index }
+    : isFormRouteAction(input.index) ? { type: "action" as const, action: input.index }
+    : undefined;
+  if (input.index !== undefined && !index) throw new Error("Route group index must be a flow or route action.");
+  if (input.queryPrefill && index?.type !== "flow") throw new Error("Query prefill requires a group index flow.");
+  for (const [queryParam, key] of Object.entries(input.queryPrefill ?? {})) {
+    if (!queryParam || !index || index.type !== "flow" || !index.form.steps.some((step) => step.key === key && step.kind === "autocomplete")) {
+      throw new Error("Query prefill must reference an autocomplete step.");
+    }
+  }
+  const childEntries = Object.entries(input).filter(([key]) => !["index", "queryPrefill", NOT_FOUND_KEY].includes(key));
+  if (index?.type === "flow") {
+    const flowSlugs = new Set([...index.form.steps.map(getStepSlug), index.form.postSubmit.slug]);
+    for (const [childSegment] of childEntries) {
+      if (flowSlugs.has(childSegment)) {
+        throw new Error(`Route group "${segment}" child "${childSegment}" conflicts with its index flow.`);
+      }
+    }
+  }
 
-  if (childEntries.length === 0) {
+  if (childEntries.length === 0 && !index) {
     throw new Error(`Route group "${segment}" must define at least one child route.`);
   }
 
   return {
     type: "group",
+    index,
+    queryPrefill: input.queryPrefill,
     children: Object.fromEntries(
-      childEntries.map(([childSegment, childInput]) => [childSegment, normalizeRouteNode(childSegment, childInput)]),
+      childEntries.map(([childSegment, childInput]) => [childSegment, normalizeRouteNode(childSegment, childInput as FormRouteNodeInput)]),
     ),
     notFound: input.notFound,
   };
@@ -787,9 +861,30 @@ function isInstantForm(value: unknown): value is InstantForm {
 }
 
 function isFormRouteAction(value: unknown): value is FormRouteAction {
-  return isRecord(value) && (value.type === "redirect" || value.type === "unavailable");
+  return isRecord(value) && ["redirect", "unavailable", "quote_entry", "generic_state"].includes(String(value.type));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function registerRouteAction(app: Hono, path: string, action: FormRouteAction, routes: FormRoutes): void {
+  app.get(path, (c) => executeRouteAction(c, action));
+  if (action.type !== "quote_entry" || !action.selection) return;
+  app.post(path, async (c) => {
+    const body = await c.req.parseBody();
+    const product = action.content.products.find((candidate) => candidate.key === body.product);
+    const entry = product ? getFormRouteByRouteKey(routes, product.routeKey) : undefined;
+    const welcome = entry?.form.steps[0];
+    if (!entry || welcome?.kind !== "interstitial" || welcome.interstitialTiming !== "welcome") {
+      return htmlResponse(await renderQuoteEntryPage(action.content, true, new URL(c.req.url).search), 400, "no-store");
+    }
+    const answers = readCheckpointAnswers(c, entry.form, entry.routeKey);
+    const validation = validateCheckpointAnswer(entry.form, welcome, welcome.completionAnswer);
+    if (!validation.ok) throw new Error("Invalid authored welcome completion answer.");
+    answers[welcome.key] = validation.answer;
+    setCheckpointAnswers(c, entry.routeKey, sanitizeCheckpointAnswers(entry.form, answers));
+    c.header("Cache-Control", "no-store");
+    return c.redirect(appendQueryParams(getFolderRoot(entry.routeSegments), getIncomingQueryParams(c)), 303);
+  });
 }

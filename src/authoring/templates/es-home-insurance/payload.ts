@@ -1,6 +1,6 @@
 import type { FormPayloadDelivery, MetaPixelId } from "../../../platform/flow";
 import { getCapturedLeadAttribution } from "./attribution";
-import type { HomeInsuranceContract } from "./contracts";
+import type { HomeInsuranceAuthoringContract } from "./contracts";
 
 type CreateLidernaWebleadsPayloadMappingInput = {
   metaPixelId?: MetaPixelId;
@@ -10,10 +10,11 @@ type CreateLidernaWebleadsPayloadMappingInput = {
 export function createLidernaWebleadsPayloadMapping({
   metaPixelId,
   metaTestEventCode,
-}: CreateLidernaWebleadsPayloadMappingInput): FormPayloadDelivery<HomeInsuranceContract>["mapping"] {
+}: CreateLidernaWebleadsPayloadMappingInput): FormPayloadDelivery<HomeInsuranceAuthoringContract>["mapping"] {
   return ({ context, answers, submission, cookies, request, browser }) => {
     const attribution = getCapturedLeadAttribution(cookies);
     const propertyState = answers.property_state ?? context.areaCode;
+    if (!propertyState) throw new Error("A confirmed state is required for lead delivery.");
 
     return {
       id: submission.id,

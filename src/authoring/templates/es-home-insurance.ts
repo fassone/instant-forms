@@ -1,1 +1,1 @@
-export { esHomeInsuranceTemplate, esHomeInsuranceVariables } from "./es-home-insurance/index";
+export { esHomeInsuranceTemplate, esGenericHomeInsuranceTemplate, esHomeInsuranceVariables } from "./es-home-insurance/index";

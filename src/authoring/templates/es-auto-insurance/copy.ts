@@ -53,9 +53,9 @@ export const esAutoInsurancePostSubmit = {
   },
 } as const;
 
-export function createEsAutoInsurancePageMeta(areaDisplayName: string): { description: string; robots: string } {
+export function createEsAutoInsurancePageMeta(areaDisplayName?: string): { description: string; robots: string } {
   return {
-    description: `Cotice seguro de auto en ${areaDisplayName} con Seguros Aseguranza. Complete un formulario corto para recibir opciones de cobertura disponibles.`,
+    description: `Cotice seguro de auto ${areaDisplayName ? `en ${areaDisplayName} ` : ""}con Seguros Aseguranza. Complete un formulario corto para recibir opciones de cobertura disponibles.`,
     robots: "noindex,nofollow,nosnippet,noarchive,noimageindex,max-snippet:0,max-image-preview:none,max-video-preview:0",
   };
 }

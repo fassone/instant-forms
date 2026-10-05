@@ -116,6 +116,8 @@ export type ClientFormConfig = {
   customVariables: Readonly<Record<string, string>>;
   activeStepIndex: number;
   initialAnswers: Record<string, string>;
+  initialPrefill?: Record<string, string>;
+  prefillQuery?: Record<string, string>;
   previewMode: boolean;
   currentStep: ClientStep;
   steps: readonly ClientStep[];
@@ -136,6 +138,8 @@ export type ClientFormConfig = {
 };
 
 export type ClientFormConfigOptions = {
+  initialPrefill?: Record<string, string>;
+  prefillQuery?: Record<string, string>;
   routeKey?: string;
   transitionAssetUrl?: string;
   initialTrackingEvents?: readonly TrackingEventPayload[];
@@ -191,6 +195,8 @@ export function createClientFormConfig(
     customVariables: form.customVariables,
     activeStepIndex: 0,
     initialAnswers,
+    ...(options.initialPrefill ? { initialPrefill: options.initialPrefill } : {}),
+    ...(options.prefillQuery ? { prefillQuery: options.prefillQuery } : {}),
     previewMode,
     currentStep,
     steps: [currentStep],

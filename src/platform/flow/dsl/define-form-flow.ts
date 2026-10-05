@@ -255,6 +255,9 @@ function assertPage(page: FormPage): void {
 }
 
 function assertPagePresentation(page: FormPage): void {
+  if (page.presentation?.showAreaBadge !== undefined && typeof page.presentation.showAreaBadge !== "boolean") {
+    throw new Error("page.presentation.showAreaBadge must be a boolean.");
+  }
   const desktopHeightPx = page.presentation?.desktopHeightPx;
 
   if (desktopHeightPx === undefined) {

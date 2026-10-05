@@ -105,3 +105,16 @@ export const homeInsuranceContract = {
 } as const;
 
 export type HomeInsuranceContract = typeof homeInsuranceContract;
+
+export const homeInsuranceAuthoringContract = {
+  ...homeInsuranceContract,
+  context: homeInsuranceContextContract.partial({ areaCode: true }),
+  answers: homeInsuranceAnswersContract.partial({ property_in_state: true }),
+} as const;
+
+export const genericHomeInsuranceContract = {
+  ...homeInsuranceAuthoringContract,
+  answers: homeInsuranceAnswersContract.omit({ property_in_state: true }).required({ property_state: true }),
+} as const;
+
+export type HomeInsuranceAuthoringContract = typeof homeInsuranceAuthoringContract;

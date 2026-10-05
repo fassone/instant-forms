@@ -48,6 +48,7 @@ export type TrustedFormConsentSubstepsPresentation = {
 
 export type FormPagePresentation = {
   desktopHeightPx?: number;
+  showAreaBadge?: boolean;
 };
 
 export type FormPageMeta = {

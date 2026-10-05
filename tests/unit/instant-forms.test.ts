@@ -367,10 +367,10 @@ describe("form registry", () => {
     const form = getRequiredTennesseeForm();
     const autoNode = formRoutes.folders.auto;
 
-    expect(formRoutes.index).toEqual({ type: "redirect", to: "/auto/tn" });
+    expect(formRoutes.index).toMatchObject({ type: "quote_entry", selection: false });
     expect(autoNode?.type).toBe("group");
     if (autoNode?.type === "group") {
-      expect(autoNode.notFound).toBeUndefined();
+      expect(autoNode.notFound).toMatchObject({ type: "generic_state", to: "/auto/inicio" });
       for (const areaCode of autoAreaCodes) {
         expect(autoNode.children[areaCode.toLowerCase()]?.type).toBe("flow");
       }
@@ -387,7 +387,7 @@ describe("form registry", () => {
 
     expect(homeNode?.type).toBe("group");
     if (homeNode?.type === "group") {
-      expect(homeNode.notFound).toBeUndefined();
+      expect(homeNode.notFound).toMatchObject({ type: "generic_state", to: "/hogar/inicio" });
       for (const areaCode of homeAreaCodes) {
         expect(homeNode.children[areaCode.toLowerCase()]?.type).toBe("flow");
       }
@@ -5664,22 +5664,20 @@ describe("request proxy registry", () => {
 });
 
 describe("server routing", () => {
-  it("redirects the root route to Tennessee", async () => {
+  it("renders the generic welcome at the root route", async () => {
     const handler = createFetchHandler();
     const response = await handler(new Request("http://localhost/"));
 
-    expect(response.status).toBe(302);
-    expect(response.headers.get("Location")).toBe("/auto/tn");
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("Seguro claro, rápido y en español");
     expect(response.headers.get("Cache-Control")).toBe("no-store");
   });
 
-  it("returns unavailable for the auto group route without a group fallback", async () => {
+  it("redirects the auto group route to its independent generic welcome", async () => {
     const handler = createFetchHandler();
     const response = await handler(new Request("http://localhost/auto"));
-    const html = await response.text();
-
-    expect(response.status).toBe(404);
-    expect(html).toContain("Esta página no existe o ya no está disponible.");
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe("/auto/inicio");
   });
 
   it("returns unavailable for unknown auto group paths without a group fallback", async () => {
@@ -5733,13 +5731,11 @@ describe("server routing", () => {
     expect(caResponse.headers.get("Location")).toBe("/auto/ca/inicio");
   });
 
-  it("returns unavailable for unauthored auto state routes", async () => {
+  it("redirects unauthored auto state routes to the generic flow", async () => {
     const handler = createFetchHandler();
     const dcResponse = await handler(new Request("http://localhost/auto/dc"));
-    const html = await dcResponse.text();
-
-    expect(dcResponse.status).toBe(404);
-    expect(html).toContain("Esta página no existe o ya no está disponible.");
+    expect(dcResponse.status).toBe(302);
+    expect(dcResponse.headers.get("Location")).toBe("/auto/inicio?state=DC");
   });
 
   it("redirects authored hogar state routes to their first unanswered step", async () => {
@@ -5750,13 +5746,15 @@ describe("server routing", () => {
     expect(txResponse.headers.get("Location")).toBe("/hogar/tx/inicio");
   });
 
-  it("returns unavailable for unauthored hogar state routes", async () => {
+  it("redirects unauthored hogar state routes to the generic flow", async () => {
     const handler = createFetchHandler();
     const tnResponse = await handler(new Request("http://localhost/hogar/tn"));
     const caResponse = await handler(new Request("http://localhost/hogar/ca"));
 
-    expect(tnResponse.status).toBe(404);
-    expect(caResponse.status).toBe(404);
+    expect(tnResponse.status).toBe(302);
+    expect(tnResponse.headers.get("Location")).toBe("/hogar/inicio?state=TN");
+    expect(caResponse.status).toBe(302);
+    expect(caResponse.headers.get("Location")).toBe("/hogar/inicio?state=CA");
   });
 
   it("redirects Tennessee custom to the next unanswered step from a checkpoint", async () => {
@@ -5977,13 +5975,12 @@ describe("server routing", () => {
 
   it("carries query params through pre-flow redirects so flow attribution can capture them", async () => {
     const handler = createFetchHandler();
-    const groupResponse = await handler(new Request("http://localhost/?fbclid=CLICK123"));
+    const groupResponse = await handler(new Request("http://localhost/auto/fl?fbclid=CLICK123"));
     const flowResponse = await handler(new Request(`http://localhost${groupResponse.headers.get("Location") ?? ""}`));
 
     expect(groupResponse.status).toBe(302);
-    expect(groupResponse.headers.get("Location")).toBe("/auto/tn?fbclid=CLICK123");
-    expect(flowResponse.status).toBe(302);
-    expect(flowResponse.headers.get("Location")).toBe("/auto/tn/inicio?fbclid=CLICK123");
+    expect(groupResponse.headers.get("Location")).toBe("/auto/inicio?fbclid=CLICK123&state=FL");
+    expect(flowResponse.status).toBe(200);
     expect(flowResponse.headers.get("Set-Cookie") ?? "").toContain(".CLICK123");
   });
 
@@ -7528,7 +7525,6 @@ describe("server routing", () => {
         config: {
           kind: "trusted_form_consent",
           dynamicResolverDependencies: [
-            "belongs_to_state",
             "residence_state",
             "has_license",
             "has_insurance",
@@ -7570,7 +7566,6 @@ describe("server routing", () => {
         config: {
           kind: "trusted_form_consent",
           dynamicResolverDependencies: [
-            "belongs_to_state",
             "residence_state",
             "has_license",
             "has_insurance",
@@ -9021,7 +9016,6 @@ describe("form rendering", () => {
     expect(transitionSteps.find((stepDefinition) => stepDefinition.key === "trustedform_consent")?.config).toMatchObject({
       kind: "trusted_form_consent",
       dynamicResolverDependencies: [
-        "belongs_to_state",
         "residence_state",
         "has_license",
         "has_insurance",
@@ -9670,7 +9664,7 @@ describe("form rendering", () => {
     expect(html).not.toContain("preloadOnPreviousStep");
     expect(html).toContain('"allowSubmitWithoutCert":true');
     expect(html).toContain(
-      '"dynamicResolverDependencies":["belongs_to_state","residence_state","has_license","has_insurance","is_clean_title","number_of_registered_cars","first_name","last_name","phone_number"]',
+      '"dynamicResolverDependencies":["residence_state","has_license","has_insurance","is_clean_title","number_of_registered_cars","first_name","last_name","phone_number"]',
     );
     expect(html).toContain('"review":{"title":"Antes de cotizar"');
     expect(html).toContain("Ya tenemos posibles opciones para usted");

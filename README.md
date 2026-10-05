@@ -1,6 +1,6 @@
 # instant-forms
 
-Ultra-fast Bun + Hono + TypeScript progressive lead forms. The first flow families are Spanish auto and home insurance for Seguros Aseguranza, rendered from authored public route folders such as `/auto/tn` and `/home/tn`.
+Ultra-fast Bun + Hono + TypeScript progressive lead forms. The first flow families are Spanish auto and home insurance for Seguros Aseguranza, rendered from authored public route folders such as `/auto/tn` and `/hogar/tx`, with independent generic flows at `/auto` and `/hogar`.
 
 ## Purpose
 
@@ -58,7 +58,7 @@ Run the app:
 bun run dev
 ```
 
-Open `http://localhost:3000/auto/tn`.
+Open `http://localhost:3000/cotizar`.
 
 Build production form HTML:
 
@@ -94,15 +94,14 @@ Every source and test folder has its own `README.md` describing ownership and sa
 
 | Route | Purpose |
 |---|---|
-| `GET /` | Redirects to `/auto/tn`. |
-| `GET /auto` | Redirects to the authored Tennessee auto form route at `/auto/tn`. |
-| `GET /auto/:state` | Redirects to the next unanswered step for an authored auto state. |
-| `GET /auto/:state/:stepSlug` | Renders a guarded routed step for an authored auto state, for example `/auto/tn/vive-en-tennessee`. |
-| `GET /auto/*` | Redirects unknown auto group paths back to `/auto/tn`. |
-| `GET /home` | Redirects to the authored Tennessee home form route at `/home/tn`. |
-| `GET /home/:state` | Redirects to the next unanswered step for an authored home state. |
-| `GET /home/:state/:stepSlug` | Renders a guarded routed step for an authored home state, for example `/home/tn/propiedad-en-tennessee`. |
-| `GET /home/*` | Redirects unknown home group paths back to `/home/tn`. |
+| `GET /`, `GET /cotizar` | Shared single-CTA welcome, then product selection. |
+| `GET /cotizar/producto` | Auto/home selection. |
+| `POST /cotizar/producto` | Confirms the selected product's welcome checkpoint, then resumes that generic flow without another welcome. |
+| `GET /auto`, `GET /hogar` | Resume the independent generic product flow, starting at `/inicio` for a new visitor. |
+| `GET /auto/:stepSlug`, `GET /hogar/:stepSlug` | Generic guarded steps and `/gracias`, without a state in the path. |
+| `GET /auto/:state`, `GET /hogar/:state` | Resume an authored state flow. A valid but unauthored state redirects to the generic welcome with `?state=XX`. |
+| `GET /auto/:state/:stepSlug`, `GET /hogar/:state/:stepSlug` | Existing dedicated state steps keep their original routes. |
+| Unknown product/state paths | Invalid state codes and unknown generic paths return 404. |
 | `GET /__preview/auto/tn/:stepSlug` | No-store preview mirror for public form step visual iteration. |
 | `GET /_instant/scripts/:scriptKey.js` | Allowlisted first-party proxy for selected third-party scripts. |
 | `GET /~partytown/*` | Partytown worker/runtime assets used after the small bootstrap has been inlined. |
@@ -114,7 +113,17 @@ Unavailable public routes use author-controlled title, message, CTA, and status 
 
 ## Form Flow
 
-Auto- and home-insurance flows are generated from the product-authored area filters in `src/authoring/flows/auto/registry.ts` and `src/authoring/flows/home/registry.ts`. Those filters must use codes from `US_STATES`, but only listed states are mounted under `/auto/{state}` and `/home/{state}`. Both products are built with the typed DSL in `src/platform/flow/dsl/`. Public route placement lives in `src/authoring/routes/registry.ts`. Runtime identity comes from that route mount, so `/auto/tn` uses the encoded route key `auto_tn` and `/home/tn` uses `home_tn`.
+Auto- and home-insurance flows are generated from the product-authored area filters in `src/authoring/flows/auto/registry.ts` and `src/authoring/flows/home/registry.ts`. Those filters must use codes from `US_STATES`, but only listed states are mounted under `/auto/{state}` and `/hogar/{state}`. Both products are built with the typed DSL in `src/platform/flow/dsl/`. Public route placement lives in `src/authoring/routes/registry.ts`. Runtime identity comes from that route mount, so `/auto/tn` uses the encoded route key `auto_tn` and `/hogar/tx` uses `hogar_tx`.
+
+Generic flows are authored separately in `src/authoring/flows/generic.ts`, using `esGenericAutoInsuranceTemplate` and `esGenericHomeInsuranceTemplate`. They share product questions, welcome styling, consent and delivery mapping with the state templates, but have their own contracts and route keys (`auto`, `hogar`), checkpoint cookies and post-submit state. They require a confirmed state and never switch to a dedicated state flow, even when one exists. Generic templates omit the area badge through `page.presentation.showAreaBadge: false`.
+
+Generic auto order: `/auto/inicio`, `/auto/estado-donde-vive`, `/auto/tiene-licencia`, `/auto/tiene-seguro`, `/auto/titulo-limpio`, `/auto/autos-a-asegurar`, `/auto/nombre`, `/auto/apellido`, `/auto/telefono`, `/auto/consentimiento`, `/auto/gracias`.
+
+Generic home order: `/hogar/inicio`, `/hogar/estado-de-la-propiedad`, `/hogar/dueno-o-renta`, `/hogar/tipo-de-propiedad`, `/hogar/uso-de-propiedad`, `/hogar/tiene-seguro-de-hogar`, `/hogar/edad-de-la-vivienda`, `/hogar/edad-del-techo`, `/hogar/nombre`, `/hogar/apellido`, `/hogar/telefono`, `/hogar/consentimiento`, `/hogar/gracias`.
+
+For example, `/auto/fl` redirects to `/auto/inicio?state=FL`. The state hint is validated against the state autocomplete source, displayed for confirmation, and preserved across navigation/refresh without becoming a checkpoint answer until confirmed. A saved answer takes precedence over the hint. Attribution parameters pass through the shared welcome/product selection and existing attribution capture stays unchanged.
+
+Generic flows reuse the shared GTM and PostHog defaults. No state-specific Meta Pixel ID is inherited; optionally author `metaPixelId` on either generic template instantiation in `generic.ts`. The product selector itself uses ordinary same-origin links/forms and does not emit a synthetic product-flow answer event.
 
 Reusable flow shapes live in `src/authoring/templates/` and use `defineFormTemplate(...)`. A template declares a Zod `variables` contract and exposes `.create(input)`, which validates required, optional, and unknown variables before returning a normal `InstantForm` through `defineFormFlow(...)`. Each authored auto state is currently an instantiation of the reusable Spanish auto-insurance template; each authored home state is an instantiation of the reusable Spanish home-insurance template.
 

@@ -408,7 +408,7 @@ function getCoreRuntimeScript(): string {
         showStep(stepIndex);
         const currentQuestion = config.steps[currentStep];
         if (currentQuestion && currentQuestion.url !== window.location.pathname) {
-          window.history.replaceState({ step: currentStep }, "", currentQuestion.url);
+          window.history.replaceState({ step: currentStep }, "", withPrefillQuery(currentQuestion.url));
         }
       }
     });
@@ -454,7 +454,7 @@ function getCoreRuntimeScript(): string {
     if (!replaceHiddenMatchingRouteIfNeeded()) {
       const currentQuestion = config.steps[currentStep];
       if (currentQuestion) {
-        window.history.replaceState({ step: currentStep }, "", currentQuestion.url);
+        window.history.replaceState({ step: currentStep }, "", withPrefillQuery(currentQuestion.url));
       }
     }
   }
@@ -1114,9 +1114,9 @@ function getCoreRuntimeScript(): string {
     showStep(stepIndex);
     if (window.location.pathname !== nextPath) {
       if (mode === "replace") {
-        window.history.replaceState({ step: stepIndex }, "", nextPath);
+        window.history.replaceState({ step: stepIndex }, "", withPrefillQuery(nextPath));
       } else {
-        window.history.pushState({ step: stepIndex }, "", nextPath);
+        window.history.pushState({ step: stepIndex }, "", withPrefillQuery(nextPath));
       }
     }
 
@@ -1136,7 +1136,7 @@ function getCoreRuntimeScript(): string {
         return;
       }
 
-      window.location.href = nextQuestion.url;
+      window.location.href = withPrefillQuery(nextQuestion.url);
       return;
     }
 
@@ -1151,7 +1151,7 @@ function getCoreRuntimeScript(): string {
         return;
       }
 
-      window.location.replace(nextQuestion.url);
+      window.location.replace(withPrefillQuery(nextQuestion.url));
       return;
     }
 
@@ -1165,7 +1165,7 @@ function getCoreRuntimeScript(): string {
 
     const stepIndex = config.steps.findIndex((question) => question.url === url);
     if (stepIndex === -1) {
-      window.location.href = url;
+      window.location.href = withPrefillQuery(url);
       return;
     }
 
@@ -1179,7 +1179,7 @@ function getCoreRuntimeScript(): string {
 
     const stepIndex = config.steps.findIndex((question) => question.url === url);
     if (stepIndex === -1) {
-      window.location.replace(url);
+      window.location.replace(withPrefillQuery(url));
       return;
     }
 
@@ -1195,12 +1195,21 @@ function getCoreRuntimeScript(): string {
   }
 
   function hydrateCurrentStepAnswer(question) {
-    const answer = answers[question.key];
+    const answer = answers[question.key] ?? config.initialPrefill?.[question.key];
     if (!answer && question.kind !== "trusted_form_consent") {
       return;
     }
 
     getActiveBehavior()?.hydrate?.(getContext(), question, getStepElement(), answer);
+  }
+
+  function withPrefillQuery(path) {
+    if (!Object.keys(config.prefillQuery || {}).length) return path;
+    const url = new URL(path, window.location.origin);
+    for (const [key, value] of Object.entries(config.prefillQuery || {})) {
+      url.searchParams.set(key, String(value));
+    }
+    return url.pathname + url.search + url.hash;
   }
 
   function getCurrentAnswer() {

@@ -22,3 +22,5 @@
 Treat config keys as a browser API. If a field changes, update render tests and Playwright interactions together.
 
 The browser controller remains inline in both development and production. Keep source readable here; the rendering asset builder handles production compaction so visitors still receive a small inline payload with no extra request.
+
+`initialPrefill` contains validated, unconfirmed autocomplete hints. Hydration prefers checkpoint answers over those hints; only normal answer confirmation saves them. `prefillQuery` retains the hints during document and history navigation so refresh does not erase a pending preselection.

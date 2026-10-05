@@ -53,9 +53,9 @@ export const esHomeInsurancePostSubmit = {
   },
 } as const;
 
-export function createEsHomeInsurancePageMeta(areaDisplayName: string): { description: string; robots: string } {
+export function createEsHomeInsurancePageMeta(areaDisplayName?: string): { description: string; robots: string } {
   return {
-    description: `Cotice seguro de hogar en ${areaDisplayName} con Seguros Aseguranza. Complete un formulario corto para recibir opciones para su propiedad.`,
+    description: `Cotice seguro de hogar ${areaDisplayName ? `en ${areaDisplayName} ` : ""}con Seguros Aseguranza. Complete un formulario corto para recibir opciones para su propiedad.`,
     robots: "noindex,nofollow,nosnippet,noarchive,noimageindex,max-snippet:0,max-image-preview:none,max-video-preview:0",
   };
 }

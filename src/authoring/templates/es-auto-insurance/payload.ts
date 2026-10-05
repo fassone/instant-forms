@@ -1,6 +1,6 @@
 import type { FormPayloadDelivery, MetaPixelId } from "../../../platform/flow";
 import { getCapturedLeadAttribution } from "./attribution";
-import type { AutoInsuranceContract } from "./contracts";
+import type { AutoInsuranceAuthoringContract } from "./contracts";
 
 type CreateLidernaWebleadsPayloadMappingInput = {
   metaPixelId?: MetaPixelId;
@@ -10,13 +10,15 @@ type CreateLidernaWebleadsPayloadMappingInput = {
 export function createLidernaWebleadsPayloadMapping({
   metaPixelId,
   metaTestEventCode,
-}: CreateLidernaWebleadsPayloadMappingInput): FormPayloadDelivery<AutoInsuranceContract>["mapping"] {
+}: CreateLidernaWebleadsPayloadMappingInput): FormPayloadDelivery<AutoInsuranceAuthoringContract>["mapping"] {
   return ({ context, answers, submission, cookies, request, browser }) => {
     const attribution = getCapturedLeadAttribution(cookies);
+    const selectedState = answers.residence_state ?? context.areaCode;
+    if (!selectedState) throw new Error("A confirmed state is required for lead delivery.");
 
     return {
       id: submission.id,
-      area: answers.residence_state ?? context.areaCode,
+      area: selectedState,
       source_channel: attribution.sourceChannel,
       acquisition_channel: attribution.acquisitionChannel,
       ingress_channel: "website",
@@ -26,7 +28,7 @@ export function createLidernaWebleadsPayloadMapping({
       phone_number: answers.phone_number,
       created_time: submission.submittedAt,
       ...("platform" in attribution ? { platform: attribution.platform } : {}),
-      state_code: answers.residence_state ?? context.areaCode,
+      state_code: selectedState,
       is_clean_title: answers.is_clean_title,
       has_license: answers.has_license,
       has_insurance: answers.has_insurance,

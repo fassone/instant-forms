@@ -95,3 +95,16 @@ export const autoInsuranceContract = {
 } as const;
 
 export type AutoInsuranceContract = typeof autoInsuranceContract;
+
+export const autoInsuranceAuthoringContract = {
+  ...autoInsuranceContract,
+  context: autoInsuranceContextContract.partial({ areaCode: true }),
+  answers: autoInsuranceAnswersContract.partial({ belongs_to_state: true }),
+} as const;
+
+export const genericAutoInsuranceContract = {
+  ...autoInsuranceAuthoringContract,
+  answers: autoInsuranceAnswersContract.omit({ belongs_to_state: true }).required({ residence_state: true }),
+} as const;
+
+export type AutoInsuranceAuthoringContract = typeof autoInsuranceAuthoringContract;

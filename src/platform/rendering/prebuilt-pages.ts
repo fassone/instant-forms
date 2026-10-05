@@ -83,7 +83,7 @@ export function injectPrebuiltFormRequestState(
   }
 
   const activeStepHtml = applyProductionTokens(
-    renderTransitionStepHtml(activeStep, activeStepIndex, options.answers ?? {}, form),
+    renderTransitionStepHtml(activeStep, activeStepIndex, { ...options.initialPrefill, ...options.answers }, form),
   );
 
   return injectFormConfig(injectActiveStepHtml(html, activeStepHtml), formConfig);
@@ -150,6 +150,8 @@ function createRequestFormConfig(
     routeKey: options.routeKey,
     transitionAssetUrl: options.transitionAssetUrl,
     initialTrackingEvents: options.initialTrackingEvents,
+    initialPrefill: options.initialPrefill,
+    prefillQuery: options.prefillQuery,
   });
 }
 
