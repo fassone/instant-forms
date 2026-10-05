@@ -111,6 +111,8 @@ Every source and test folder has its own `README.md` describing ownership and sa
 
 Unavailable public routes use author-controlled title, message, CTA, and status from `src/authoring/routes/registry.ts`.
 
+Public page URLs and their preview mirrors accept trailing slashes. GET/HEAD requests redirect to the same path without trailing slashes using a no-store `302`, preserving query parameters before normal resume/guard handling. For example, `/auto/` redirects to `/auto`, which then resumes the generic auto flow. The site root `/`, API/proxy/asset URLs, and POST requests are not normalized.
+
 ## Form Flow
 
 Auto- and home-insurance flows are generated from the product-authored area filters in `src/authoring/flows/auto/registry.ts` and `src/authoring/flows/home/registry.ts`. Those filters must use codes from `US_STATES`, but only listed states are mounted under `/auto/{state}` and `/hogar/{state}`. Both products are built with the typed DSL in `src/platform/flow/dsl/`. Public route placement lives in `src/authoring/routes/registry.ts`. Runtime identity comes from that route mount, so `/auto/tn` uses the encoded route key `auto_tn` and `/hogar/tx` uses `hogar_tx`.

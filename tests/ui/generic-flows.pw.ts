@@ -34,6 +34,23 @@ async function expectWelcomeLayout(page: Page) {
   expect(await page.locator("body").evaluate((element) => element.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()!.width);
 }
 
+test("trailing-slash page URLs reach their canonical pages @cross-browser", async ({ page }) => {
+  for (const [path, canonicalPath] of [
+    ["/auto/", "/auto/inicio"],
+    ["/hogar/", "/hogar/inicio"],
+    ["/cotizar/", "/cotizar"],
+    ["/cotizar/producto/", "/cotizar/producto"],
+    ["/auto/tn/inicio/", "/auto/tn/inicio"],
+    ["/__preview/hogar/tx/inicio/", "/__preview/hogar/tx/inicio"],
+  ]) {
+    const response = await page.goto(path + "?source_channel=website&state=FL");
+    expect(response?.status()).toBe(200);
+    expect(response?.url()).toBe(new URL(canonicalPath + "?source_channel=website&state=FL", page.url()).href);
+    await expect(page).toHaveURL((url) => url.pathname === canonicalPath);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  }
+});
+
 test("generic shared welcome chooses a product and skips its second welcome @cross-browser", async ({ page }, testInfo) => {
   await page.goto("/cotizar?source_channel=website&acquisition_channel=organic");
   await expectWelcomeLayout(page);

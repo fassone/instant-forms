@@ -22,6 +22,8 @@
 
 Keep this layer focused on URL placement. Flow semantics such as resume, guards, legacy slugs, and interstitial visibility should continue to come from the flow platform.
 
+Each authored top-level folder and its preview mirror normalize trailing slashes on GET/HEAD requests before page handlers and fallbacks run. The no-store `302` preserves the query string and leaves checkpoint state untouched. Root `/`, API/proxy/asset paths, and non-navigation methods retain their existing behavior.
+
 ```mermaid
 flowchart LR
   Authoring["authoring/routes registry"] --> Routing["platform/routing compiler"]

@@ -1,6 +1,6 @@
 import { US_STATES } from "../../shared/data/us-states";
 import { renderQuoteEntryPage, type QuoteEntryPage } from "../rendering/quote-entry-page";
-import type { Context, Hono } from "hono";
+import type { Context, Hono, MiddlewareHandler } from "hono";
 import { getCookie } from "hono/cookie";
 
 import {
@@ -124,10 +124,22 @@ export function defineFormRoutes(input: FormRoutesInput): FormRoutes {
   };
 }
 
+const normalizePageTrailingSlash: MiddlewareHandler = async (c, next) => {
+  if ((c.req.method === "GET" || c.req.method === "HEAD") && c.req.path.endsWith("/")) {
+    const url = new URL(c.req.url);
+    return redirectNoStore(c, url.pathname.replace(/\/+$/u, "") + url.search);
+  }
+
+  await next();
+};
+
 export function registerFormRoutePages(app: Hono, routes: FormRoutes, eventLogger?: InstantFormLogger): void {
   registerRouteAction(app, "/", routes.index, routes);
 
   for (const [folder, node] of Object.entries(routes.folders)) {
+    // Canonicalize before resume/guard fallbacks can treat a trailing slash as an unknown step.
+    app.use(`${getFolderRoot([folder])}/*`, normalizePageTrailingSlash);
+    app.use(`${getFolderRoot([RESERVED_PREVIEW_FOLDER, folder])}/*`, normalizePageTrailingSlash);
     registerPublicRouteNode(app, [folder], node, routes.notFound, routes, eventLogger);
     registerPreviewRouteNode(app, [folder], node, routes.notFound);
   }
