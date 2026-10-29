@@ -3,7 +3,7 @@ import { gunzipSync } from "node:zlib";
 import { createFetchHandler } from "../../src/platform/app/server";
 import { genericAutoFlow } from "../../src/authoring/flows/generic";
 import { legalLinks } from "../../src/authoring/legal/links";
-import { samplePrivacyPolicy } from "../../src/authoring/legal/sample-documents";
+import { privacyPolicy } from "../../src/authoring/legal/privacy-policy";
 import { termsAndConditions } from "../../src/authoring/legal/terms-and-conditions";
 import { formRoutes } from "../../src/authoring/routes/registry";
 import { defineFormFlow, step, z, type FormLegalLink } from "../../src/platform/flow";
@@ -30,7 +30,7 @@ function checkpoint(routeKey: string, answers: Record<string, string>) {
 }
 
 describe("standalone legal pages", () => {
-  for (const [path, document] of [["/politica-de-privacidad", samplePrivacyPolicy], ["/terminos-y-condiciones", termsAndConditions]] as const) {
+  for (const [path, document] of [["/politica-de-privacidad", privacyPolicy], ["/terminos-y-condiciones", termsAndConditions]] as const) {
     for (const prefix of ["", "/__preview"]) {
       it(`serves ${prefix}${path} without a form runtime, tracking or cookie changes`, async () => {
         const logs: unknown[] = [];
@@ -69,13 +69,16 @@ describe("standalone legal pages", () => {
     }
   }
 
-  it("renders the approved terms and keeps the privacy document labeled as a sample", async () => {
+  it("renders the approved terms without changing their notice or contact details", async () => {
     const response = await createFetchHandler()(new Request("https://example.test/terminos-y-condiciones"));
     const html = await response.text();
     expect(termsAndConditions.sections).toHaveLength(16);
     expect(new Set(termsAndConditions.sections.map((section) => section.id)).size).toBe(16);
+    expect(termsAndConditions.title).toBe("Términos y condiciones");
+    expect(html).toContain("<h1>Términos y condiciones</h1>");
     expect(html).toContain("Última actualización: 29 de octubre de 2026");
-    expect(html).toContain("Seguros Aseguranza es operado por Liderna Inc");
+    expect(html).toContain("Seguros Aseguranza es una marca propiedad de Liderna Inc y operada por esta. Liderna Inc es una sociedad constituida en Delaware, Estados Unidos (“Liderna”, “nosotros”).");
+    expect(html).toContain("Al aceptar estos términos, usted celebra un acuerdo con Liderna");
     expect(html).toContain("no autoriza a los Proveedores a revenderla");
     expect(html).toContain("US$200");
     expect(html).toContain("1058 Windy Creek Path, Conroe, Texas 77304");
@@ -86,8 +89,33 @@ describe("standalone legal pages", () => {
     expect(termsAndConditions.sections[9]?.id).toBe("limitacion-de-responsabilidad");
     expect(termsAndConditions.sections[12]?.id).toBe("arbitraje");
     expect(termsAndConditions.sections[13]?.id).toBe("renuncia-colectiva");
-    expect(samplePrivacyPolicy.notice.kind).toBe("sample");
-    expect(samplePrivacyPolicy.notice.text).toContain("No constituye la política vigente");
+  });
+
+  it("renders the authored privacy draft with current allocation facts and no effective date", async () => {
+    const response = await createFetchHandler()(new Request("https://example.test/politica-de-privacidad"));
+    const html = await response.text();
+    expect(privacyPolicy.sections).toHaveLength(15);
+    expect(new Set(privacyPolicy.sections.map((section) => section.id)).size).toBe(15);
+    expect(privacyPolicy.notice.kind).toBe("important");
+    expect(html).toContain("Borrador para revisión y aprobación. No constituye la política vigente.");
+    expect(html).toContain("fecha de entrada en vigor quedan pendientes de aprobación");
+    expect(html).not.toContain("Documento de muestra");
+    expect(html).not.toContain("Última actualización:");
+    expect(html).toContain("Seguros Aseguranza es una marca propiedad de Liderna Inc y operada por esta. Liderna Inc es una sociedad constituida en Delaware, Estados Unidos (“Liderna”, “nosotros”).");
+    expect(html).toContain("hello@liderna.com");
+    expect(html).toContain("1058 Windy Creek Path, Conroe, Texas 77304");
+    expect(html).toContain("Los Agentes participantes no reciben información de la solicitud antes de su selección");
+    expect(html).toContain("Podemos remitir su solicitud a uno o varios agentes de seguros con licencia");
+    expect(html).toContain("No ofrecemos exclusividad al solicitante ni garantizamos un número determinado de destinatarios o contactos");
+    expect(html).toContain("La asignación se realiza internamente");
+    expect(html).toContain("presupuestos de participación de los Agentes");
+    expect(html).not.toContain("Actualmente, cada solicitud se entrega exclusivamente al Agente seleccionado");
+    expect(html).not.toContain("La modalidad actual no constituye una garantía de exclusividad para futuras versiones del Servicio");
+    expect(html).not.toContain("Si habilitamos la remisión de una solicitud a varios Agentes");
+    expect(html).toContain("no autoriza a los Agentes a revenderla");
+    expect(html).toContain("PostHog para analizar actividad y resultados del Servicio y para recibir registros operativos");
+    expect(html).toContain("También trabajamos con Meta");
+    expect(await attributes(html, "#evidencia-de-consentimiento a", "href")).toEqual(["https://activeprospect.com/trustedform-privacy-notice/"]);
   });
 
   it("only returns to recognized local quote routes and approved query parameters", async () => {
@@ -122,7 +150,7 @@ describe("standalone legal pages", () => {
     expect(response.headers.get("Content-Encoding")).toBe("gzip");
     expect(response.headers.get("Vary")).toContain("Accept-Encoding");
     expect(response.headers.get("Cache-Control")).toBe("no-store");
-    expect(gunzipSync(Buffer.from(await response.arrayBuffer())).toString()).toContain(samplePrivacyPolicy.notice.text);
+    expect(gunzipSync(Buffer.from(await response.arrayBuffer())).toString()).toContain(privacyPolicy.notice.text);
   });
 
   it("keeps legal links outside every authored form and does not add steps", async () => {

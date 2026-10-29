@@ -4,7 +4,7 @@ import { autoFlows } from "../flows/auto/registry";
 import { homeFlows } from "../flows/home/registry";
 import { genericAutoFlow, genericHomeFlow } from "../flows/generic";
 import { legalLinks } from "../legal/links";
-import { samplePrivacyPolicy } from "../legal/sample-documents";
+import { privacyPolicy } from "../legal/privacy-policy";
 import { termsAndConditions } from "../legal/terms-and-conditions";
 
 const notFound = unavailable({
@@ -37,7 +37,7 @@ const welcome = { type: "quote_entry", content: quoteEntry, selection: false } a
 export const formRoutes = defineFormRoutes({
   index: welcome,
   folders: {
-    "politica-de-privacidad": { type: "legal_page", content: samplePrivacyPolicy },
+    "politica-de-privacidad": { type: "legal_page", content: privacyPolicy },
     "terminos-y-condiciones": { type: "legal_page", content: termsAndConditions },
     producto: { type: "quote_entry", content: quoteEntry, selection: true },
     auto: {

@@ -4,7 +4,7 @@ import { legalLinks } from "./links";
 export const termsAndConditions: LegalPageContent = {
   locale: "es",
   brandName: "Seguros Aseguranza",
-  title: "Términos y condiciones de Seguros Aseguranza",
+  title: "Términos y condiciones",
   notice: {
     kind: "important",
     text: "AVISO IMPORTANTE: ESTOS TÉRMINOS INCLUYEN ARBITRAJE INDIVIDUAL OBLIGATORIO, RENUNCIA A PROCEDIMIENTOS COLECTIVOS Y LIMITACIONES DE RESPONSABILIDAD. LEA ESPECIALMENTE LAS SECCIONES 10, 13 Y 14.",
@@ -17,7 +17,7 @@ export const termsAndConditions: LegalPageContent = {
     {
       id: "operador-y-acuerdo",
       title: "Operador y acuerdo",
-      body: `Seguros Aseguranza es operado por Liderna Inc, sociedad constituida en Delaware, Estados Unidos (“Liderna”, “nosotros”). Estos términos regulan el acceso y uso de nuestros sitios, formularios y servicios de recepción y remisión de solicitudes de información sobre seguros, conjuntamente el “Servicio”. Al aceptar estos términos, usted celebra un acuerdo con Liderna. Si no está de acuerdo, no debe utilizar el Servicio. Ningún agente, aseguradora o tercero está autorizado para modificar estos términos en nombre de Liderna.`,
+      body: `Seguros Aseguranza es una marca propiedad de Liderna Inc y operada por esta. Liderna Inc es una sociedad constituida en Delaware, Estados Unidos (“Liderna”, “nosotros”). Estos términos regulan el acceso y uso de nuestros sitios, formularios y servicios de recepción y remisión de solicitudes de información sobre seguros, conjuntamente el “Servicio”. Al aceptar estos términos, usted celebra un acuerdo con Liderna. Si no está de acuerdo, no debe utilizar el Servicio. Ningún agente, aseguradora o tercero está autorizado para modificar estos términos en nombre de Liderna.`,
     },
     {
       id: "alcance-del-servicio",

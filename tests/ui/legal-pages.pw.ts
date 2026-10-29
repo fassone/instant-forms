@@ -43,6 +43,7 @@ async function legalReturnLayout(page: Page) {
       areaTop: areaRect.top, areaBottom: areaRect.bottom,
       buttonLeft: buttonRect.left, buttonRight: buttonRect.right, buttonHeight: buttonRect.height,
       linksTop: links.getBoundingClientRect().top,
+      footerBottom: links.closest("[data-legal-footer]").getBoundingClientRect().bottom,
       lastParagraphBottom: panel.querySelector("section:last-of-type p:last-child").getBoundingClientRect().bottom,
       position: browser.getComputedStyle(area).position,
       fadeHeight: parseFloat(fade.height), fadePointerEvents: fade.pointerEvents, fadeBackground: fade.backgroundImage,
@@ -71,13 +72,20 @@ test.describe("legal pages", () => {
       const cookies = await page.context().cookies();
       const response = await page.goto(path);
       expect(response?.status()).toBe(200);
+      await expect(page.locator("section").first()).toContainText("Seguros Aseguranza es una marca propiedad de Liderna Inc y operada por esta.");
       if (path === "/terminos-y-condiciones") {
+        await expect(page.locator("h1")).toHaveText("Términos y condiciones");
         await expect(page.locator("[data-legal-sample]")).toHaveCount(0);
         await expect(page.locator('[data-legal-notice="important"]')).toContainText("ARBITRAJE INDIVIDUAL OBLIGATORIO");
         await expect(page.locator("section")).toHaveCount(16);
         await expect(page.locator("#modificaciones-y-contacto")).toContainText("1058 Windy Creek Path");
       } else {
-        await expect(page.locator("[data-legal-sample]")).toContainText("No constituye la política vigente");
+        await expect(page.locator("[data-legal-sample]")).toHaveCount(0);
+        await expect(page.locator('[data-legal-notice="important"]')).toHaveText("Borrador para revisión y aprobación. No constituye la política vigente.");
+        await expect(page.locator("section")).toHaveCount(15);
+        await expect(page.locator("#remision-y-remuneracion")).toContainText("Podemos remitir su solicitud a uno o varios agentes de seguros con licencia");
+        await expect(page.locator("#remision-y-remuneracion")).toContainText("No ofrecemos exclusividad al solicitante");
+        await expect(page.locator("#actualizaciones-contacto")).toContainText("hello@liderna.com");
       }
       await expect(page.locator("script, form")).toHaveCount(0);
       const bounds = await page.evaluate(() => {
@@ -115,12 +123,17 @@ test.describe("legal pages", () => {
       await expect(page).toHaveURL(/#[a-z-]+$/u);
       await expect(page.locator("section").last().locator("h2")).toBeInViewport();
       await page.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)");
-      await expect(page.locator("[data-legal-footer]")).toBeInViewport({ ratio: 1 });
+      await expect(page.locator("[data-legal-footer]")).toBeInViewport();
+      for (const link of await page.locator("[data-legal-footer] a").all()) {
+        await expect(link).toBeInViewport({ ratio: 1 });
+      }
       await expect(returnLink).toBeInViewport({ ratio: 1 });
       const end = await legalReturnLayout(page);
       expect(end.lastParagraphBottom).toBeGreaterThan(0);
       expect(end.lastParagraphBottom).toBeLessThanOrEqual(end.areaTop - end.fadeHeight);
       expect(end.linksTop).toBeGreaterThanOrEqual(end.panelBottom);
+      // Document scroll heights round to whole pixels; footer padding can end fractionally below them.
+      expect(end.footerBottom).toBeLessThanOrEqual(end.viewport + 1);
       expect(end.areaBottom).toBeLessThan(end.viewport);
       for (const layout of [top, middle, end]) {
         expect(layout.buttonLeft).toBeCloseTo(layout.contentLeft, 0);
@@ -147,7 +160,7 @@ test.describe("legal pages", () => {
     await expect(page.locator("[data-legal-page]")).toBeVisible();
     expect(context.pages()).toHaveLength(1);
     await page.getByRole("link", { name: "Términos y condiciones", exact: true }).click();
-    await expect(page.locator("h1")).toHaveText("Términos y condiciones de Seguros Aseguranza");
+    await expect(page.locator("h1")).toHaveText("Términos y condiciones");
     await page.locator("[data-legal-return]").first().click();
     await expect(page).toHaveURL(new RegExp("/\\?fbclid=AD_LEGAL"));
     await page.getByRole("link", { name: "Empezar mi cotización" }).click();
@@ -169,7 +182,7 @@ test.describe("legal pages", () => {
     await expect(page.locator("section").first().locator("h2")).toBeInViewport();
     await page.locator('[data-legal-document="/terminos-y-condiciones"]').focus();
     await page.keyboard.press("Enter");
-    await expect(page.locator("h1")).toHaveText("Términos y condiciones de Seguros Aseguranza");
+    await expect(page.locator("h1")).toHaveText("Términos y condiciones");
     await page.goBack();
     await expect(page.locator("h1")).toHaveText("Política de privacidad");
     const returnLink = page.locator("[data-legal-return]");

@@ -97,7 +97,7 @@ Every source and test folder has its own `README.md` describing ownership and sa
 | `GET /` | Shared single-CTA welcome, then product selection at `/producto`. |
 | `GET /producto` | Auto/home selection; choosing an option automatically advances. |
 | `POST /producto` | Confirms the selected product's welcome checkpoint, then resumes that generic flow without another welcome. |
-| `GET /politica-de-privacidad`, `GET /terminos-y-condiciones` | Standalone Spanish documents: sample privacy policy and authored terms and conditions. |
+| `GET /politica-de-privacidad`, `GET /terminos-y-condiciones` | Standalone Spanish documents: authored privacy draft and terms and conditions. |
 | `GET /__preview/politica-de-privacidad`, `GET /__preview/terminos-y-condiciones` | No-store mirrors of the legal documents. |
 | `GET /auto`, `GET /hogar` | Resume the independent generic product flow, starting at `/inicio` for a new visitor. |
 | `GET /auto/:stepSlug`, `GET /hogar/:stepSlug` | Generic guarded steps and `/gracias`, without a state in the path. |
@@ -119,7 +119,7 @@ Public page URLs and their preview mirrors accept trailing slashes. GET/HEAD req
 
 The authored Spanish terms live in `src/authoring/legal/terms-and-conditions.ts`. They identify Liderna Inc, describe lead referrals, and include sixteen sections with a prominent notice pointing to the liability, arbitration and collective-action provisions. Their last-updated date is authored, not generated at request or build time. Displaying this document does not add an acceptance control or record assent; existing form consent behavior is unchanged.
 
-The privacy policy remains a layout-test draft in `src/authoring/legal/sample-documents.ts`, with its prominent sample warning and unconfirmed details unchanged. Do not publish it as an approved privacy policy. Shared link labels and paths live in `src/authoring/legal/links.ts`.
+The authored privacy draft lives in `src/authoring/legal/privacy-policy.ts`, with fifteen sections, the Conroe mailing address and `hello@liderna.com`. It describes internal allocation to one or more agents without promising exclusivity, commercial selection criteria, operational logs sent to PostHog, advertising attribution and consent evidence. A prominent notice identifies it as a draft, not the operative policy; no effective date is assigned. Required opt-out mechanisms, downstream request handling and public release remain separate follow-up work. This content update does not add privacy controls or change tracking, consent, retention or lead delivery. Shared link labels and paths live in `src/authoring/legal/links.ts`.
 
 The route registry mounts typed `legal_page` actions. Documents use a dedicated, normally scrolling renderer with an anchor-based contents list and one full-width pink return CTA. Its CSS-only sticky area stays inside the document panel, with a fade above it and reserved space so the final text can be read fully. Privacy/Terms links sit below the panel and match the forms' footer styling. Both documents retain `Cache-Control: no-store` and `noindex,nofollow` directives. They do not load form controllers, transition scripts, TrustedForm, GTM or analytics, and do not read or write progress or attribution cookies.
 
