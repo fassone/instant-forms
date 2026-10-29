@@ -409,12 +409,12 @@ describe("form registry", () => {
     const tnRoute = getRequiredTennesseeRoute();
     const caRoute = getFormRouteByRouteKey(formRoutes, "auto_ca");
 
-    expect(tnRoute.form.tracking?.googleTagManager?.containerId).toBe("GTM-MVJNX5DZ");
+    expect(tnRoute.form.tracking?.googleTagManager).toBeUndefined();
     expect(JSON.stringify(tnRoute.form.tracking?.events)).toContain(`"pixelId":"${autoTennesseeMetaPixelId}"`);
     expect(tnRoute.form.customVariables).toMatchObject({
       areaCode: "TN",
     });
-    expect(caRoute?.form.tracking?.googleTagManager?.containerId).toBe("GTM-MVJNX5DZ");
+    expect(caRoute?.form.tracking?.googleTagManager).toBeUndefined();
     expect(JSON.stringify(caRoute?.form.tracking?.events)).toContain(`"pixelId":"${autoCaliforniaMetaPixelId}"`);
     expect(caRoute?.form.name).toBe("ES - CA - v1");
     expect(caRoute?.form.customVariables).toMatchObject({
@@ -427,7 +427,7 @@ describe("form registry", () => {
     const txRoute = getRequiredHogarTexasRoute();
     const tnRoute = getFormRouteByRouteKey(formRoutes, "hogar_tn");
 
-    expect(txRoute.form.tracking?.googleTagManager?.containerId).toBe("GTM-MVJNX5DZ");
+    expect(txRoute.form.tracking?.googleTagManager).toBeUndefined();
     expect(JSON.stringify(txRoute.form.tracking?.events)).toContain(`"pixelId":"${hogarTexasMetaPixelId}"`);
     expect(tnRoute).toBeUndefined();
   });
@@ -528,7 +528,7 @@ describe("form registry", () => {
 
     expect(testHomePixels.tn).toBe("1234567890");
     expect(testHomePixels.ca).toBeUndefined();
-    expect(JSON.stringify(directTnAutoFlow.tracking?.events)).not.toContain('"pixelId"');
+    expect(JSON.stringify(directTnAutoFlow.tracking?.events ?? [])).not.toContain('"pixelId"');
     expect(JSON.stringify(tnHomeFlow.tracking?.events)).toContain('"pixelId":"1234567890"');
     expect(() => defineAreaMetaPixelMap({ zz: "1234567890" } as never)).toThrow(
       'Unknown Meta Pixel area key "zz".',
@@ -5203,7 +5203,7 @@ describe("submission validation", () => {
 
   it("accepts shared auto Meta env values on non-Tennessee flows without enabling Meta pixel callbacks", () => {
     expect(defaultAutoInsuranceVariables).toHaveProperty("metaTestEventCode");
-    expect(defaultAutoInsuranceVariables).toHaveProperty("metaConversionsAccessToken");
+    expect(defaultAutoInsuranceVariables).not.toHaveProperty("metaConversionsAccessToken");
     expect(defaultAutoInsuranceVariables).not.toHaveProperty("metaPixelId");
 
     const caFlowWithSharedMetaEnv = createAutoInsuranceFlow({
@@ -5243,7 +5243,7 @@ describe("submission validation", () => {
 
   it("accepts shared home Meta env values without enabling Meta pixel callbacks", () => {
     expect(defaultHomeInsuranceVariables).toHaveProperty("metaTestEventCode");
-    expect(defaultHomeInsuranceVariables).toHaveProperty("metaConversionsAccessToken");
+    expect(defaultHomeInsuranceVariables).not.toHaveProperty("metaConversionsAccessToken");
     expect(defaultHomeInsuranceVariables).not.toHaveProperty("metaPixelId");
 
     const homeFlowWithSharedMetaEnv = createHomeInsuranceFlow({
@@ -8023,10 +8023,10 @@ describe("server routing", () => {
     expect(html).not.toContain('id="back-button"');
     expect(html).not.toContain('id="next-button"');
     expect(html).not.toContain('window.__FORM_CONFIG__');
-    expect(html).toContain("instant_form_submit_success");
+    expect(html).not.toContain("instant_form_submit_success");
     expect(html).not.toContain('"event_name":"Lead"');
     expect(html).not.toContain(`"pixel_id":"${autoTennesseeMetaPixelId}"`);
-    expect(html).toContain('document.addEventListener("pt0", window.__INSTANT_PUSH_INITIAL_TRACKING_EVENTS__');
+    expect(html).not.toContain('document.addEventListener("pt0", window.__INSTANT_PUSH_INITIAL_TRACKING_EVENTS__');
     expect(html).not.toContain("Ana");
     expect(html).not.toContain("Lopez");
     expect(html).not.toContain("+16155551234");
@@ -8108,7 +8108,7 @@ describe("server routing", () => {
 
     expect(response.status).toBe(200);
     expect(html).toContain('data-form-view="post-submit"');
-    expect(html).toContain("instant_form_submit_success");
+    expect(html).not.toContain("instant_form_submit_success");
     expect(setCookie).toContain(`${getPostSubmitCookieName(routeKey)}=`);
     expect(setCookie).toContain(`${getLegacyPostSubmitCookieName(routeKey)}=`);
     expect(setCookie).toContain("Max-Age=0");
@@ -8801,7 +8801,7 @@ describe("form rendering", () => {
     expect(html).not.toContain("$pageview");
     expect(html).not.toContain("$pageleave");
     expect(html).toContain('"routeKey":"tracking_custom"');
-    expect(html).toContain('"tracking":{"serverEvents"');
+    expect(extractRenderedFormConfig(html).tracking.serverEvents).toEqual({ postHogPageView: true, postHogPageLeave: true });
     expect(html).toContain('"googleTagManager"');
     expect(html).toContain('"context":{"areaCode":"TN","product":"auto_insurance"}');
     expect(html).not.toContain('"context":{"areaCode":"TN","product":"auto_insurance","advertiserName"');
@@ -9653,7 +9653,7 @@ describe("form rendering", () => {
     expect(html).toContain('"slug":"consentimiento"');
     expect(html).toContain('"submitLabel":"Cotizar"');
     expect(html).toContain('"trustedForm":{"fieldName":"xxTrustedFormCertUrl"');
-    expect(html).toContain('"delivery":"partytown"');
+    expect(html).toContain('"delivery":"main_thread"');
     expect(html).toContain('"scriptProxyKey":"tfc"');
     expect(html).toContain('"scriptBaseUrl":"/_instant/scripts/trustedform.com/tfc.js"');
     expect(html).toContain('"partytownLib":"/~partytown/"');
@@ -9925,7 +9925,7 @@ describe("form rendering", () => {
     expect(html).toContain(
       '"customVariables":{"areaCode":"TN","areaName":"Tennessee","product":"auto_insurance","advertiserName":"Liderna Inc y a sus socios, agentes y proveedores de seguros"}',
     );
-    expect(html).toContain('"metaPixelProxy":true');
+    expect(extractRenderedFormConfig(html).tracking.googleTagManager).toBeUndefined();
     expect(html).toContain(`"pixelId":"${autoTennesseeMetaPixelId}"`);
     expect(html).toContain('"eventName":"LeadProgress"');
     expect(html).not.toContain('"eventName":"Lead"');

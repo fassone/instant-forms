@@ -19,3 +19,7 @@
 ## Change Safely
 
 Use deterministic setup with checkpoint cookies. When screenshots fail, inspect the diff before running `bun run test:ui:update`.
+
+Playwright starts `server.ts`, a loopback-only test server with dummy analytics credentials and mocked outbound analytics/lead delivery. It includes explicit GTM-opt-in and Meta-identifiers-only fixtures; it must never be used as a production entrypoint. Existing servers are not reused, so tests cannot accidentally submit real leads.
+
+Run `bun run test:ui -- --grep "tracking delivery isolation|GTM follow-up"` for tracking coverage across desktop/mobile Chromium, Firefox and WebKit. Run once normally and again with `NODE_ENV=production` after `bun run build:forms` to cover production-minified pages and real transition assets. The production fixture server injects its current request configuration into prebuilt shells.

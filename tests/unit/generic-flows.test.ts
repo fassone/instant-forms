@@ -315,8 +315,8 @@ describe("independent generic quote flows", () => {
     ]));
     expect(enabled.tracking?.events?.find((event) => event.kind === "stepAnswer")?.meta?.pixelId).toBe("1234567890");
     for (const form of [genericAutoFlow, genericHomeFlow]) {
-      expect(form.tracking?.events?.some((event) => event.meta)).toBe(false);
-      expect(form.tracking?.googleTagManager?.containerId).toBe("GTM-MVJNX5DZ");
+      expect(form.tracking?.events?.some((event) => event.meta) ?? false).toBe(false);
+      expect(form.tracking?.googleTagManager).toBeUndefined();
     }
   });
 });

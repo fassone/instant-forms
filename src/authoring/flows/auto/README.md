@@ -21,7 +21,7 @@ flowchart TD
 
 ## Belongs Here
 
-- `shared.ts` for common template variables such as page name, advertiser name, product, GTM container, and required downstream submission URL.
+- `shared.ts` for common template variables such as page name, advertiser name, product, PostHog settings, and required downstream submission URL. GTM and direct Meta CAPI require explicit per-flow opt-in and are not shared defaults.
 - `registry.ts` for the generated state-code-to-flow map consumed by public routes.
 - Product/state Meta Pixel IDs declared next to flow generation in `registry.ts`.
 

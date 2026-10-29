@@ -89,6 +89,7 @@ function getCoreRuntimeScript(): string {
   const initialTrackingEventKeys = new Set((Array.isArray(config.initialTrackingEvents) ? config.initialTrackingEvents : []).map(getTrackingEventKey));
   let lastTrackedStepViewKey = "";
   let lastServerTrackedStepViewKey = "";
+  let lastServerFormEventKey = "";
   let hasCompletedInitialStepViewTracking = false;
   let hasCurrentStepEntry = false;
   let currentStepEntryStartedAt = getMonotonicNow();
@@ -466,6 +467,7 @@ function getCoreRuntimeScript(): string {
     const didStepChange = requestedStep !== previousStep;
     if (didStepChange && previousQuestion) {
       trackServerPageLeave(previousQuestion, "step_transition", getAbsoluteStepUrl(previousQuestion));
+      lastServerFormEventKey = "";
     }
 
     const previousBehavior = mountedBehavior;
@@ -1842,8 +1844,8 @@ function getCoreRuntimeScript(): string {
   }
 
   function trackFormEvent(eventKind, payload = {}) {
-    const googleTagManager = config.tracking?.googleTagManager;
-    if (!googleTagManager || !window.dataLayer || typeof window.dataLayer.push !== "function") {
+    const tracking = config.tracking;
+    if (!tracking?.googleTagManager || !window.dataLayer || typeof window.dataLayer.push !== "function") {
       return;
     }
     const eventConfig = getTrackingEventConfig(eventKind, getQuestion());
@@ -1853,9 +1855,9 @@ function getCoreRuntimeScript(): string {
 
     window.dataLayer.push({
       event: eventConfig.name,
-      route_key: googleTagManager.routeKey,
-      form_name: googleTagManager.formName,
-      page_name: googleTagManager.pageName,
+      route_key: tracking.routeKey,
+      form_name: tracking.formName,
+      page_name: tracking.pageName,
       ...getTrackingContextPayload(eventConfig),
       ...getTrackingPayloadForEvent(eventConfig, payload),
     });
@@ -1875,6 +1877,9 @@ function getCoreRuntimeScript(): string {
   }
 
   function pushInitialClientTrackingEvents() {
+    if (!config.tracking?.googleTagManager) {
+      return;
+    }
     if (typeof window.__INSTANT_PUSH_INITIAL_TRACKING_EVENTS__ === "function") {
       window.__INSTANT_PUSH_INITIAL_TRACKING_EVENTS__();
       return;
@@ -1894,6 +1899,11 @@ function getCoreRuntimeScript(): string {
       step_key: question?.key,
       trusted_form_substep: payload.trusted_form_substep,
     });
+    // Replacing resolved content can remount the same substep without a new view.
+    if (trackingEventKey === lastServerFormEventKey) {
+      return;
+    }
+    lastServerFormEventKey = trackingEventKey;
     if (initialTrackingEventKeys.delete(trackingEventKey)) {
       return;
     }
@@ -1917,8 +1927,7 @@ function getCoreRuntimeScript(): string {
   }
 
   function getTrackingEventConfig(eventKind, question) {
-    const googleTagManager = config.tracking?.googleTagManager;
-    const globalEvent = googleTagManager?.events?.[eventKind];
+    const globalEvent = config.tracking?.events?.[eventKind];
     const stepOverride = question?.tracking?.[eventKind];
     if (stepOverride === false) {
       return undefined;
@@ -1933,7 +1942,7 @@ function getCoreRuntimeScript(): string {
 
   function isServerTrackedEvent(eventKind, question) {
     const eventConfig = getTrackingEventConfig(eventKind, question);
-    return Boolean(eventConfig?.meta || eventConfig?.server);
+    return Boolean(eventConfig?.server || (config.tracking?.googleTagManager && eventConfig?.meta));
   }
 
   function getTrackingEventKey(eventPayload) {
@@ -1948,8 +1957,7 @@ function getCoreRuntimeScript(): string {
   }
 
   function getTrackingContextPayload(eventConfig) {
-    const googleTagManager = config.tracking?.googleTagManager;
-    const context = googleTagManager?.context || {};
+    const context = config.tracking?.context || {};
     const includeContext = Array.isArray(eventConfig.includeContext) ? eventConfig.includeContext : [];
     const includedContext = Object.fromEntries(includeContext.flatMap((key) => {
       const value = context[key];
@@ -2003,7 +2011,7 @@ function getCoreRuntimeScript(): string {
   }
 
   function hasMetaTrackingEvents() {
-    const events = config.tracking?.googleTagManager?.events || {};
+    const events = config.tracking?.events || {};
     return Object.values(events).some((eventConfig) => Boolean(eventConfig?.meta));
   }
 

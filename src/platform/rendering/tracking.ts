@@ -20,15 +20,15 @@ export type ClientGoogleTagManagerConfig = {
   scriptUrl: string;
   partytownLib: string;
   partytownScriptUrl: string;
+  metaPixelProxy: boolean;
+};
+
+export type ClientTrackingConfig = {
   routeKey: string;
   formName: string;
   pageName: string;
   context: Readonly<Record<string, string>>;
   events: Readonly<Record<string, ClientTrackingEventConfig>>;
-  metaPixelProxy: boolean;
-};
-
-export type ClientTrackingConfig = {
   googleTagManager?: ClientGoogleTagManagerConfig;
   serverEvents?: Readonly<Record<string, boolean>>;
 };
@@ -177,12 +177,12 @@ ${requestProxyRuntimeScript}
 `;
 }
 
-export function createBaseTrackingPayload(googleTagManager: ClientGoogleTagManagerConfig): Omit<TrackingEventPayload, "event"> {
+export function createBaseTrackingPayload(tracking: ClientTrackingConfig): Omit<TrackingEventPayload, "event"> {
   return {
-    route_key: googleTagManager.routeKey,
-    form_name: googleTagManager.formName,
-    page_name: googleTagManager.pageName,
-    context: googleTagManager.context,
+    route_key: tracking.routeKey,
+    form_name: tracking.formName,
+    page_name: tracking.pageName,
+    context: tracking.context,
   };
 }
 

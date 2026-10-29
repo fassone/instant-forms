@@ -22,9 +22,9 @@ export default defineConfig({
     trace: "on-first-retry",
   },
   webServer: {
-    command: `PORT=${port} bun run dev`,
+    command: `PORT=${port} bun run tests/ui/server.ts`,
     url: `${baseURL}/auto/tn`,
-    reuseExistingServer: true,
+    reuseExistingServer: false,
     timeout: 15_000,
   },
   projects: [

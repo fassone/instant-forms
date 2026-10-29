@@ -47,7 +47,7 @@ export function createGenericInsuranceTracking<T extends FormContract>(options: 
     ...(options.metaPixelId && options.metaConversionsAccessToken ? [createMetaConversionsEffect<T>(options.metaConversionsAccessToken)] : []),
     ...(postHog ? [postHog] : []),
   ]);
-  if (!options.gtmContainerId && !server) return undefined;
+  if (!options.gtmContainerId && !server && !options.metaPixelId) return undefined;
   return ({ event }) => {
     const meta = options.metaPixelId ? {
       pixelId: options.metaPixelId,

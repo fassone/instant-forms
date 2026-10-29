@@ -13,10 +13,7 @@ export const defaultHomeInsuranceVariables = {
   submissionUrl: lidernaWebleadsSubmissionUrl,
   product: "home_insurance",
   advertiserName: "Liderna Inc y a sus socios, agentes y proveedores de seguros",
-  gtmContainerId: "GTM-MVJNX5DZ",
   metaTestEventCode: process.env.META_TEST_EVENT_CODE,
-  metaConversionsAccessToken:
-    process.env.NODE_ENV === "test" ? undefined : process.env.META_CONVERSIONS_ACCESS_TOKEN || undefined,
   postHogProjectApiKey: process.env.POSTHOG_PROJECT_API_KEY || undefined,
   postHogApiHost: process.env.POSTHOG_API_HOST || "https://us.i.posthog.com",
   trackingVisitorIdCookieMaxAgeSeconds: 365 * 24 * 60 * 60,
@@ -24,8 +21,6 @@ export const defaultHomeInsuranceVariables = {
 } as const satisfies Pick<
   EsHomeInsuranceVariables,
   | "advertiserName"
-  | "gtmContainerId"
-  | "metaConversionsAccessToken"
   | "metaTestEventCode"
   | "pageName"
   | "postHogApiHost"
@@ -43,6 +38,7 @@ export type CreateHomeInsuranceFlowInput = Pick<
   Partial<
     Pick<
       EsHomeInsuranceVariables,
+      | "gtmContainerId"
       | "metaConversionsAccessToken"
       | "metaPixelId"
       | "metaTestEventCode"

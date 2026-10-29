@@ -73,7 +73,7 @@ export function createHomeInsuranceTracking({
     ...(postHogEffect ? [postHogEffect] : []),
   ]);
 
-  if (!gtmContainerId && !serverEffects) {
+  if (!gtmContainerId && !serverEffects && !metaPixelId) {
     return undefined;
   }
 

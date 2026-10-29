@@ -375,7 +375,7 @@ function createClientTrackingConfig(
   previewMode: boolean,
 ): { tracking: ClientTrackingConfig } | {} {
   const googleTagManager = form.tracking?.googleTagManager;
-  if (previewMode || !googleTagManager) {
+  if (previewMode || !form.tracking) {
     return {};
   }
 
@@ -415,22 +415,26 @@ function createClientTrackingConfig(
 
   return {
     tracking: {
+      routeKey,
+      formName: form.name,
+      pageName: form.page.name,
+      context,
+      events,
       ...(Object.keys(serverEvents).length > 0 ? { serverEvents } : {}),
-      googleTagManager: {
-        containerId: googleTagManager.containerId,
-        dataLayerName: googleTagManager.dataLayerName,
-        delivery: googleTagManager.delivery,
-        proxy: googleTagManager.proxy,
-        scriptUrl: buildGoogleTagManagerScriptUrl(googleTagManager),
-        partytownLib: googleTagManager.partytownLib,
-        partytownScriptUrl: googleTagManager.partytownScriptUrl,
-        routeKey,
-        formName: form.name,
-        pageName: form.page.name,
-        context,
-        events,
-        metaPixelProxy: (form.tracking?.events ?? []).some((eventConfig) => Boolean(eventConfig.meta)),
-      },
+      ...(googleTagManager
+        ? {
+            googleTagManager: {
+              containerId: googleTagManager.containerId,
+              dataLayerName: googleTagManager.dataLayerName,
+              delivery: googleTagManager.delivery,
+              proxy: googleTagManager.proxy,
+              scriptUrl: buildGoogleTagManagerScriptUrl(googleTagManager),
+              partytownLib: googleTagManager.partytownLib,
+              partytownScriptUrl: googleTagManager.partytownScriptUrl,
+              metaPixelProxy: (form.tracking.events ?? []).some((eventConfig) => Boolean(eventConfig.meta)),
+            },
+          }
+        : {}),
     },
   };
 }

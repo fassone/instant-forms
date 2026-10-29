@@ -180,7 +180,9 @@ test.describe("instant routed form UI", () => {
       });
     });
 
-    await page.goto("/auto/tn/vive-en-tennessee");
+    await page.goto("/test-gtm/inicio");
+    await page.waitForFunction("Boolean(window.__INSTANT_GOOGLE_TAG_RUNTIME_INSTALLED__)");
+    await expect.poll(() => page.evaluate("window.dataLayer.some(event => event.event === 'instant_form_view' && event.route_key === 'test-gtm')")).toBe(true);
     await page.evaluate(`
       window.dataLayer = window.dataLayer || [];
       window.__GTM_DATALAYER_PUSH_WORKED__ = typeof window.dataLayer.push === "function";
