@@ -7,7 +7,7 @@ export type LegalPageContent = {
   locale: string;
   brandName: string;
   title: string;
-  notice?: { kind: "sample" | "important"; text: string };
+  notice?: { kind: "sample" | "important"; title?: string; text: string };
   introduction: string;
   contentsLabel: string;
   returnLabel: string;
@@ -40,6 +40,8 @@ export async function renderLegalPage(content: LegalPageContent, returnTo: strin
     a { color: #073b8e; text-underline-offset: 3px; overflow-wrap: anywhere; }
     a:focus-visible { outline: 3px solid #064df6; outline-offset: 4px; }
     .legal-notice { border-left: 4px solid #f80057; padding: 12px 16px; background: #fff0f4; font-weight: 650; }
+    .legal-notice-title { display: block; margin-bottom: 4px; font-weight: 700; }
+    .legal-notice-title + span { font-weight: 400; }
     .legal-contents { border-block: 1px solid #d9dff0; margin-block: 28px; padding-bottom: 18px; }
     .legal-contents h2 { margin-top: 20px; }
     .legal-contents a { display: inline-block; padding-block: 8px; }
@@ -70,7 +72,7 @@ export async function renderLegalPage(content: LegalPageContent, returnTo: strin
   <main class="legal-document" data-legal-page>
     <header><img class="legal-logo" src="/assets/logo.webp" width="236" height="73" alt="${escapeHtml(content.brandName)}">
       <h1>${escapeHtml(content.title)}</h1>
-      ${content.notice ? `<p class="legal-notice" data-legal-notice="${content.notice.kind}"${content.notice.kind === "sample" ? " data-legal-sample" : ""}>${escapeHtml(content.notice.text)}</p>` : ""}
+      ${content.notice ? `<p class="legal-notice" data-legal-notice="${content.notice.kind}"${content.notice.kind === "sample" ? " data-legal-sample" : ""}>${content.notice.title ? `<strong class="legal-notice-title" data-legal-notice-title>${escapeHtml(content.notice.title)}</strong>` : ""}<span>${escapeHtml(content.notice.text)}</span></p>` : ""}
       ${renderMarkdownToHtml(content.introduction)}
     </header>
     <nav class="legal-contents" aria-label="${escapeHtml(content.contentsLabel)}">

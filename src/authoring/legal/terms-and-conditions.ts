@@ -7,7 +7,8 @@ export const termsAndConditions: LegalPageContent = {
   title: "Términos y condiciones",
   notice: {
     kind: "important",
-    text: "AVISO IMPORTANTE: ESTOS TÉRMINOS INCLUYEN ARBITRAJE INDIVIDUAL OBLIGATORIO, RENUNCIA A PROCEDIMIENTOS COLECTIVOS Y LIMITACIONES DE RESPONSABILIDAD. LEA ESPECIALMENTE LAS SECCIONES 10, 13 Y 14.",
+    title: "Arbitraje y limitaciones de responsabilidad",
+    text: "Estos términos incluyen arbitraje individual obligatorio, renuncia a procedimientos colectivos y limitaciones de responsabilidad, sujetos a las excepciones indicadas. Consulte especialmente las secciones 10, 13 y 14.",
   },
   introduction: "**Última actualización: 29 de octubre de 2026**",
   contentsLabel: "Contenido",

@@ -46,6 +46,8 @@ describe("standalone legal pages", () => {
         expect(logs).toEqual([]);
         expect(html).toContain(document.title);
         if (document.notice) expect(html).toContain(document.notice.text);
+        if (document.notice?.title) expect(html).toContain(document.notice.title);
+        expect(await attributes(html, "[data-legal-notice-title]", "data-legal-notice-title")).toHaveLength(document.notice?.title ? 1 : 0);
         expect(await attributes(html, "[data-legal-notice]", "data-legal-notice")).toEqual(document.notice ? [document.notice.kind] : []);
         expect(html.includes("data-legal-sample")).toBe(document.notice?.kind === "sample");
         expect(html).not.toMatch(/<script|<form|__FORM_CONFIG__|partytown|tracking-events|gtm\.js|tfc\.js/iu);
@@ -68,7 +70,7 @@ describe("standalone legal pages", () => {
     }
   }
 
-  it("renders the approved terms without changing their notice or contact details", async () => {
+  it("renders the calmer terms notice while preserving its section references and contact details", async () => {
     const response = await createFetchHandler()(new Request("https://example.test/terminos-y-condiciones"));
     const html = await response.text();
     expect(termsAndConditions.sections).toHaveLength(16);
@@ -76,6 +78,9 @@ describe("standalone legal pages", () => {
     expect(termsAndConditions.title).toBe("Términos y condiciones");
     expect(html).toContain("<h1>Términos y condiciones</h1>");
     expect(termsAndConditions.notice?.kind).toBe("important");
+    expect(termsAndConditions.notice?.title).toBe("Arbitraje y limitaciones de responsabilidad");
+    expect(termsAndConditions.notice?.text).toBe("Estos términos incluyen arbitraje individual obligatorio, renuncia a procedimientos colectivos y limitaciones de responsabilidad, sujetos a las excepciones indicadas. Consulte especialmente las secciones 10, 13 y 14.");
+    expect(html).not.toContain("AVISO IMPORTANTE:");
     expect(html).toContain(termsAndConditions.notice!.text);
     expect(html).toContain("Última actualización: 29 de octubre de 2026");
     expect(html).toContain("Seguros Aseguranza es una marca propiedad de Liderna Inc y operada por esta. Liderna Inc es una sociedad constituida en Delaware, Estados Unidos (“Liderna”, “nosotros”).");
@@ -255,12 +260,22 @@ describe("standalone legal pages", () => {
     expect(links).toHaveLength(2);
     expect(new URL(links[0]!, "https://example.test").searchParams.get("returnTo")).toBe("/auto/estado-donde-vive?state=TX");
     expect(html).toContain("data-legal-document");
-    const legal = await renderLegalPage({ ...termsAndConditions, notice: { kind: "important", text: '<img src=x onerror=alert(1)>' }, sections: [{ id: "test", title: '<img src=x>', body: '<script>alert(1)</script>\n\n- **Example**' }] }, "/");
+    const legal = await renderLegalPage({ ...termsAndConditions, notice: { kind: "important", title: '<b>Notice</b>', text: '<img src=x onerror=alert(1)>' }, sections: [{ id: "test", title: '<img src=x>', body: '<script>alert(1)</script>\n\n- **Example**' }] }, "/");
     expect(legal).toContain("&lt;script&gt;");
     expect(legal).not.toContain("<script>");
     expect(legal).toContain("<strong>Example</strong>");
     expect(legal).toContain("&lt;img src=x onerror=alert(1)&gt;");
+    expect(legal).toContain("&lt;b&gt;Notice&lt;/b&gt;");
+    expect(legal).not.toContain("<b>Notice</b>");
     expect(getLegalReturnPath("/auto?phone=secret&state=TX")).toBe("/auto?state=TX");
+  });
+
+  it("preserves notices authored without a title", async () => {
+    const html = await renderLegalPage({ ...termsAndConditions, notice: { kind: "sample", text: "Sample notice" } }, "/");
+    expect(html).toContain("Sample notice");
+    expect(await attributes(html, "[data-legal-notice]", "data-legal-notice")).toEqual(["sample"]);
+    expect(await attributes(html, "[data-legal-sample]", "data-legal-sample")).toHaveLength(1);
+    expect(await attributes(html, "[data-legal-notice-title]", "data-legal-notice-title")).toEqual([]);
   });
 
   it("validates optional authored links and preserves pages that omit them", async () => {

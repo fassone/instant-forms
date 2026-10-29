@@ -76,7 +76,12 @@ test.describe("legal pages", () => {
       if (path === "/terminos-y-condiciones") {
         await expect(page.locator("h1")).toHaveText("Términos y condiciones");
         await expect(page.locator("[data-legal-sample]")).toHaveCount(0);
-        await expect(page.locator('[data-legal-notice="important"]')).toContainText("ARBITRAJE INDIVIDUAL OBLIGATORIO");
+        const notice = page.locator('[data-legal-notice="important"]');
+        await expect(notice.locator("[data-legal-notice-title]")).toHaveText("Arbitraje y limitaciones de responsabilidad");
+        await expect(notice.locator("[data-legal-notice-title]")).toHaveCSS("font-weight", "700");
+        await expect(notice.locator("[data-legal-notice-title]")).toHaveCSS("display", "block");
+        await expect(notice.locator("span")).toHaveText("Estos términos incluyen arbitraje individual obligatorio, renuncia a procedimientos colectivos y limitaciones de responsabilidad, sujetos a las excepciones indicadas. Consulte especialmente las secciones 10, 13 y 14.");
+        await expect(notice.locator("span")).toHaveCSS("font-weight", "400");
         await expect(page.locator("section")).toHaveCount(16);
         await expect(page.locator("#modificaciones-y-contacto")).toContainText("1058 Windy Creek Path");
       } else {
