@@ -11,6 +11,7 @@
 - Independent generic flow mounts at `/auto` and `/hogar`.
 - Valid but unauthored state fallbacks to the generic flow with a pending state preselection.
 - Global public form fallback content and CTA configuration.
+- Placement of sample privacy and terms documents through `legal_page` actions; prose lives in `authoring/legal`.
 
 ## Does Not Belong Here
 

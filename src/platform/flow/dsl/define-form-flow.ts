@@ -252,6 +252,14 @@ function assertKnownTemplateVariables(
 function assertPage(page: FormPage): void {
   assertPagePresentation(page);
   assertPageMeta(page);
+  if (page.legalLinks !== undefined) {
+    if (!Array.isArray(page.legalLinks) || page.legalLinks.some((link) =>
+      !link || !isNonEmptyMarkupFreePlainText(link.label) ||
+      typeof link.href !== "string" || !/^\/[a-z0-9_-]+(?:\/[a-z0-9_-]+)*$/u.test(link.href)
+    )) {
+      throw new Error("page.legalLinks must contain plain-text labels and local document paths.");
+    }
+  }
 }
 
 function assertPagePresentation(page: FormPage): void {

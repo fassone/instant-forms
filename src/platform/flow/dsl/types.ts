@@ -56,10 +56,16 @@ export type FormPageMeta = {
   robots?: string;
 };
 
+export type FormLegalLink = {
+  label: string;
+  href: string;
+};
+
 export type FormPage = {
   name: string;
   presentation?: FormPagePresentation;
   meta?: FormPageMeta;
+  legalLinks?: readonly FormLegalLink[];
 };
 
 export type FormPostSubmit = {

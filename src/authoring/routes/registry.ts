@@ -3,6 +3,8 @@ import type { QuoteEntryPage } from "../../platform/rendering/quote-entry-page";
 import { autoFlows } from "../flows/auto/registry";
 import { homeFlows } from "../flows/home/registry";
 import { genericAutoFlow, genericHomeFlow } from "../flows/generic";
+import { legalLinks } from "../legal/links";
+import { samplePrivacyPolicy, sampleTerms } from "../legal/sample-documents";
 
 const notFound = unavailable({
   locale: "es",
@@ -14,6 +16,7 @@ const notFound = unavailable({
 const quoteEntry: QuoteEntryPage = {
   locale: "es",
   pageName: "Seguros Aseguranza",
+  legalLinks,
   desktopHeightPx: 820,
   title: "Seguro claro, rápido y en español",
   body: "Hemos ayudado a miles de familias latinas a comparar opciones de seguro accesibles, claras y sin compromiso.",
@@ -33,6 +36,8 @@ const welcome = { type: "quote_entry", content: quoteEntry, selection: false } a
 export const formRoutes = defineFormRoutes({
   index: welcome,
   folders: {
+    "politica-de-privacidad": { type: "legal_page", content: samplePrivacyPolicy },
+    "terminos-y-condiciones": { type: "legal_page", content: sampleTerms },
     producto: { type: "quote_entry", content: quoteEntry, selection: true },
     auto: {
       index: genericAutoFlow,

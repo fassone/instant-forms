@@ -4,6 +4,7 @@ import path from "node:path";
 import { getStepSlug, getStepUrl, type FormStep, type InstantForm } from "../flow";
 import { createClientFormConfig } from "./client/config";
 import { applyProductionTokens } from "./inline-assets";
+import { renderLegalLinks } from "./legal-links";
 import {
   FORM_CONFIG_JSON_PLACEHOLDER,
   renderTransitionStepHtml,
@@ -77,6 +78,11 @@ export function injectPrebuiltFormRequestState(
 ): string {
   const activeStep = form.steps[activeStepIndex];
   const formConfig = createRequestFormConfig(form, activeStepIndex, options);
+  const legalReturnTo = options.legalReturnTo;
+  if (legalReturnTo && form.page.legalLinks?.length) {
+    html = html.replace(/<nav\b[^>]*\bdata-legal-links\b[^>]*>[\s\S]*?<\/nav>/u,
+      () => renderLegalLinks(form.page.legalLinks, legalReturnTo));
+  }
 
   if (!activeStep) {
     return injectFormConfig(html, formConfig);

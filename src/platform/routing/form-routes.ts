@@ -1,5 +1,7 @@
 import { US_STATES } from "../../shared/data/us-states";
 import { renderQuoteEntryPage, type QuoteEntryPage } from "../rendering/quote-entry-page";
+import { renderLegalPage, type LegalPageContent } from "../rendering/legal-page";
+import { getLegalReturnPath } from "../rendering/legal-links";
 import type { Context, Hono, MiddlewareHandler } from "hono";
 import { getCookie } from "hono/cookie";
 
@@ -55,8 +57,9 @@ export type UnavailableRouteAction = UnavailablePageContent & {
 };
 
 export type QuoteEntryRouteAction = { type: "quote_entry"; content: QuoteEntryPage; selection: boolean };
+export type LegalPageRouteAction = { type: "legal_page"; content: LegalPageContent };
 export type GenericStateFallbackAction = { type: "generic_state"; to: string; unavailable: UnavailableRouteAction };
-export type FormRouteAction = RedirectRouteAction | UnavailableRouteAction | QuoteEntryRouteAction | GenericStateFallbackAction;
+export type FormRouteAction = RedirectRouteAction | UnavailableRouteAction | QuoteEntryRouteAction | GenericStateFallbackAction | LegalPageRouteAction;
 
 export type FormRouteNodeInput = InstantForm | FormRouteGroupInput | FormRouteAction;
 
@@ -141,7 +144,7 @@ export function registerFormRoutePages(app: Hono, routes: FormRoutes, eventLogge
     app.use(`${getFolderRoot([folder])}/*`, normalizePageTrailingSlash);
     app.use(`${getFolderRoot([RESERVED_PREVIEW_FOLDER, folder])}/*`, normalizePageTrailingSlash);
     registerPublicRouteNode(app, [folder], node, routes.notFound, routes, eventLogger);
-    registerPreviewRouteNode(app, [folder], node, routes.notFound);
+    registerPreviewRouteNode(app, [folder], node, routes.notFound, routes);
   }
 }
 
@@ -309,7 +312,7 @@ function registerPublicFormFolder(
         await renderPostSubmitPage(form, routeKey, {
           trackingEvents: postSubmitState.trackingEvents,
           stepCountLabel: postSubmitState.stepCountLabel,
-        }),
+        }, getLegalReturnPath(c.req.url, new URL(c.req.url).origin)),
         200,
       ),
     );
@@ -425,6 +428,7 @@ function registerPublicFormFolder(
       }
     }
     const renderOptions = {
+      legalReturnTo: getLegalReturnPath(c.req.url, new URL(c.req.url).origin),
       ...(options.queryPrefill ? { initialPrefill, prefillQuery } : {}),
       activeStepIndex: stepIndex,
       answers,
@@ -474,6 +478,7 @@ function registerPreviewRouteNode(
   routeSegments: readonly string[],
   node: FormRouteNode,
   inheritedFallback: FormRouteAction,
+  routes: FormRoutes,
 ): void {
   if (node.type === "flow") {
     registerPreviewFormFolder(app, routeSegments, node.form);
@@ -482,16 +487,16 @@ function registerPreviewRouteNode(
 
   const previewFolderRoot = getFolderRoot([RESERVED_PREVIEW_FOLDER, ...routeSegments]);
   if (node.type === "action") {
-    app.get(previewFolderRoot, (c) => executeRouteAction(c, node.action));
+    app.get(previewFolderRoot, (c) => executeRouteAction(c, node.action, undefined, false, routes));
     return;
   }
   const fallback = node.notFound ?? inheritedFallback;
 
   const indexAction = node.index?.type === "action" ? node.index.action : fallback;
-  if (node.index?.type !== "flow") app.get(previewFolderRoot, (c) => executeRouteAction(c, indexAction, RESERVED_PREVIEW_FOLDER));
+  if (node.index?.type !== "flow") app.get(previewFolderRoot, (c) => executeRouteAction(c, indexAction, RESERVED_PREVIEW_FOLDER, false, routes));
 
   for (const [childSegment, childNode] of Object.entries(node.children)) {
-    registerPreviewRouteNode(app, [...routeSegments, childSegment], childNode, fallback);
+    registerPreviewRouteNode(app, [...routeSegments, childSegment], childNode, fallback, routes);
   }
 
   if (node.index?.type === "flow") registerPreviewFormFolder(app, routeSegments, node.index.form);
@@ -525,6 +530,7 @@ function registerPreviewFormFolder(app: Hono, routeSegments: readonly string[], 
 
     return htmlResponse(
       await renderFormPage(previewForm, {
+        legalReturnTo: getLegalReturnPath(c.req.url, new URL(c.req.url).origin),
         activeStepIndex: 0,
         answers: {},
         previewMode: true,
@@ -652,13 +658,20 @@ async function executeRouteAction(
   action: FormRouteAction,
   redirectPrefix?: string,
   preferPrebuiltUnavailable = false,
+  routes?: FormRoutes,
 ): Promise<Response> {
   if (action.type === "redirect") {
     return redirectNoStore(c, appendQueryParams(getRedirectTarget(action.to, redirectPrefix), getIncomingQueryParams(c)));
   }
 
   if (action.type === "quote_entry") {
-    return htmlResponse(await renderQuoteEntryPage(action.content, action.selection, new URL(c.req.url).search), 200, "no-store");
+    return htmlResponse(await renderQuoteEntryPage(action.content, action.selection, new URL(c.req.url).search, getLegalReturnPath(c.req.url, new URL(c.req.url).origin)), 200, "no-store");
+  }
+  if (action.type === "legal_page") {
+    const returnTo = getApprovedLegalReturnTo(c, routes);
+    const response = htmlResponse(await renderLegalPage(action.content, returnTo), 200, "no-store");
+    response.headers.set("X-Robots-Tag", "noindex, nofollow");
+    return response;
   }
   if (action.type === "generic_state") {
     const stateSegment = c.req.path.split("/")[2]?.toUpperCase();
@@ -873,7 +886,7 @@ function isInstantForm(value: unknown): value is InstantForm {
 }
 
 function isFormRouteAction(value: unknown): value is FormRouteAction {
-  return isRecord(value) && ["redirect", "unavailable", "quote_entry", "generic_state"].includes(String(value.type));
+  return isRecord(value) && ["redirect", "unavailable", "quote_entry", "generic_state", "legal_page"].includes(String(value.type));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -881,7 +894,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function registerRouteAction(app: Hono, path: string, action: FormRouteAction, routes: FormRoutes): void {
-  app.get(path, (c) => executeRouteAction(c, action));
+  app.get(path, (c) => executeRouteAction(c, action, undefined, false, routes));
   if (action.type !== "quote_entry" || !action.selection) return;
   app.post(path, async (c) => {
     const body = await c.req.parseBody();
@@ -899,4 +912,36 @@ function registerRouteAction(app: Hono, path: string, action: FormRouteAction, r
     c.header("Cache-Control", "no-store");
     return c.redirect(appendQueryParams(getFolderRoot(entry.routeSegments), getIncomingQueryParams(c)), 303);
   });
+}
+
+function getApprovedLegalReturnTo(c: Context, routes?: FormRoutes): string {
+  if (!routes) return "/";
+  const target = getLegalReturnPath(c.req.query("returnTo") ?? "/", new URL(c.req.url).origin);
+  const pathname = new URL(target, c.req.url).pathname;
+  const allowed = new Set<string>();
+  if (routes.index.type === "quote_entry") allowed.add("/");
+
+  for (const entry of getFormRouteBuildEntries(routes)) {
+    const root = getFolderRoot(entry.routeSegments);
+    allowed.add(root);
+    allowed.add(getFormRoutePostSubmitUrl(entry.routeSegments, entry.form));
+    allowed.add(`/${RESERVED_PREVIEW_FOLDER}${root}`);
+    for (const step of entry.form.steps) {
+      allowed.add(getPublicStepUrl(entry.routeSegments, step));
+      allowed.add(getPreviewStepUrl(entry.routeSegments, step));
+    }
+  }
+  function addQuoteEntries(nodes: FormRoutes["folders"], segments: readonly string[] = []): void {
+    for (const [key, node] of Object.entries(nodes)) {
+      const path = [...segments, key];
+      const action = node.type === "action" ? node.action : node.type === "group" && node.index?.type === "action" ? node.index.action : undefined;
+      if (action?.type === "quote_entry") {
+        allowed.add(getFolderRoot(path));
+        allowed.add(getFolderRoot([RESERVED_PREVIEW_FOLDER, ...path]));
+      }
+      if (node.type === "group") addQuoteEntries(node.children, path);
+    }
+  }
+  addQuoteEntries(routes.folders);
+  return allowed.has(pathname) ? target : "/";
 }

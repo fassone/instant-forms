@@ -1,4 +1,5 @@
 import { createGenericInsuranceTracking } from "../generic-tracking";
+import { legalLinks } from "../../legal/links";
 import { defineFormFlow, defineFormTemplate } from "../../../platform/flow";
 import { createLeadAttribution } from "./attribution";
 import { autoInsuranceContract, genericAutoInsuranceContract } from "./contracts";
@@ -49,6 +50,7 @@ export const esAutoInsuranceTemplate = defineFormTemplate({
       page: {
         name: variables.pageName,
         meta: createEsAutoInsurancePageMeta(areaDisplayName),
+        legalLinks,
         presentation: {
           desktopHeightPx: 820,
         },
@@ -100,6 +102,7 @@ export const esGenericAutoInsuranceTemplate = defineFormTemplate({
       page: {
         name: variables.pageName,
         meta: createEsAutoInsurancePageMeta(),
+        legalLinks,
         presentation: {
           desktopHeightPx: 820,
           showAreaBadge: false,

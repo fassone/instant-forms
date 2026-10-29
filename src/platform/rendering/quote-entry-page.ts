@@ -1,10 +1,13 @@
 import { prepareInlineAssetHtml } from "./inline-assets";
 import { renderFormStyles } from "./form-styles";
 import { renderWelcomeContent } from "./render-form-page";
+import type { FormLegalLink } from "../flow";
+import { renderLegalLinks, renderLegalLinkScript } from "./legal-links";
 
 export type QuoteEntryPage = {
   locale: string;
   pageName: string;
+  legalLinks?: readonly FormLegalLink[];
   desktopHeightPx: number;
   title: string;
   body: string;
@@ -16,7 +19,7 @@ export type QuoteEntryPage = {
   products: readonly { key: string; label: string; routeKey: string }[];
 };
 
-export async function renderQuoteEntryPage(content: QuoteEntryPage, selection: boolean, query: string): Promise<string> {
+export async function renderQuoteEntryPage(content: QuoteEntryPage, selection: boolean, query: string, returnTo = (selection ? content.selectionPath : "/") + query): Promise<string> {
   const action = escapeHtml(content.selectionPath + query);
   const choices = content.products.map((product, index) => `
     <label class="option" data-product-option>
@@ -33,7 +36,7 @@ export async function renderQuoteEntryPage(content: QuoteEntryPage, selection: b
     ${renderFormStyles()}
   </head>
   <body>
-    <main class="shell">
+    <main class="shell${content.legalLinks?.length ? " legal-shell" : ""}">
       <form class="form-panel" style="--form-desktop-height: ${content.desktopHeightPx}px;" data-has-footer="true" data-active-step-kind="${selection ? "choice" : "interstitial"}" method="post" action="${action}"${selection ? " data-product-selection" : ""}>
         <header class="brand"><div class="brand-identity">
           <img class="brand-logo" src="/assets/logo.webp" alt="${escapeHtml(content.pageName)}" width="236" height="73">
@@ -51,8 +54,10 @@ export async function renderQuoteEntryPage(content: QuoteEntryPage, selection: b
             : '<a class="button button-primary" href="' + action + '">' + escapeHtml(content.ctaLabel) + '</a>'}
         </div></footer>
       </form>
+      ${renderLegalLinks(content.legalLinks, returnTo)}
     </main>
     ${selection ? renderProductSelectionScript() : ""}
+    ${content.legalLinks?.length ? renderLegalLinkScript() : ""}
   </body>
 </html>`);
 }

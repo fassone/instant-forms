@@ -21,6 +21,7 @@ import type {
 import { createClientFormConfig } from "./client/config";
 import { getFormControllerScript } from "./client/controller-script";
 import { prepareInlineAssetHtml } from "./inline-assets";
+import { renderLegalLinks, renderLegalLinkScript } from "./legal-links";
 import { renderConsentMarkdownToHtml, renderMarkdownToHtml } from "./markdown";
 import { createLifecycleTrackingPayload, renderGoogleTagManagerHead, type TrackingEventPayload } from "./tracking";
 
@@ -42,6 +43,7 @@ export type RenderFormPageOptions = {
     stepCountLabel: string;
   };
   initialTrackingEvents?: readonly TrackingEventPayload[];
+  legalReturnTo?: string;
 };
 
 export type UnavailablePageContent = {
@@ -128,6 +130,7 @@ export async function renderFormPage(form: InstantForm, options: RenderFormPageO
       : [],
   );
   const pageMetaTags = renderPageMetaTags(form);
+  const legalReturnTo = options.legalReturnTo ?? (activeStepSource ? getClientStepUrl(activeStepSource) : "/");
 
   const html = `<!doctype html>
 <html lang="${escapeHtml(form.locale)}">
@@ -139,7 +142,7 @@ ${pageMetaTags}
 ${renderFormStyles()}
   </head>
   <body>
-    <main class="shell">
+    <main class="shell${form.page.legalLinks?.length ? " legal-shell" : ""}">
       <form class="form-panel" id="lead-form"${formStyleAttribute}${formAttributes}>
         <header class="brand">
           <div class="brand-identity">
@@ -161,6 +164,7 @@ ${form.page.presentation?.showAreaBadge === false ? "" : `          <span class=
         </section>
         ${renderedFooter}
       </form>
+      ${renderLegalLinks(form.page.legalLinks, legalReturnTo)}
       ${isPostSubmit ? "" : renderHiddenThanks(form)}
       <div
         class="error-modal"
@@ -180,6 +184,7 @@ ${form.page.presentation?.showAreaBadge === false ? "" : `          <span class=
     </main>
     ${trackingScripts}
     ${isPostSubmit ? renderPostSubmitAppLinkScript(form) : renderControllerScripts(formConfigExpression, activeStepKind)}
+    ${form.page.legalLinks?.length ? renderLegalLinkScript() : ""}
   </body>
 </html>`;
 
@@ -190,10 +195,12 @@ export function renderPostSubmitPage(
   form: InstantForm,
   routeKey: string,
   postSubmit: NonNullable<RenderFormPageOptions["postSubmit"]>,
+  legalReturnTo?: string,
 ): Promise<string> {
   return renderFormPage(form, {
     routeKey,
     postSubmit,
+    legalReturnTo,
   });
 }
 

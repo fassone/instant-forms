@@ -28,6 +28,7 @@ flowchart LR
 - Client config generated from the server DSL.
 - Template ownership files for each step kind.
 - Server-side Markdown rendering for authored display copy. Raw HTML is escaped and only sanitized HTML is sent to the browser.
+- Standalone legal document rendering and an optional shared legal-link row outside form panels.
 
 ## Does Not Belong Here
 
@@ -42,6 +43,8 @@ Rendering changes are layout-sensitive. Run render assertions and Playwright scr
 Development responses keep readable CSS variables and readable inline controller JS. Production responses still inline everything for speed, but `bun run build:forms` writes minified active-step shells into `/_dist/forms`. Request-time production rendering reads the prebuilt shell and injects only the dynamic form config needed for checkpoint-prefilled answers and route state.
 
 The shared product selector has a small inline auto-submit handler, separate from the flow controller. It submits the existing native form 180 ms after selection, prevents duplicate submissions, and resets pending state on page restoration. Stable data attributes keep its selectors compatible with production compaction. The welcome page does not load this handler, and the selector's submit button works without JavaScript.
+
+Legal links are authored through `page.legalLinks` (or the equivalent quote-entry property) and reused on confirmation pages. Their `data-legal-*` hooks remain stable through minification. Prebuilt shells receive request-specific return URLs, and a small click listener refreshes those URLs after SPA transitions. Legal documents have an isolated, normally scrolling layout and escaped Markdown sections; they load no form or analytics scripts. Document copy belongs to authoring, and return-destination authorization belongs to routing.
 
 For faster transitions, production builds also emit a cacheable transition JS asset with static step HTML, non-PII client metadata, and registered behavior modules. The browser starts loading that asset immediately after the initial step mounts; guarded checkpoint APIs still decide which route is allowed next. TrustedForm-specific code may be registered in that asset, and same-origin TrustedForm assets may be preloaded before the consent step, but Certify execution, Partytown initialization, and certificate polling happen only when the consent step mounts.
 

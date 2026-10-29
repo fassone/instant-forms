@@ -59,6 +59,34 @@ export function renderFormStyles(): string {
         padding: clamp(24px, 5vw, 56px);
       }
 
+      .legal-shell {
+        align-content: center;
+        row-gap: 12px;
+      }
+
+      .legal-links {
+        width: min(100%, 720px);
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 0 24px;
+      }
+
+      .legal-links a {
+        display: inline-flex;
+        align-items: center;
+        min-height: 44px;
+        color: #fffdf4;
+        font-size: 14px;
+        line-height: 1.4;
+        text-underline-offset: 3px;
+      }
+
+      .legal-links a:focus-visible {
+        outline: 2px solid currentColor;
+        outline-offset: 3px;
+      }
+
       .brand {
         display: flex;
         align-items: center;
@@ -1261,6 +1289,28 @@ export function renderFormStyles(): string {
 
         .form-panel {
           gap: var(--mfs-28);
+        }
+
+        .legal-shell {
+          grid-template-rows: minmax(0, 1fr) auto;
+          row-gap: 0;
+        }
+
+        .legal-shell > .form-panel,
+        .legal-shell > .thanks {
+          height: 100%;
+          min-height: 0;
+          padding-bottom: var(--mfs-16);
+        }
+
+        .legal-shell > .legal-links {
+          padding: 0 12px max(8px, env(safe-area-inset-bottom));
+          gap: 0 16px;
+        }
+
+        .legal-shell > .legal-links a {
+          color: var(--muted);
+          font-size: 12px;
         }
 
         .form-panel[data-focused-step-kind="text"],

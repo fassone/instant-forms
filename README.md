@@ -97,6 +97,8 @@ Every source and test folder has its own `README.md` describing ownership and sa
 | `GET /` | Shared single-CTA welcome, then product selection at `/producto`. |
 | `GET /producto` | Auto/home selection; choosing an option automatically advances. |
 | `POST /producto` | Confirms the selected product's welcome checkpoint, then resumes that generic flow without another welcome. |
+| `GET /politica-de-privacidad`, `GET /terminos-y-condiciones` | Standalone Spanish sample legal documents, not approved policies. |
+| `GET /__preview/politica-de-privacidad`, `GET /__preview/terminos-y-condiciones` | No-store mirrors of the sample legal documents. |
 | `GET /auto`, `GET /hogar` | Resume the independent generic product flow, starting at `/inicio` for a new visitor. |
 | `GET /auto/:stepSlug`, `GET /hogar/:stepSlug` | Generic guarded steps and `/gracias`, without a state in the path. |
 | `GET /auto/:state`, `GET /hogar/:state` | Resume an authored state flow. A valid but unauthored state redirects to the generic welcome with `?state=XX`. |
@@ -112,6 +114,18 @@ Every source and test folder has its own `README.md` describing ownership and sa
 Unavailable public routes use author-controlled title, message, CTA, and status from `src/authoring/routes/registry.ts`.
 
 Public page URLs and their preview mirrors accept trailing slashes. GET/HEAD requests redirect to the same path without trailing slashes using a no-store `302`, preserving query parameters before normal resume/guard handling. For example, `/auto/` redirects to `/auto`, which then resumes the generic auto flow. The site root `/`, API/proxy/asset URLs, and POST requests are not normalized.
+
+## Sample Legal Pages
+
+The privacy and terms documents are layout-test drafts, prominently labeled as samples, with approximately 1,400 Spanish words and twelve sections each. Their text lives in `src/authoring/legal/sample-documents.ts`, with shared link labels and paths in `src/authoring/legal/links.ts`. Company details, contact channels, dates and legal commitments remain unconfirmed. Do not publish these drafts as approved policies.
+
+The route registry mounts typed `legal_page` actions. Documents use a dedicated, normally scrolling renderer with an anchor-based contents list and return links above and below the text. They are served with `Cache-Control: no-store` and draft-only `noindex,nofollow` directives. They do not load form controllers, transition scripts, TrustedForm, GTM or analytics, and do not read or write progress or attribution cookies.
+
+Forms opt into the link row through optional `page.legalLinks: [{ label, href }]`; shared quote-entry content supports the same property. All current auto/home templates and the shared entry author the links explicitly. Omitted links preserve the previous layout. Links sit outside and below the form, including confirmation pages; the mobile layout reserves space for the row and safe-area inset without adding form actions.
+
+Links open in the same tab and carry `returnTo`. The server accepts only recognized same-origin quote/form paths, including preview steps, and preserves only `fbclid`, `source_channel`, `acquisition_channel`, `platform` and the `state` hint. External destinations, API/asset paths, unknown steps and legal-page loops fall back to `/`. Switching documents preserves the original destination. A small inline click listener updates form links to the current URL after SPA transitions; server-rendered links also work without JavaScript.
+
+Only saved checkpoint answers are guaranteed to survive a legal-page visit; unfinished input is not saved automatically. Existing route guards and one-time confirmation access remain unchanged, so returning to an already-consumed confirmation URL follows its normal redirect to the product root.
 
 ## Form Flow
 

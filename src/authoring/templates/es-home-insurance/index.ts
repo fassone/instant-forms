@@ -1,4 +1,5 @@
 import { createGenericInsuranceTracking } from "../generic-tracking";
+import { legalLinks } from "../../legal/links";
 import { defineFormFlow, defineFormTemplate } from "../../../platform/flow";
 import { createLeadAttribution } from "./attribution";
 import { homeInsuranceContract, genericHomeInsuranceContract } from "./contracts";
@@ -49,6 +50,7 @@ export const esHomeInsuranceTemplate = defineFormTemplate({
       page: {
         name: variables.pageName,
         meta: createEsHomeInsurancePageMeta(areaDisplayName),
+        legalLinks,
         presentation: {
           desktopHeightPx: 820,
         },
@@ -100,6 +102,7 @@ export const esGenericHomeInsuranceTemplate = defineFormTemplate({
       page: {
         name: variables.pageName,
         meta: createEsHomeInsurancePageMeta(),
+        legalLinks,
         presentation: {
           desktopHeightPx: 820,
           showAreaBadge: false,
