@@ -4,7 +4,7 @@ import { legalLinks } from "./links";
 const sample = {
   locale: "es",
   brandName: "Seguros Aseguranza",
-  sampleNotice: "Documento de muestra para pruebas de diseño. No constituye la política vigente.",
+  notice: { kind: "sample", text: "Documento de muestra para pruebas de diseño. No constituye la política vigente." },
   contentsLabel: "Contenido",
   returnLabel: "Volver a mi cotización",
   legalLinks,
@@ -104,104 +104,6 @@ Las instrucciones deberán evitar que el visitante envíe información innecesar
       body: `El documento aprobado deberá indicar su fecha de vigencia y explicar cómo se comunicarán los cambios relevantes. Esa fecha no debe confundirse con la fecha de una prueba de interfaz o una actualización técnica del sitio. En esta muestra, la fecha, la identidad del responsable y los datos de contacto continúan expresamente pendientes de confirmación.
 
 Antes de sustituir este contenido, deberán revisarse sus referencias a formularios, proveedores, cookies y procedimientos. La prueba visual busca comprobar que los títulos, párrafos y enlaces siguen siendo legibles incluso al final de un documento extenso. Puede regresar a su cotización mediante el enlace inferior; hacerlo no expresa aceptación de esta muestra ni envía una solicitud nueva.`,
-    },
-  ],
-};
-
-export const sampleTerms: LegalPageContent = {
-  ...sample,
-  title: "Términos y condiciones",
-  introduction: "Los siguientes apartados son texto de muestra para evaluar el diseño de una página larga. No constituyen un contrato, una oferta de seguro ni condiciones vigentes. La redacción final, la entidad responsable y cualquier disposición jurídica requieren confirmación antes de publicarse como documentos oficiales. La navegación por esta página no añade una aceptación al formulario ni modifica una solicitud existente.",
-  sections: [
-    {
-      id: "servicio",
-      title: "Descripción y alcance del servicio",
-      body: `La versión definitiva deberá explicar qué servicio se presta a través del sitio y cuál es el papel de la entidad que lo opera. Debe distinguirse entre facilitar una solicitud, presentar información y participar en la contratación de un producto. Esas funciones no se dan por supuestas en este texto de muestra y deberán describirse de acuerdo con la operación real.
-
-El visitante debería poder comprender qué ocurrirá después de completar el recorrido y qué actuaciones corresponden a otras organizaciones. También deberán identificarse las limitaciones relevantes del servicio sin prometer resultados. Esta sección no afirma que el operador sea una aseguradora, un agente o un intermediario con una condición determinada pendiente de verificar.`,
-    },
-    {
-      id: "participacion",
-      title: "Condiciones de participación",
-      body: `Esta sección reservará espacio para explicar quién puede utilizar el servicio y bajo qué condiciones. Los requisitos relacionados con ubicación, capacidad para solicitar información o disponibilidad de productos deberán confirmarse antes de incorporarlos al documento final. No se fija aquí una edad, una autorización especial ni un criterio territorial que no haya sido aprobado.
-
-Cuando un formulario solicite información sobre otra persona o sobre una propiedad, las instrucciones deberán aclarar qué responsabilidades asume quien lo completa. El lenguaje debe ser concreto y consistente con las preguntas de la interfaz. Una condición incluida en el documento no debe contradecir las opciones que el propio recorrido permite seleccionar o enviar.`,
-    },
-    {
-      id: "informacion-correcta",
-      title: "Información proporcionada en el formulario",
-      body: `El contenido definitivo deberá explicar la importancia de revisar la información antes de enviar una solicitud. Los datos de contacto y las respuestas sobre el producto pueden influir en las comunicaciones posteriores. Este apartado de ejemplo no establece consecuencias contractuales específicas; muestra el espacio necesario para describirlas con claridad una vez que se hayan confirmado.
-
-La revisión del contenido deberá contemplar, entre otros puntos:
-
-- Cómo corregir una respuesta antes de confirmarla.
-- Qué significa la pantalla de revisión de datos.
-- Dónde solicitar orientación después del envío.
-
-También deberán explicarse los mecanismos disponibles para corregir una respuesta y los límites de la recuperación del progreso. Escribir en un campo no equivale siempre a guardar una respuesta. Al salir hacia otra página, un dato pendiente puede no conservarse. El documento y la interfaz deberán utilizar palabras coherentes para diferenciar revisión, confirmación, envío y seguimiento.`,
-    },
-    {
-      id: "solicitud",
-      title: "Solicitud de cotización y seguimiento",
-      body: `La versión aprobada deberá describir el significado de enviar una solicitud y las etapas que pueden seguir. Deberá aclarar qué confirmaciones se muestran en el sitio y cuáles proceden de otros participantes. Este ejemplo no garantiza una respuesta dentro de un plazo determinado ni asegura que cada solicitud produzca una oferta de un proveedor.
-
-Las instrucciones de seguimiento deberán indicar el canal apropiado y la información necesaria para localizar una solicitud, evitando pedir datos excesivos. También será importante distinguir una confirmación técnica de recepción de una evaluación del producto solicitado. Los mensajes finales del formulario y estas condiciones deberán revisarse juntos para que el visitante reciba una explicación consistente.`,
-    },
-    {
-      id: "cotizaciones-cobertura",
-      title: "Cotizaciones, precios y cobertura",
-      body: `En una versión definitiva se explicará de dónde proceden las opciones de cotización y qué condiciones pueden afectar su disponibilidad. Los importes, coberturas y requisitos no deben presentarse como definitivos si necesitan confirmación posterior. La redacción tendrá que reflejar el funcionamiento real de los proveedores y los documentos que correspondan a cada producto ofrecido.
-
-Esta muestra no garantiza el precio más bajo, la aceptación de una solicitud ni una cobertura específica. Tampoco describe el momento en que una póliza comenzaría a producir efectos. Esos puntos requieren información comprobada. El objetivo de este apartado es mostrar cómo leería una explicación extensa con párrafos claros y separación suficiente entre conceptos.`,
-    },
-    {
-      id: "terceros",
-      title: "Participación de terceros",
-      body: `El servicio puede relacionarse con herramientas técnicas o con organizaciones que atiendan solicitudes. La versión final deberá identificar las funciones relevantes y explicar cuándo el visitante está tratando con una entidad diferente. No todas las relaciones tienen el mismo alcance, por lo que conviene evitar una única cláusula que presente a todos los participantes como equivalentes.
-
-Cuando existan enlaces externos, deberá aclararse qué información adicional debe consultar el visitante en el sitio de destino. Las condiciones de ese tercero no se incorporan automáticamente a esta muestra. Cualquier referencia a responsabilidades, independencia o acuerdos entre entidades deberá verificarse antes de su publicación y redactarse sin atribuir facultades que no hayan sido confirmadas.`,
-    },
-    {
-      id: "comunicaciones",
-      title: "Comunicaciones y autorizaciones",
-      body: `Esta sección deberá explicar cómo se relacionan las comunicaciones sobre una solicitud con los avisos y controles presentados en el formulario. El consentimiento específico para contactar a una persona debe tratarse de manera coherente con la interfaz correspondiente. La visita a una página de términos no sustituye por sí sola una selección o autorización que el producto solicite expresamente.
-
-Los canales utilizados, las entidades que pueden contactar y los procedimientos para comunicar preferencias deberán confirmarse antes de redactar la versión definitiva. Esta muestra no modifica el texto del consentimiento ni agrega una casilla de aceptación. Tampoco autoriza llamadas o mensajes por el simple hecho de seguir un enlace o regresar a la cotización.`,
-    },
-    {
-      id: "uso-permitido",
-      title: "Uso del sitio y funcionamiento técnico",
-      body: `El documento final podrá describir las conductas esperadas al utilizar el servicio y las restricciones necesarias para proteger su funcionamiento. Las reglas deberán ser comprensibles y proporcionales al producto real. Esta muestra no crea procedimientos de suspensión ni concede facultades de acceso a dispositivos o cuentas del visitante; esos aspectos requerirían una evaluación específica.
-
-También convendrá explicar cómo informar de errores, enlaces rotos o dificultades al completar el recorrido. Los fallos de conexión y las interrupciones de terceros pueden afectar una experiencia web, pero cualquier descripción de sus consecuencias deberá revisarse. El texto de ejemplo permite evaluar listas, párrafos y títulos sin convertir esas observaciones en garantías de disponibilidad.`,
-    },
-    {
-      id: "contenidos",
-      title: "Contenido, marcas y materiales",
-      body: `La versión aprobada deberá identificar el tratamiento de los contenidos del sitio, sus marcas y otros materiales. Si se utilizan recursos de terceros, las referencias deberán reflejar las autorizaciones y condiciones correspondientes. Este ejemplo no atribuye la titularidad de todos los elementos a una misma entidad ni establece licencias que todavía no hayan sido confirmadas.
-
-Una explicación útil separará el uso ordinario del sitio de la reproducción o redistribución de sus materiales. También podrá indicar cómo comunicar una preocupación sobre contenido publicado, siempre que exista un canal verificado. No se incluye aquí un mecanismo ficticio de reclamación ni una dirección de contacto que pueda confundirse con un servicio operativo.`,
-    },
-    {
-      id: "limites",
-      title: "Limitaciones y aclaraciones del servicio",
-      body: `Esta sección está reservada para las aclaraciones que resulten pertinentes después de revisar el servicio y sus condiciones aplicables. Cualquier limitación de responsabilidad deberá analizarse antes de publicarse y no debe generarse automáticamente a partir de un ejemplo visual. Por esa razón, este documento no introduce renuncias de derechos, acuerdos de arbitraje ni exclusiones generales.
-
-La versión final deberá evitar contradicciones entre los compromisos comerciales y las explicaciones de sus límites. Los visitantes deben poder identificar qué información es orientativa y qué documentos describen una oferta concreta. El presente apartado solo proporciona una extensión de lectura representativa y deja pendientes las decisiones que requieren información contractual o jurídica adicional.`,
-    },
-    {
-      id: "cambios",
-      title: "Cambios y versiones del documento",
-      body: `El texto aprobado deberá indicar cómo se identifican sus versiones y cuándo comienzan a aplicarse. La fecha de vigencia no puede deducirse de la fecha de una compilación o de una prueba de pantalla. También deberá confirmarse el procedimiento utilizado para comunicar modificaciones relevantes y cómo podrán consultarse las condiciones que correspondan a una interacción anterior.
-
-Esta muestra no establece que continuar navegando implique aceptar cambios futuros. Cualquier mecanismo de aceptación tendrá que decidirse de forma explícita y reflejarse tanto en los documentos como en el producto. Para evaluar el diseño se mantienen títulos, párrafos y enlaces, pero no se añade un flujo de firma, aceptación o almacenamiento de versiones.`,
-    },
-    {
-      id: "contacto",
-      title: "Contacto e información pendiente",
-      body: `La sección final deberá incluir los datos verificados de la entidad responsable y los canales de consulta apropiados. También deberá distinguir, cuando corresponda, entre preguntas sobre una cotización, incidencias técnicas y cuestiones de privacidad. En este documento de muestra, la razón social, la dirección, los canales de contacto y la fecha de vigencia permanecen pendientes de confirmación.
-
-Antes de publicar una versión oficial será necesario revisar cada apartado y retirar el aviso de muestra únicamente tras la aprobación correspondiente. Mientras tanto, los enlaces inferiores permiten comprobar la navegación entre documentos y el regreso al formulario. No se envían nuevas respuestas al utilizar estos enlaces y su presencia no convierte este texto de prueba en condiciones aceptadas.`,
     },
   ],
 };

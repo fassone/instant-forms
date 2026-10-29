@@ -3,7 +3,8 @@ import { gunzipSync } from "node:zlib";
 import { createFetchHandler } from "../../src/platform/app/server";
 import { genericAutoFlow } from "../../src/authoring/flows/generic";
 import { legalLinks } from "../../src/authoring/legal/links";
-import { samplePrivacyPolicy, sampleTerms } from "../../src/authoring/legal/sample-documents";
+import { samplePrivacyPolicy } from "../../src/authoring/legal/sample-documents";
+import { termsAndConditions } from "../../src/authoring/legal/terms-and-conditions";
 import { formRoutes } from "../../src/authoring/routes/registry";
 import { defineFormFlow, step, z, type FormLegalLink } from "../../src/platform/flow";
 import { getFormRouteBuildEntries } from "../../src/platform/routing";
@@ -28,8 +29,8 @@ function checkpoint(routeKey: string, answers: Record<string, string>) {
   return `${getCheckpointCookieName(routeKey)}=${encodeCheckpointAnswers(answers)}`;
 }
 
-describe("standalone sample legal pages", () => {
-  for (const [path, document] of [["/politica-de-privacidad", samplePrivacyPolicy], ["/terminos-y-condiciones", sampleTerms]] as const) {
+describe("standalone legal pages", () => {
+  for (const [path, document] of [["/politica-de-privacidad", samplePrivacyPolicy], ["/terminos-y-condiciones", termsAndConditions]] as const) {
     for (const prefix of ["", "/__preview"]) {
       it(`serves ${prefix}${path} without a form runtime, tracking or cookie changes`, async () => {
         const logs: unknown[] = [];
@@ -44,9 +45,14 @@ describe("standalone sample legal pages", () => {
         expect(response.headers.get("Set-Cookie")).toBeNull();
         expect(logs).toEqual([]);
         expect(html).toContain(document.title);
-        expect(html).toContain(document.sampleNotice);
+        expect(html).toContain(document.notice.text);
+        expect(await attributes(html, "[data-legal-notice]", "data-legal-notice")).toEqual([document.notice.kind]);
+        expect(html.includes("data-legal-sample")).toBe(document.notice.kind === "sample");
         expect(html).not.toMatch(/<script|<form|__FORM_CONFIG__|partytown|tracking-events|gtm\.js|tfc\.js/iu);
-        expect(await attributes(html, "[data-legal-return]", "href")).toEqual(["/", "/"]);
+        expect(await attributes(html, "[data-legal-return]", "href")).toEqual(["/"]);
+        expect(await attributes(html, "[data-legal-page] [data-legal-return-area] a", "href")).toEqual(["/"]);
+        expect(await attributes(html, "[data-legal-page] [data-legal-links] a", "href")).toEqual([]);
+        expect(await attributes(html, "body > [data-legal-footer] [data-legal-links] a", "href")).toHaveLength(2);
         expect(await attributes(html, "section", "id")).toEqual(document.sections.map((section) => section.id));
         expect(await attributes(html, ".legal-contents a", "href")).toEqual(document.sections.map((section) => "#" + section.id));
         const wordCount = (document.introduction + " " + document.sections.map((section) => section.body).join(" ")).split(/\s+/u).length;
@@ -62,6 +68,27 @@ describe("standalone sample legal pages", () => {
       });
     }
   }
+
+  it("renders the approved terms and keeps the privacy document labeled as a sample", async () => {
+    const response = await createFetchHandler()(new Request("https://example.test/terminos-y-condiciones"));
+    const html = await response.text();
+    expect(termsAndConditions.sections).toHaveLength(16);
+    expect(new Set(termsAndConditions.sections.map((section) => section.id)).size).toBe(16);
+    expect(html).toContain("Última actualización: 29 de octubre de 2026");
+    expect(html).toContain("Seguros Aseguranza es operado por Liderna Inc");
+    expect(html).toContain("no autoriza a los Proveedores a revenderla");
+    expect(html).toContain("US$200");
+    expect(html).toContain("1058 Windy Creek Path, Conroe, Texas 77304");
+    expect(html).not.toContain("Documento de muestra");
+    expect(html).not.toContain("[fecha de publicación]");
+    expect(await attributes(html, "#arbitraje a", "href")).toEqual(["https://www.adr.org/industries/consumer/"]);
+    // Keep the numbered sections aligned with the prominent notice's cross-references.
+    expect(termsAndConditions.sections[9]?.id).toBe("limitacion-de-responsabilidad");
+    expect(termsAndConditions.sections[12]?.id).toBe("arbitraje");
+    expect(termsAndConditions.sections[13]?.id).toBe("renuncia-colectiva");
+    expect(samplePrivacyPolicy.notice.kind).toBe("sample");
+    expect(samplePrivacyPolicy.notice.text).toContain("No constituye la política vigente");
+  });
 
   it("only returns to recognized local quote routes and approved query parameters", async () => {
     const handler = createFetchHandler();
@@ -81,7 +108,7 @@ describe("standalone sample legal pages", () => {
     ]) {
       const response = await handler(new Request("https://example.test/politica-de-privacidad?" + new URLSearchParams({ returnTo: input! })));
       const html = await response.text();
-      expect(await attributes(html, "[data-legal-return]", "href")).toEqual([expected!, expected!]);
+      expect(await attributes(html, "[data-legal-return]", "href")).toEqual([expected!]);
       const crossLink = (await attributes(html, '[data-legal-document="/terminos-y-condiciones"]', "href"))[0]!;
       expect(new URL(crossLink, "https://example.test").searchParams.get("returnTo")).toBe(expected!);
     }
@@ -95,7 +122,7 @@ describe("standalone sample legal pages", () => {
     expect(response.headers.get("Content-Encoding")).toBe("gzip");
     expect(response.headers.get("Vary")).toContain("Accept-Encoding");
     expect(response.headers.get("Cache-Control")).toBe("no-store");
-    expect(gunzipSync(Buffer.from(await response.arrayBuffer())).toString()).toContain(samplePrivacyPolicy.sampleNotice);
+    expect(gunzipSync(Buffer.from(await response.arrayBuffer())).toString()).toContain(samplePrivacyPolicy.notice.text);
   });
 
   it("keeps legal links outside every authored form and does not add steps", async () => {
@@ -150,10 +177,11 @@ describe("standalone sample legal pages", () => {
     expect(links).toHaveLength(2);
     expect(new URL(links[0]!, "https://example.test").searchParams.get("returnTo")).toBe("/auto/estado-donde-vive?state=TX");
     expect(html).toContain("data-legal-document");
-    const legal = await renderLegalPage({ ...sampleTerms, sections: [{ id: "test", title: '<img src=x>', body: '<script>alert(1)</script>\n\n- **Example**' }] }, "/");
+    const legal = await renderLegalPage({ ...termsAndConditions, notice: { kind: "important", text: '<img src=x onerror=alert(1)>' }, sections: [{ id: "test", title: '<img src=x>', body: '<script>alert(1)</script>\n\n- **Example**' }] }, "/");
     expect(legal).toContain("&lt;script&gt;");
     expect(legal).not.toContain("<script>");
     expect(legal).toContain("<strong>Example</strong>");
+    expect(legal).toContain("&lt;img src=x onerror=alert(1)&gt;");
     expect(getLegalReturnPath("/auto?phone=secret&state=TX")).toBe("/auto?state=TX");
   });
 

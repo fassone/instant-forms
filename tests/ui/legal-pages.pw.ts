@@ -24,6 +24,33 @@ async function assertLegalRow(page: Page) {
   if (bounds.width <= 560) expect(bounds.navBottom).toBeLessThanOrEqual(bounds.viewport + 1);
 }
 
+async function legalReturnLayout(page: Page) {
+  return page.locator("[data-legal-return]").evaluate((button) => {
+    const browser = globalThis as any;
+    const panel = browser.document.querySelector("[data-legal-page]");
+    const area = browser.document.querySelector("[data-legal-return-area]");
+    const links = browser.document.querySelector("[data-legal-links]");
+    const panelRect = panel.getBoundingClientRect();
+    const areaRect = area.getBoundingClientRect();
+    const buttonRect = button.getBoundingClientRect();
+    const panelStyle = browser.getComputedStyle(panel);
+    const fade = browser.getComputedStyle(area, "::before");
+    return {
+      viewport: browser.innerHeight,
+      panelTop: panelRect.top, panelBottom: panelRect.bottom,
+      contentLeft: panelRect.left + parseFloat(panelStyle.borderLeftWidth) + parseFloat(panelStyle.paddingLeft),
+      contentRight: panelRect.right - parseFloat(panelStyle.borderRightWidth) - parseFloat(panelStyle.paddingRight),
+      areaTop: areaRect.top, areaBottom: areaRect.bottom,
+      buttonLeft: buttonRect.left, buttonRight: buttonRect.right, buttonHeight: buttonRect.height,
+      linksTop: links.getBoundingClientRect().top,
+      lastParagraphBottom: panel.querySelector("section:last-of-type p:last-child").getBoundingClientRect().bottom,
+      position: browser.getComputedStyle(area).position,
+      fadeHeight: parseFloat(fade.height), fadePointerEvents: fade.pointerEvents, fadeBackground: fade.backgroundImage,
+      buttonIsHitTarget: browser.document.elementFromPoint(buttonRect.left + buttonRect.width / 2, buttonRect.top + buttonRect.height / 2)?.closest("[data-legal-return]") === button,
+    };
+  });
+}
+
 test.describe("legal pages", () => {
   test.beforeEach(async ({ page }) => {
     await page.route("**/*", async (route) => {
@@ -38,12 +65,20 @@ test.describe("legal pages", () => {
 
   for (const path of ["/politica-de-privacidad", "/terminos-y-condiciones"]) {
     test(`long document scrolls, uses contents links and has no tracking: ${path} @cross-browser`, async ({ page }, testInfo) => {
+      if (testInfo.project.name.includes("mobile")) await page.setViewportSize({ width: 320, height: 568 });
       const requests: string[] = [];
       page.on("request", (request) => requests.push(request.url()));
       const cookies = await page.context().cookies();
       const response = await page.goto(path);
       expect(response?.status()).toBe(200);
-      await expect(page.locator("[data-legal-sample]")).toContainText("No constituye la política vigente");
+      if (path === "/terminos-y-condiciones") {
+        await expect(page.locator("[data-legal-sample]")).toHaveCount(0);
+        await expect(page.locator('[data-legal-notice="important"]')).toContainText("ARBITRAJE INDIVIDUAL OBLIGATORIO");
+        await expect(page.locator("section")).toHaveCount(16);
+        await expect(page.locator("#modificaciones-y-contacto")).toContainText("1058 Windy Creek Path");
+      } else {
+        await expect(page.locator("[data-legal-sample]")).toContainText("No constituye la política vigente");
+      }
       await expect(page.locator("script, form")).toHaveCount(0);
       const bounds = await page.evaluate(() => {
         const browser = globalThis as any;
@@ -54,14 +89,51 @@ test.describe("legal pages", () => {
       });
       expect(bounds.height).toBeGreaterThan(bounds.viewport * 2);
       expect(bounds.width).toBeLessThanOrEqual(bounds.viewportWidth);
+      const returnLink = page.locator("[data-legal-return]");
+      await expect(returnLink).toHaveCount(1);
+      await expect(returnLink).toBeInViewport({ ratio: 1 });
+      await expect(page.locator("[data-legal-page] [data-legal-links]")).toHaveCount(0);
+      await expect(returnLink).toHaveCSS("background-color", "rgb(248, 0, 87)");
+      await expect(returnLink).toHaveCSS("border-radius", "8px");
+      const top = await legalReturnLayout(page);
+      expect(top.position).toBe("sticky");
+      expect(top.areaBottom).toBeCloseTo(top.viewport, 0);
+      expect(top.buttonHeight).toBeGreaterThanOrEqual(bounds.viewportWidth <= 600 ? 56 : 70);
+      expect(top.fadeHeight).toBe(32);
+      expect(top.fadePointerEvents).toBe("none");
+      expect(top.fadeBackground).toContain("linear-gradient");
       await page.screenshot({ path: testInfo.outputPath("legal-document-top.png") });
+
+      await page.evaluate("window.scrollTo(0, document.documentElement.scrollHeight / 2)");
+      await expect.poll(async () => (await legalReturnLayout(page)).panelTop).toBeLessThan(0);
+      await expect(returnLink).toBeInViewport({ ratio: 1 });
+      const middle = await legalReturnLayout(page);
+      expect(middle.areaBottom).toBeCloseTo(middle.viewport, 0);
+      await page.screenshot({ path: testInfo.outputPath("legal-document-middle.png") });
+
       await page.locator(".legal-contents a").last().click();
       await expect(page).toHaveURL(/#[a-z-]+$/u);
       await expect(page.locator("section").last().locator("h2")).toBeInViewport();
+      await page.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)");
+      await expect(page.locator("[data-legal-footer]")).toBeInViewport({ ratio: 1 });
+      await expect(returnLink).toBeInViewport({ ratio: 1 });
+      const end = await legalReturnLayout(page);
+      expect(end.lastParagraphBottom).toBeGreaterThan(0);
+      expect(end.lastParagraphBottom).toBeLessThanOrEqual(end.areaTop - end.fadeHeight);
+      expect(end.linksTop).toBeGreaterThanOrEqual(end.panelBottom);
+      expect(end.areaBottom).toBeLessThan(end.viewport);
+      for (const layout of [top, middle, end]) {
+        expect(layout.buttonLeft).toBeCloseTo(layout.contentLeft, 0);
+        expect(layout.buttonRight).toBeCloseTo(layout.contentRight, 0);
+        expect(layout.areaBottom).toBeLessThanOrEqual(layout.panelBottom);
+        expect(layout.areaTop).toBeGreaterThanOrEqual(layout.panelTop);
+        expect(layout.buttonIsHitTarget).toBe(true);
+      }
+      await expect(page.locator("[data-legal-links] a").first()).toHaveCSS("color", bounds.viewportWidth <= 600 ? "rgb(77, 88, 120)" : "rgb(255, 253, 244)");
       await page.screenshot({ path: testInfo.outputPath("legal-document-end.png") });
       expect(await page.context().cookies()).toEqual(cookies);
       expect(requests.filter((url) => /tracking-events|checkpoints|partytown|gtm|tfc\.js|facebook|posthog/u.test(url))).toEqual([]);
-      await page.locator("[data-legal-return]").last().click();
+      await returnLink.click();
       await expect(page).toHaveURL(/\/$/u);
     });
   }
@@ -75,7 +147,7 @@ test.describe("legal pages", () => {
     await expect(page.locator("[data-legal-page]")).toBeVisible();
     expect(context.pages()).toHaveLength(1);
     await page.getByRole("link", { name: "Términos y condiciones", exact: true }).click();
-    await expect(page.locator("h1")).toHaveText("Términos y condiciones");
+    await expect(page.locator("h1")).toHaveText("Términos y condiciones de Seguros Aseguranza");
     await page.locator("[data-legal-return]").first().click();
     await expect(page).toHaveURL(new RegExp("/\\?fbclid=AD_LEGAL"));
     await page.getByRole("link", { name: "Empezar mi cotización" }).click();
@@ -92,17 +164,19 @@ test.describe("legal pages", () => {
     // WebKit's macOS default uses Option-Tab to include links in keyboard traversal.
     const tabKey = browserName === "webkit" ? "Alt+Tab" : "Tab";
     await page.keyboard.press(tabKey);
-    await expect(page.locator("[data-legal-return]").first()).toBeFocused();
-    await page.keyboard.press(tabKey);
     await expect(page.locator(".legal-contents a").first()).toBeFocused();
     await page.keyboard.press("Enter");
     await expect(page.locator("section").first().locator("h2")).toBeInViewport();
     await page.locator('[data-legal-document="/terminos-y-condiciones"]').focus();
     await page.keyboard.press("Enter");
-    await expect(page.locator("h1")).toHaveText("Términos y condiciones");
+    await expect(page.locator("h1")).toHaveText("Términos y condiciones de Seguros Aseguranza");
     await page.goBack();
     await expect(page.locator("h1")).toHaveText("Política de privacidad");
-    await page.locator("[data-legal-return]").first().focus();
+    const returnLink = page.locator("[data-legal-return]");
+    await returnLink.focus();
+    await expect(returnLink).toBeFocused();
+    await expect(returnLink).toBeInViewport({ ratio: 1 });
+    await expect(returnLink).toHaveCSS("outline-style", "solid");
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(/\/__preview\/producto$/u);
   });
@@ -167,6 +241,8 @@ test.describe("legal pages", () => {
       await page.goto("/auto/telefono?state=TX");
       await page.getByRole("link", { name: "Política de privacidad", exact: true }).click();
       expect(new URL(page.url()).searchParams.get("returnTo")).toBe("/auto/telefono?state=TX");
+      await expect(page.locator("[data-legal-return]")).toHaveCount(1);
+      await expect(page.locator("[data-legal-return]")).toBeInViewport({ ratio: 1 });
       await page.locator("[data-legal-return]").first().click();
       await expect(page.locator('input[name="phone_number"]')).toHaveValue(savedAnswers.phone_number);
       await page.goto("/producto?fbclid=NO_JS");
