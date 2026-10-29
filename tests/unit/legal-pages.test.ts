@@ -52,6 +52,11 @@ describe("standalone legal pages", () => {
         expect(html.includes("data-legal-sample")).toBe(document.notice?.kind === "sample");
         expect(html).not.toMatch(/<script|<form|__FORM_CONFIG__|partytown|tracking-events|gtm\.js|tfc\.js/iu);
         expect(await attributes(html, "[data-legal-return]", "href")).toEqual(["/"]);
+        expect(await attributes(html, "[data-legal-logo-return]", "href")).toEqual(["/"]);
+        expect(await attributes(html, "[data-legal-logo-return]", "aria-label")).toEqual([document.brandName + ": " + document.returnLabel]);
+        expect(await attributes(html, "[data-legal-logo-return]", "target")).toEqual([]);
+        expect(await attributes(html, "[data-legal-logo-return] img", "alt")).toEqual([document.brandName]);
+        expect(await attributes(html, "[data-legal-logo-return] img", "src")).toEqual(["/assets/logo.webp"]);
         expect(await attributes(html, "[data-legal-page] [data-legal-return-area] a", "href")).toEqual(["/"]);
         expect(await attributes(html, "[data-legal-page] [data-legal-links] a", "href")).toEqual([]);
         expect(await attributes(html, "body > [data-legal-footer] [data-legal-links] a", "href")).toHaveLength(2);
@@ -189,11 +194,16 @@ describe("standalone legal pages", () => {
       ["/politica-de-privacidad", "/"], ["/__preview/terminos-y-condiciones", "/"],
       ["/assets/logo.webp", "/"], ["/%2F%2Fevil.test", "/"],
     ]) {
-      const response = await handler(new Request("https://example.test/politica-de-privacidad?" + new URLSearchParams({ returnTo: input! })));
-      const html = await response.text();
-      expect(await attributes(html, "[data-legal-return]", "href")).toEqual([expected!]);
-      const crossLink = (await attributes(html, '[data-legal-document="/terminos-y-condiciones"]', "href"))[0]!;
-      expect(new URL(crossLink, "https://example.test").searchParams.get("returnTo")).toBe(expected!);
+      for (const path of ["/politica-de-privacidad", "/terminos-y-condiciones"]) {
+        for (const prefix of ["", "/__preview"]) {
+          const response = await handler(new Request(`https://example.test${prefix}${path}?` + new URLSearchParams({ returnTo: input! })));
+          const html = await response.text();
+          expect(await attributes(html, "[data-legal-return]", "href")).toEqual([expected!]);
+          expect(await attributes(html, "[data-legal-logo-return]", "href")).toEqual([expected!]);
+          const crossLinks = await attributes(html, "[data-legal-document]", "href");
+          for (const link of crossLinks) expect(new URL(link, "https://example.test").searchParams.get("returnTo")).toBe(expected!);
+        }
+      }
     }
   });
 

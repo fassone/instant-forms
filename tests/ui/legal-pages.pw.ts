@@ -65,6 +65,29 @@ test.describe("legal pages", () => {
   });
 
   for (const path of ["/politica-de-privacidad", "/terminos-y-condiciones"]) {
+    test(`logo returns to the quote by mouse and keyboard: ${path} @cross-browser`, async ({ page, context, browserName }) => {
+      for (const prefix of ["", "/__preview"]) {
+        const returnTo = prefix + "/producto?fbclid=LOGO_RETURN&state=TX";
+        await page.goto(prefix + path + "?" + new URLSearchParams({ returnTo }));
+        const logo = page.locator("[data-legal-logo-return]");
+        await expect(logo).toHaveAttribute("href", returnTo);
+        await expect(logo).toHaveAttribute("href", (await page.locator("[data-legal-return]").getAttribute("href"))!);
+        await expect(logo).toHaveAccessibleName("Seguros Aseguranza: Volver a mi cotización");
+        const bounds = await logo.boundingBox();
+        expect(bounds).toEqual(await logo.locator("img").boundingBox());
+        if (prefix) {
+          await page.keyboard.press(browserName === "webkit" ? "Alt+Tab" : "Tab");
+          await expect(logo).toBeFocused();
+          await expect(logo).toHaveCSS("outline-style", "solid");
+          await page.keyboard.press("Enter");
+        } else {
+          await logo.locator("img").click();
+        }
+        await expect(page).toHaveURL(new URL(returnTo, page.url()).href);
+        expect(context.pages()).toHaveLength(1);
+      }
+    });
+
     test(`long document scrolls, uses contents links and has no tracking: ${path} @cross-browser`, async ({ page }, testInfo) => {
       if (testInfo.project.name.includes("mobile")) await page.setViewportSize({ width: 320, height: 568 });
       const requests: string[] = [];
@@ -168,7 +191,8 @@ test.describe("legal pages", () => {
     expect(context.pages()).toHaveLength(1);
     await page.getByRole("link", { name: "Términos y condiciones", exact: true }).click();
     await expect(page.locator("h1")).toHaveText("Términos y condiciones");
-    await page.locator("[data-legal-return]").first().click();
+    await expect(page.locator("[data-legal-logo-return]")).toHaveAttribute("href", "/" + query);
+    await page.locator("[data-legal-logo-return]").click();
     await expect(page).toHaveURL(new RegExp("/\\?fbclid=AD_LEGAL"));
     await page.getByRole("link", { name: "Empezar mi cotización" }).click();
     await expect(page).toHaveURL(/\/producto\?/u);
@@ -183,6 +207,8 @@ test.describe("legal pages", () => {
     await page.goto("/__preview/politica-de-privacidad?returnTo=%2F__preview%2Fproducto");
     // WebKit's macOS default uses Option-Tab to include links in keyboard traversal.
     const tabKey = browserName === "webkit" ? "Alt+Tab" : "Tab";
+    await page.keyboard.press(tabKey);
+    await expect(page.locator("[data-legal-logo-return]")).toBeFocused();
     await page.keyboard.press(tabKey);
     await expect(page.locator(".legal-contents a").first()).toBeFocused();
     await page.keyboard.press("Enter");
@@ -263,11 +289,15 @@ test.describe("legal pages", () => {
       expect(new URL(page.url()).searchParams.get("returnTo")).toBe("/auto/telefono?state=TX");
       await expect(page.locator("[data-legal-return]")).toHaveCount(1);
       await expect(page.locator("[data-legal-return]")).toBeInViewport({ ratio: 1 });
-      await page.locator("[data-legal-return]").first().click();
+      await expect(page.locator("[data-legal-logo-return]")).toHaveAttribute("href", "/auto/telefono?state=TX");
+      await page.locator("[data-legal-logo-return]").click();
       await expect(page.locator('input[name="phone_number"]')).toHaveValue(savedAnswers.phone_number);
       await page.goto("/producto?fbclid=NO_JS");
       await page.getByRole("link", { name: "Términos y condiciones", exact: true }).click();
       await expect(page.locator("[data-legal-return]").first()).toHaveAttribute("href", "/producto?fbclid=NO_JS");
+      await expect(page.locator("[data-legal-logo-return]")).toHaveAttribute("href", "/producto?fbclid=NO_JS");
+      await page.locator("[data-legal-logo-return]").click();
+      await expect(page).toHaveURL(new URL("/producto?fbclid=NO_JS", baseURL).href);
     } finally {
       await context.close();
     }

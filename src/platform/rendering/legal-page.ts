@@ -30,7 +30,8 @@ export async function renderLegalPage(content: LegalPageContent, returnTo: strin
     * { box-sizing: border-box; }
     body { margin: 0; padding: 32px 24px; }
     .legal-document { max-width: 800px; margin: 0 auto; padding: 48px; background: #fffdf4; border: 1px solid #d9dff0; border-radius: 8px; }
-    .legal-logo { width: 236px; max-width: 100%; height: auto; aspect-ratio: 236 / 73; display: block; margin-bottom: 28px; }
+    .legal-logo-link { display: block; width: fit-content; max-width: 100%; margin-bottom: 28px; }
+    .legal-logo { width: 236px; max-width: 100%; height: auto; aspect-ratio: 236 / 73; display: block; }
     h1 { font-size: 32px; line-height: 1.2; margin: 28px 0 20px; letter-spacing: 0; }
     h2 { font-size: 22px; line-height: 1.35; margin: 36px 0 14px; letter-spacing: 0; }
     p, li { font-size: 16px; line-height: 1.75; }
@@ -70,7 +71,7 @@ export async function renderLegalPage(content: LegalPageContent, returnTo: strin
 </head>
 <body>
   <main class="legal-document" data-legal-page>
-    <header><img class="legal-logo" src="/assets/logo.webp" width="236" height="73" alt="${escapeHtml(content.brandName)}">
+    <header><a class="legal-logo-link" data-legal-logo-return href="${escapeHtml(returnTo)}" aria-label="${escapeHtml(content.brandName + ": " + content.returnLabel)}"><img class="legal-logo" src="/assets/logo.webp" width="236" height="73" alt="${escapeHtml(content.brandName)}"></a>
       <h1>${escapeHtml(content.title)}</h1>
       ${content.notice ? `<p class="legal-notice" data-legal-notice="${content.notice.kind}"${content.notice.kind === "sample" ? " data-legal-sample" : ""}>${content.notice.title ? `<strong class="legal-notice-title" data-legal-notice-title>${escapeHtml(content.notice.title)}</strong>` : ""}<span>${escapeHtml(content.notice.text)}</span></p>` : ""}
       ${renderMarkdownToHtml(content.introduction)}
