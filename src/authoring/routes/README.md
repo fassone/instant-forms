@@ -7,7 +7,7 @@
 ## Belongs Here
 
 - Public form folder placement, such as `/auto/tn`.
-- Shared quote welcome/product selection copy and placement at `/` and `/cotizar`.
+- Shared quote welcome/product selection copy and placement at `/` and `/producto`.
 - Independent generic flow mounts at `/auto` and `/hogar`.
 - Valid but unauthored state fallbacks to the generic flow with a pending state preselection.
 - Global public form fallback content and CTA configuration.

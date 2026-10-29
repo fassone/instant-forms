@@ -17,10 +17,10 @@ describe("public page trailing slashes", () => {
   it("normalizes roots, product selection, steps and previews before route fallbacks", async () => {
     const handler = createFetchHandler();
     const paths = [
-      "/auto", "/hogar", "/cotizar", "/cotizar/producto",
+      "/auto", "/hogar", "/producto",
       "/auto/inicio", "/hogar/inicio", "/auto/tn", "/hogar/tx",
       "/auto/tn/inicio", "/hogar/tx/inicio",
-      "/__preview/auto", "/__preview/hogar/tx", "/__preview/cotizar/producto",
+      "/__preview/auto", "/__preview/hogar/tx", "/__preview/producto",
       "/__preview/auto/inicio", "/__preview/hogar/tx/inicio",
     ];
     for (const method of ["GET", "HEAD"]) {
@@ -73,13 +73,13 @@ describe("public page trailing slashes", () => {
     for (const [path, expectedPath, status] of [
       ["/auto/", "/auto/inicio", 200],
       ["/hogar/", "/hogar/inicio", 200],
-      ["/cotizar/", "/cotizar", 200],
-      ["/cotizar/producto/", "/cotizar/producto", 200],
+      ["/producto/", "/producto", 200],
       ["/auto/tn/inicio/", "/auto/tn/inicio", 200],
       ["/__preview/hogar/tx/inicio/", "/__preview/hogar/tx/inicio", 200],
       ["/auto/fl/", "/auto/inicio?state=FL", 200],
       ["/auto/zz/", "/auto/zz", 404],
-      ["/cotizar/invalid/", "/cotizar/invalid", 404],
+      ["/cotizar/", "/cotizar/", 404],
+      ["/cotizar/producto/", "/cotizar/producto/", 404],
     ] as const) {
       let url = origin + path;
       const visited = new Set<string>();
@@ -121,7 +121,7 @@ describe("public page trailing slashes", () => {
     expect(root.status).toBe(200);
     expect(root.headers.get("Location")).toBeNull();
     for (const path of [
-      "/automobile/", "/cotizar-extra/", "/unregistered/", "/__preview/unregistered/",
+      "/automobile/", "/producto-extra/", "/unregistered/", "/__preview/unregistered/",
       "/api/forms/auto/checkpoints/", "/assets/logo.webp/",
       "/_instant/forms/missing/transition.js/", "/_instant/scripts/missing.js/",
       "/_instant/meta/proxy/", "/~partytown/missing/",
@@ -135,12 +135,12 @@ describe("public page trailing slashes", () => {
   it("does not redirect POST or other non-navigation methods", async () => {
     const handler = createFetchHandler();
     for (const method of ["POST", "PUT", "PATCH", "DELETE", "OPTIONS"]) {
-      const response = await handler(new Request(origin + "/cotizar/producto/", { method }));
+      const response = await handler(new Request(origin + "/producto/", { method }));
       expect(response.status).toBe(404);
       expect(response.headers.get("Location")).toBeNull();
       expect(response.headers.get("Set-Cookie")).toBeNull();
     }
-    const submission = await handler(new Request(origin + "/cotizar/producto", {
+    const submission = await handler(new Request(origin + "/producto", {
       method: "POST", body: new URLSearchParams({ product: "auto" }),
     }));
     expect(submission.status).toBe(303);

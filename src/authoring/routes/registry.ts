@@ -19,7 +19,7 @@ const quoteEntry: QuoteEntryPage = {
   body: "Hemos ayudado a miles de familias latinas a comparar opciones de seguro accesibles, claras y sin compromiso.",
   benefits: ["Atención en español", "Seguro de auto y hogar", "Cotización rápida y sencilla"],
   ctaLabel: "Empezar mi cotización",
-  selectionPath: "/cotizar/producto",
+  selectionPath: "/producto",
   productTitle: "¿Qué desea asegurar?",
   continueLabel: "Continuar",
   products: [
@@ -33,10 +33,7 @@ const welcome = { type: "quote_entry", content: quoteEntry, selection: false } a
 export const formRoutes = defineFormRoutes({
   index: welcome,
   folders: {
-    cotizar: {
-      index: welcome,
-      producto: { type: "quote_entry", content: quoteEntry, selection: true },
-    },
+    producto: { type: "quote_entry", content: quoteEntry, selection: true },
     auto: {
       index: genericAutoFlow,
       queryPrefill: { state: "residence_state" },

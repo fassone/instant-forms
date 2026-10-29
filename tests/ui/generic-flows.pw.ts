@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { decodeCheckpointAnswers, getCheckpointCookieName } from "../../src/platform/persistence/checkpoints";
 
 test.use({ serviceWorkers: "block" });
 
@@ -20,6 +21,13 @@ async function waitForController(page: Page) {
   }
 }
 
+async function waitForStateCheckpoint(page: Page, state: string) {
+  await expect.poll(async () => {
+    const cookie = (await page.context().cookies()).find((candidate) => candidate.name === getCheckpointCookieName("auto"));
+    return decodeCheckpointAnswers(cookie?.value);
+  }).toMatchObject({ residence_state: state });
+}
+
 async function expectWelcomeLayout(page: Page) {
   await expect(page.locator("footer button, footer a")).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Atrás", exact: true })).toHaveCount(0);
@@ -38,8 +46,8 @@ test("trailing-slash page URLs reach their canonical pages @cross-browser", asyn
   for (const [path, canonicalPath] of [
     ["/auto/", "/auto/inicio"],
     ["/hogar/", "/hogar/inicio"],
-    ["/cotizar/", "/cotizar"],
-    ["/cotizar/producto/", "/cotizar/producto"],
+    ["/producto/", "/producto"],
+    ["/__preview/producto/", "/__preview/producto"],
     ["/auto/tn/inicio/", "/auto/tn/inicio"],
     ["/__preview/hogar/tx/inicio/", "/__preview/hogar/tx/inicio"],
   ]) {
@@ -52,14 +60,13 @@ test("trailing-slash page URLs reach their canonical pages @cross-browser", asyn
 });
 
 test("generic shared welcome chooses a product and skips its second welcome @cross-browser", async ({ page }, testInfo) => {
-  await page.goto("/cotizar?source_channel=website&acquisition_channel=organic");
+  await page.goto("/?source_channel=website&acquisition_channel=organic");
   await expectWelcomeLayout(page);
   await page.screenshot({ path: testInfo.outputPath("generic-welcome.png"), fullPage: true });
   await page.getByRole("link", { name: "Empezar mi cotización" }).click();
-  await expect(page).toHaveURL(/\/cotizar\/producto\?/u);
+  await expect(page).toHaveURL(/\/producto\?/u);
   await expect(page.getByRole("heading", { name: "¿Qué desea asegurar?" })).toBeVisible();
   await page.getByRole("radio", { name: /Seguro de auto/u }).check();
-  await page.getByRole("button", { name: "Continuar", exact: true }).click();
   await expect(page).toHaveURL(/\/auto\/estado-donde-vive/u);
   await waitForController(page);
   await expect(page.getByRole("button", { name: "Atrás", exact: true })).toBeDisabled();
@@ -89,6 +96,7 @@ test("generic fallback state stays pending until confirmation and survives refre
   await expect(activeStep(page).locator("input")).toHaveValue(/^(FL|Florida)$/u);
   await page.screenshot({ path: testInfo.outputPath("generic-state.png"), fullPage: true });
   await page.getByRole("button", { name: "Siguiente", exact: true }).click();
+  await waitForStateCheckpoint(page, "FL");
   await expect(page).toHaveURL(/\/auto\/tiene-licencia\?state=FL$/u);
   await expect(page.getByRole("button", { name: "Atrás", exact: true })).toBeEnabled();
   await page.getByRole("button", { name: "Atrás", exact: true }).click();
@@ -97,6 +105,7 @@ test("generic fallback state stays pending until confirmation and survives refre
   await expect(page.getByRole("button", { name: "Atrás", exact: true })).toBeDisabled();
   await activeStep(page).locator("input").fill("Texas");
   await activeStep(page).getByRole("button", { name: /Texas/u }).click();
+  await waitForStateCheckpoint(page, "TX");
   await expect(page).toHaveURL(/\/auto\/tiene-licencia\?state=FL$/u);
   await page.getByRole("button", { name: "Atrás", exact: true }).click();
   await expect(page).toHaveURL(/\/auto\/estado-donde-vive\?state=FL$/u);

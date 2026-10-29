@@ -63,34 +63,56 @@ describe("independent generic quote flows", () => {
     }
   });
 
-  it("renders the same single-CTA welcome at / and /cotizar, with product selection on its own page", async () => {
+  it("renders a single-CTA welcome at / and an auto-advancing selector at /producto", async () => {
     const handler = createFetchHandler();
-    for (const path of ["/", "/cotizar"]) {
-      const response = await handler(new Request("http://localhost" + path));
-      const html = await response.text();
-      expect(response.status).toBe(200);
-      expect(response.headers.get("Cache-Control")).toBe("no-store");
-      expect(html).toContain("Seguro claro, rápido y en español");
-      expect(html).toContain('class="welcome-benefits"');
-      expect(html).toContain('href="/cotizar/producto"');
-      expect(html).not.toContain('name="product"');
-      expect(html).not.toContain('id="back-button"');
-      expect(html).not.toContain('class="area-pill"');
-    }
-    const selection = await handler(new Request("http://localhost/cotizar/producto"));
+    const response = await handler(new Request("http://localhost/"));
+    const welcomeHtml = await response.text();
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(welcomeHtml).toContain("Seguro claro, rápido y en español");
+    expect(welcomeHtml).toContain('class="welcome-benefits"');
+    expect(welcomeHtml).toContain('href="/producto"');
+    expect(welcomeHtml).not.toContain('name="product"');
+    expect(welcomeHtml).not.toContain('id="back-button"');
+    expect(welcomeHtml).not.toContain('class="area-pill"');
+    expect(welcomeHtml).not.toContain("data-product-selection");
+    expect(welcomeHtml).not.toContain("requestSubmit");
+    const selection = await handler(new Request("http://localhost/producto"));
     const html = await selection.text();
+    expect(selection.status).toBe(200);
+    expect(selection.headers.get("Cache-Control")).toBe("no-store");
     expect(html).toContain("¿Qué desea asegurar?");
+    expect(html).toContain('method="post" action="/producto" data-product-selection');
     expect(html).toContain('value="auto" required');
     expect(html).toContain('value="hogar" required');
+    expect(html).toContain("form.requestSubmit()");
+    expect(html).toContain('addEventListener("pageshow"');
+    expect(html).toContain('type="submit">Continuar</button>');
+    expect(html).not.toContain("/cotizar");
+    const preview = await handler(new Request("http://localhost/__preview/producto"));
+    expect(preview.status).toBe(200);
+    expect(await preview.text()).toContain('action="/producto"');
+  });
+
+  it("removes the cotizar routes entirely without compatibility redirects", async () => {
+    const handler = createFetchHandler();
+    for (const method of ["GET", "POST"]) {
+      for (const path of ["/cotizar", "/cotizar/", "/cotizar/producto", "/cotizar/producto/", "/__preview/cotizar/producto"]) {
+        const response = await handler(new Request("http://localhost" + path, { method }));
+        expect(response.status).toBe(404);
+        expect(response.headers.get("Location")).toBeNull();
+        expect(response.headers.get("Set-Cookie")).toBeNull();
+      }
+    }
   });
 
   it("confirms the shared welcome only for the selected product and preserves attribution", async () => {
     const handler = createFetchHandler();
     const query = "?fbclid=CLICK123&source_channel=facebook&acquisition_channel=paid&platform=meta";
     const entry = await handler(new Request("http://localhost/" + query));
-    expect(await entry.text()).toContain("/cotizar/producto?fbclid=CLICK123&amp;source_channel=facebook");
+    expect(await entry.text()).toContain("/producto?fbclid=CLICK123&amp;source_channel=facebook");
     for (const product of ["auto", "hogar"]) {
-      const selected = await handler(new Request("http://localhost/cotizar/producto" + query, {
+      const selected = await handler(new Request("http://localhost/producto" + query, {
         method: "POST", body: new URLSearchParams({ product }),
       }));
       expect(selected.status).toBe(303);
@@ -105,11 +127,28 @@ describe("independent generic quote flows", () => {
       );
       expect(next.headers.get("Set-Cookie")).toContain(".CLICK123");
     }
-    const invalid = await handler(new Request("http://localhost/cotizar/producto", {
+    const invalid = await handler(new Request("http://localhost/producto", {
       method: "POST", body: new URLSearchParams({ product: "invalid" }),
     }));
     expect(invalid.status).toBe(400);
     expect(invalid.headers.get("Set-Cookie")).toBeNull();
+  });
+
+  it("preserves saved generic progress when the visitor selects that product again", async () => {
+    const handler = createFetchHandler();
+    const saved = { ...started, residence_state: "TX", has_license: "yes" };
+    const selected = await handler(new Request("http://localhost/producto", {
+      method: "POST", body: new URLSearchParams({ product: "auto" }),
+      headers: { Cookie: cookie("auto", saved) + "; " + cookie("hogar", homeAnswers) },
+    }));
+    expect(selected.status).toBe(303);
+    expect(selected.headers.get("Location")).toBe("/auto");
+    expect(selected.headers.get("Set-Cookie")).toContain(cookie("auto", saved));
+    expect(selected.headers.get("Set-Cookie")).not.toContain(getCheckpointCookieName("hogar"));
+    const resumed = await handler(new Request("http://localhost/auto", {
+      headers: { Cookie: cookie("auto", saved) },
+    }));
+    expect(resumed.headers.get("Location")).toBe("/auto/tiene-seguro");
   });
 
   it("resumes generic progress independently and keeps dedicated state routes", async () => {
@@ -140,7 +179,7 @@ describe("independent generic quote flows", () => {
       expect(response.headers.get("Location")).toBe(expected);
       expect(response.headers.get("Cache-Control")).toBe("no-store");
     }
-    for (const path of ["/auto/zz", "/hogar/not-a-state", "/cotizar/invalid"]) {
+    for (const path of ["/auto/zz", "/hogar/not-a-state", "/producto/invalid"]) {
       expect((await handler(new Request("http://localhost" + path))).status).toBe(404);
     }
   });

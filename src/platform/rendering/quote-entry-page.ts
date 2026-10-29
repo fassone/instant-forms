@@ -19,7 +19,7 @@ export type QuoteEntryPage = {
 export async function renderQuoteEntryPage(content: QuoteEntryPage, selection: boolean, query: string): Promise<string> {
   const action = escapeHtml(content.selectionPath + query);
   const choices = content.products.map((product, index) => `
-    <label class="option">
+    <label class="option" data-product-option>
       <input type="radio" name="product" value="${escapeHtml(product.key)}" required>
       <span class="option-index">${index + 1}</span>
       <span class="option-text">${escapeHtml(product.label)}</span>
@@ -34,7 +34,7 @@ export async function renderQuoteEntryPage(content: QuoteEntryPage, selection: b
   </head>
   <body>
     <main class="shell">
-      <form class="form-panel" style="--form-desktop-height: ${content.desktopHeightPx}px;" data-has-footer="true" data-active-step-kind="${selection ? "choice" : "interstitial"}" method="post" action="${action}">
+      <form class="form-panel" style="--form-desktop-height: ${content.desktopHeightPx}px;" data-has-footer="true" data-active-step-kind="${selection ? "choice" : "interstitial"}" method="post" action="${action}"${selection ? " data-product-selection" : ""}>
         <header class="brand"><div class="brand-identity">
           <img class="brand-logo" src="/assets/logo.webp" alt="${escapeHtml(content.pageName)}" width="236" height="73">
         </div></header>
@@ -52,8 +52,61 @@ export async function renderQuoteEntryPage(content: QuoteEntryPage, selection: b
         </div></footer>
       </form>
     </main>
+    ${selection ? renderProductSelectionScript() : ""}
   </body>
 </html>`);
+}
+
+function renderProductSelectionScript(): string {
+  return `<script>
+(() => {
+  const form = document.querySelector("[data-product-selection]");
+  if (!(form instanceof HTMLFormElement)) return;
+  let timer;
+  let submitting = false;
+
+  function clearPending() {
+    window.clearTimeout(timer);
+    timer = undefined;
+  }
+
+  function scheduleAdvance() {
+    if (submitting) return;
+    clearPending();
+    timer = window.setTimeout(() => {
+      timer = undefined;
+      if (!submitting) form.requestSubmit();
+    }, 180);
+  }
+
+  form.addEventListener("change", (event) => {
+    const input = event.target;
+    if (input instanceof HTMLInputElement && input.name === "product" && input.checked) {
+      scheduleAdvance();
+    }
+  });
+  form.addEventListener("click", (event) => {
+    if (!(event.target instanceof Element)) return;
+    const option = event.target.closest("[data-product-option]");
+    const input = option && option.querySelector("input[name='product']");
+    if (input instanceof HTMLInputElement && input.checked) scheduleAdvance();
+  });
+  form.addEventListener("submit", (event) => {
+    clearPending();
+    if (submitting) {
+      event.preventDefault();
+      return;
+    }
+    submitting = true;
+  });
+  window.addEventListener("pagehide", clearPending);
+  window.addEventListener("pageshow", (event) => {
+    if (!event.persisted) return;
+    clearPending();
+    submitting = false;
+  });
+})();
+</script>`;
 }
 
 function escapeHtml(value: string): string {

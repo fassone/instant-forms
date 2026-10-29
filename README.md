@@ -58,7 +58,7 @@ Run the app:
 bun run dev
 ```
 
-Open `http://localhost:3000/cotizar`.
+Open `http://localhost:3000/`.
 
 Build production form HTML:
 
@@ -94,9 +94,9 @@ Every source and test folder has its own `README.md` describing ownership and sa
 
 | Route | Purpose |
 |---|---|
-| `GET /`, `GET /cotizar` | Shared single-CTA welcome, then product selection. |
-| `GET /cotizar/producto` | Auto/home selection. |
-| `POST /cotizar/producto` | Confirms the selected product's welcome checkpoint, then resumes that generic flow without another welcome. |
+| `GET /` | Shared single-CTA welcome, then product selection at `/producto`. |
+| `GET /producto` | Auto/home selection; choosing an option automatically advances. |
+| `POST /producto` | Confirms the selected product's welcome checkpoint, then resumes that generic flow without another welcome. |
 | `GET /auto`, `GET /hogar` | Resume the independent generic product flow, starting at `/inicio` for a new visitor. |
 | `GET /auto/:stepSlug`, `GET /hogar/:stepSlug` | Generic guarded steps and `/gracias`, without a state in the path. |
 | `GET /auto/:state`, `GET /hogar/:state` | Resume an authored state flow. A valid but unauthored state redirects to the generic welcome with `?state=XX`. |
@@ -125,7 +125,7 @@ Generic home order: `/hogar/inicio`, `/hogar/estado-de-la-propiedad`, `/hogar/du
 
 For example, `/auto/fl` redirects to `/auto/inicio?state=FL`. The state hint is validated against the state autocomplete source, displayed for confirmation, and preserved across navigation/refresh without becoming a checkpoint answer until confirmed. A saved answer takes precedence over the hint. Attribution parameters pass through the shared welcome/product selection and existing attribution capture stays unchanged.
 
-Generic flows reuse the shared GTM and PostHog defaults. No state-specific Meta Pixel ID is inherited; optionally author `metaPixelId` on either generic template instantiation in `generic.ts`. The product selector itself uses ordinary same-origin links/forms and does not emit a synthetic product-flow answer event.
+Generic flows reuse the shared GTM and PostHog defaults. No state-specific Meta Pixel ID is inherited; optionally author `metaPixelId` on either generic template instantiation in `generic.ts`. The product selector submits its ordinary same-origin form automatically 180 ms after selection, matching choice-step timing; `Continuar` remains a manual/no-JavaScript fallback. The selector does not emit a synthetic product-flow answer event. The former `/cotizar` and `/cotizar/producto` URLs are removed and return 404 without redirects.
 
 Reusable flow shapes live in `src/authoring/templates/` and use `defineFormTemplate(...)`. A template declares a Zod `variables` contract and exposes `.create(input)`, which validates required, optional, and unknown variables before returning a normal `InstantForm` through `defineFormFlow(...)`. Each authored auto state is currently an instantiation of the reusable Spanish auto-insurance template; each authored home state is an instantiation of the reusable Spanish home-insurance template.
 
