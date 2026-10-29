@@ -321,7 +321,7 @@ function createHomeQuestionSteps({
             "Para proteger su privacidad, la ley requiere su autorización para comunicarnos con usted sobre su solicitud de seguro.",
           ),
           disclosure: consentMd(
-            "Al marcar esta casilla y hacer clic en “Enviar”, yo, **",
+            "Al marcar esta casilla y hacer clic en “Cotizar”, yo, **",
             tfTag("consent-grantor-name", text(answers.first_name, " ", answers.last_name)),
             "**, autorizo a **",
             tfTag("consent-advertiser-name", context.advertiserName),

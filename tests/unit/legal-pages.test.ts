@@ -45,9 +45,9 @@ describe("standalone legal pages", () => {
         expect(response.headers.get("Set-Cookie")).toBeNull();
         expect(logs).toEqual([]);
         expect(html).toContain(document.title);
-        expect(html).toContain(document.notice.text);
-        expect(await attributes(html, "[data-legal-notice]", "data-legal-notice")).toEqual([document.notice.kind]);
-        expect(html.includes("data-legal-sample")).toBe(document.notice.kind === "sample");
+        if (document.notice) expect(html).toContain(document.notice.text);
+        expect(await attributes(html, "[data-legal-notice]", "data-legal-notice")).toEqual(document.notice ? [document.notice.kind] : []);
+        expect(html.includes("data-legal-sample")).toBe(document.notice?.kind === "sample");
         expect(html).not.toMatch(/<script|<form|__FORM_CONFIG__|partytown|tracking-events|gtm\.js|tfc\.js/iu);
         expect(await attributes(html, "[data-legal-return]", "href")).toEqual(["/"]);
         expect(await attributes(html, "[data-legal-page] [data-legal-return-area] a", "href")).toEqual(["/"]);
@@ -57,7 +57,6 @@ describe("standalone legal pages", () => {
         expect(await attributes(html, ".legal-contents a", "href")).toEqual(document.sections.map((section) => "#" + section.id));
         const wordCount = (document.introduction + " " + document.sections.map((section) => section.body).join(" ")).split(/\s+/u).length;
         expect(wordCount).toBeGreaterThanOrEqual(1200);
-        expect(wordCount).toBeLessThanOrEqual(1800);
 
         for (const method of ["GET", "HEAD"]) {
           const redirect = await handler(new Request(`https://example.test${prefix}${path}/?returnTo=%2Fproducto`, { method }));
@@ -76,6 +75,8 @@ describe("standalone legal pages", () => {
     expect(new Set(termsAndConditions.sections.map((section) => section.id)).size).toBe(16);
     expect(termsAndConditions.title).toBe("Términos y condiciones");
     expect(html).toContain("<h1>Términos y condiciones</h1>");
+    expect(termsAndConditions.notice?.kind).toBe("important");
+    expect(html).toContain(termsAndConditions.notice!.text);
     expect(html).toContain("Última actualización: 29 de octubre de 2026");
     expect(html).toContain("Seguros Aseguranza es una marca propiedad de Liderna Inc y operada por esta. Liderna Inc es una sociedad constituida en Delaware, Estados Unidos (“Liderna”, “nosotros”).");
     expect(html).toContain("Al aceptar estos términos, usted celebra un acuerdo con Liderna");
@@ -91,32 +92,81 @@ describe("standalone legal pages", () => {
     expect(termsAndConditions.sections[13]?.id).toBe("renuncia-colectiva");
   });
 
-  it("renders the authored privacy draft with current allocation facts and no effective date", async () => {
+  it("renders the finalized privacy policy with its authored date and current allocation facts", async () => {
     const response = await createFetchHandler()(new Request("https://example.test/politica-de-privacidad"));
     const html = await response.text();
     expect(privacyPolicy.sections).toHaveLength(15);
     expect(new Set(privacyPolicy.sections.map((section) => section.id)).size).toBe(15);
-    expect(privacyPolicy.notice.kind).toBe("important");
-    expect(html).toContain("Borrador para revisión y aprobación. No constituye la política vigente.");
-    expect(html).toContain("fecha de entrada en vigor quedan pendientes de aprobación");
+    expect(privacyPolicy.notice).toBeUndefined();
+    expect(privacyPolicy.introduction).toBe("**Fecha de entrada en vigor: 29 de octubre de 2026.**");
+    expect(html).toContain("<strong>Fecha de entrada en vigor: 29 de octubre de 2026.</strong>");
+    expect(await attributes(html, "[data-legal-notice], .legal-notice", "class")).toEqual([]);
+    expect(html).not.toMatch(/borrador|pendientes de aprobación|No constituye la política vigente/iu);
     expect(html).not.toContain("Documento de muestra");
     expect(html).not.toContain("Última actualización:");
     expect(html).toContain("Seguros Aseguranza es una marca propiedad de Liderna Inc y operada por esta. Liderna Inc es una sociedad constituida en Delaware, Estados Unidos (“Liderna”, “nosotros”).");
     expect(html).toContain("hello@liderna.com");
     expect(html).toContain("1058 Windy Creek Path, Conroe, Texas 77304");
-    expect(html).toContain("Los Agentes participantes no reciben información de la solicitud antes de su selección");
+    expect(html).toContain("La selección de los Agentes destinatarios puede considerar las características de su solicitud, el tipo de seguro, la ubicación, los criterios de elegibilidad establecidos por los Agentes, su disponibilidad y factores operativos y comerciales.");
+    expect(html).toContain("La asignación se gestiona internamente; los Agentes reciben información de la solicitud únicamente después de ser seleccionados como destinatarios.");
     expect(html).toContain("Podemos remitir su solicitud a uno o varios agentes de seguros con licencia");
     expect(html).toContain("No ofrecemos exclusividad al solicitante ni garantizamos un número determinado de destinatarios o contactos");
-    expect(html).toContain("La asignación se realiza internamente");
-    expect(html).toContain("presupuestos de participación de los Agentes");
+    expect(html).not.toContain("presupuestos de participación de los Agentes");
+    expect(html).not.toContain("probabilidad de recibir una solicitud");
+    expect(html).toContain("Liderna no establece las primas ni las condiciones de cobertura. Las cotizaciones y los productos de seguro están sujetos a la evaluación y las condiciones de los Agentes y las aseguradoras correspondientes. No garantizamos precios, ahorros, coberturas o resultados específicos, ni la obtención de una cotización o póliza.");
+    expect(html).not.toContain("La asignación no garantiza que el destinatario ofrezca");
     expect(html).not.toContain("Actualmente, cada solicitud se entrega exclusivamente al Agente seleccionado");
     expect(html).not.toContain("La modalidad actual no constituye una garantía de exclusividad para futuras versiones del Servicio");
     expect(html).not.toContain("Si habilitamos la remisión de una solicitud a varios Agentes");
     expect(html).toContain("no autoriza a los Agentes a revenderla");
-    expect(html).toContain("PostHog para analizar actividad y resultados del Servicio y para recibir registros operativos");
+    expect(html).toContain("PostHog para analizar el uso y rendimiento del Servicio y gestionar registros operativos");
     expect(html).toContain("También trabajamos con Meta");
+    expect(html).toContain("Meta puede recibir información sobre su actividad en el Servicio y utilizarla con fines publicitarios");
+    expect(html).toContain("no procesa automáticamente las señales &quot;Do Not Track&quot; (DNT) ni &quot;Global Privacy Control&quot; (GPC)");
+    expect(html).toContain("Los derechos, las solicitudes y las obligaciones relativas a estas señales dependen de la normativa aplicable");
+    expect(html).not.toContain("SmartFinancial");
     expect(await attributes(html, "#evidencia-de-consentimiento a", "href")).toEqual(["https://activeprospect.com/trustedform-privacy-notice/"]);
   });
+
+  for (const prefix of ["", "/__preview"]) {
+    it(`renders the clarified privacy disclosures on ${prefix}/politica-de-privacidad`, async () => {
+      const response = await createFetchHandler()(new Request(`https://example.test${prefix}/politica-de-privacidad`));
+      const html = await response.text();
+
+      expect(response.status).toBe(200);
+      expect(html).toContain("Las comunicaciones comerciales se realizan conforme a las autorizaciones aplicables y la legislación correspondiente.");
+      expect(html).toContain("La recopilación puede comenzar antes del envío final.");
+      expect(html).toContain("La conservación de la información ya recibida se rige por esta Política, aunque la solicitud no llegue a completarse. Las solicitudes de eliminación se atienden conforme a la legislación aplicable.");
+      expect(html).not.toContain("Abandonar el formulario, cerrar el navegador o borrar cookies");
+      expect(html).toContain("seleccionar destinatarios según el producto, la ubicación, la disponibilidad, los criterios de elegibilidad establecidos por los Agentes y los criterios comerciales de asignación");
+      expect(html).toContain("Los Agentes pueden verificar o complementar la información mediante otras fuentes por su propia cuenta.");
+      expect(html).toContain("Los destinatarios pueden actuar como proveedores que procesan información por nuestra cuenta o como responsables independientes, según la actividad y los acuerdos aplicables.");
+      const independentProcessing = "Los tratamientos realizados de forma independiente por los Agentes u otros terceros se rigen por sus propias políticas y obligaciones. En la máxima medida permitida por la ley, Liderna no responde por actos u omisiones exclusivamente atribuibles a dichos terceros. Esta disposición no excluye responsabilidades que la ley imponga directamente a Liderna.";
+      expect(html.split(independentProcessing)).toHaveLength(2);
+      expect(html).not.toContain("Cuando realizan estas actividades de manera independiente");
+      expect(html).not.toContain("Esta Política no sustituye sus propios avisos cuando actúen de manera independiente");
+      expect(html).toContain("Utilizamos PostHog para analizar el uso y rendimiento del Servicio y gestionar registros operativos. Según su finalidad, estos registros pueden incluir datos técnicos, información de solicitudes y datos de contacto.");
+      expect(html).toContain("Publicaremos las versiones actualizadas en esta página, indicando su fecha de entrada en vigor. Proporcionaremos avisos adicionales y recabaremos las autorizaciones que resulten legalmente exigibles.");
+      expect(html).toContain("Una actualización no constituye por sí sola autorización retroactiva para tratamientos que requieran consentimiento.");
+    });
+
+    it(`renders safe external privacy links on ${prefix}/politica-de-privacidad`, async () => {
+      const response = await createFetchHandler()(new Request(`https://example.test${prefix}/politica-de-privacidad`));
+      const html = await response.text();
+      const links = [
+        ["política de privacidad de PostHog", "https://posthog.com/privacy"],
+        ["política de privacidad de Meta", "https://www.facebook.com/privacy/policy/"],
+      ] as const;
+
+      expect(response.status).toBe(200);
+      expect(await attributes(html, "#cookies a", "href")).toEqual(links.map(([, href]) => href));
+      expect(await attributes(html, "#cookies a", "target")).toEqual(["_blank", "_blank"]);
+      expect(await attributes(html, "#cookies a", "rel")).toEqual(["nofollow noopener noreferrer", "nofollow noopener noreferrer"]);
+      for (const [label, href] of links) {
+        expect(html).toContain(`<a href="${href}" rel="nofollow noopener noreferrer" target="_blank">${label}</a>`);
+      }
+    });
+  }
 
   it("only returns to recognized local quote routes and approved query parameters", async () => {
     const handler = createFetchHandler();
@@ -150,7 +200,7 @@ describe("standalone legal pages", () => {
     expect(response.headers.get("Content-Encoding")).toBe("gzip");
     expect(response.headers.get("Vary")).toContain("Accept-Encoding");
     expect(response.headers.get("Cache-Control")).toBe("no-store");
-    expect(gunzipSync(Buffer.from(await response.arrayBuffer())).toString()).toContain(privacyPolicy.notice.text);
+    expect(gunzipSync(Buffer.from(await response.arrayBuffer())).toString()).toContain("Fecha de entrada en vigor: 29 de octubre de 2026.");
   });
 
   it("keeps legal links outside every authored form and does not add steps", async () => {

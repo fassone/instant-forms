@@ -262,6 +262,44 @@ describe("independent generic quote flows", () => {
     }
   });
 
+  it("keeps rendered, configured and newly submitted Cotizar consent identical across all current flows", async () => {
+    const entries = getFormRouteBuildEntries(formRoutes);
+    expect(entries).toHaveLength(12);
+    for (const { routeKey, routeSegments } of entries) {
+      const answers = routeSegments[0] === "auto"
+        ? { ...autoAnswers, belongs_to_state: "yes" }
+        : { ...homeAnswers, property_in_state: "yes" };
+      let delivered: unknown;
+      const handler = createFetchHandler({ eventLogger: () => {}, delivery: {
+        fetch: async (_url, init) => {
+          delivered = JSON.parse(String(init?.body));
+          return Response.json({ ok: true });
+        },
+      } });
+      const response = await handler(new Request(`https://example.test/${routeSegments.join("/")}/consentimiento`, {
+        headers: { Cookie: cookie(routeKey, answers) },
+      }));
+      expect(response.status).toBe(200);
+      const html = await response.text();
+      const consent = config(html).currentStep.consent;
+      expect(consent.submitLabel).toBe("Cotizar");
+      expect(consent.disclosure.text).toContain("Al marcar esta casilla y hacer clic en “Cotizar”");
+      expect(consent.disclosure.text).not.toContain("“Enviar”");
+      let displayed = "";
+      await new HTMLRewriter().on(".consent-disclosure", { text(chunk) {
+        displayed += chunk.text;
+      } }).transform(new Response(html)).text();
+      expect(displayed.replace(/\s+/gu, " ").trim()).toBe(consent.disclosure.text.replace(/\s+/gu, " ").trim());
+      const body = new URLSearchParams(Object.entries(answers).map(([key, value]): [string, string] => [`answers[${key}]`, value]));
+      body.set("answers[trustedform_consent][accepted]", "accepted");
+      const submission = await handler(new Request(`https://example.test/api/forms/${routeKey}/native-submissions`, {
+        method: "POST", body,
+      }));
+      expect(submission.status).toBe(303);
+      expect(delivered).toMatchObject({ consent: consent.disclosure.text });
+    }
+  });
+
   it("submits a generic lead to its own thank-you route and clears only its checkpoint", async () => {
     let delivered: unknown;
     const handler = createFetchHandler({ delivery: {

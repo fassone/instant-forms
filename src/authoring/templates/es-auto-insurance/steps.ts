@@ -243,7 +243,7 @@ function createAutoQuestionSteps({
           ),
           // Replace with approved consent language before production traffic.
           disclosure: consentMd(
-            "Al marcar esta casilla y hacer clic en “Enviar”, yo, **",
+            "Al marcar esta casilla y hacer clic en “Cotizar”, yo, **",
             tfTag("consent-grantor-name", text(answers.first_name, " ", answers.last_name)),
             "**, autorizo a **",
             tfTag("consent-advertiser-name", context.advertiserName),

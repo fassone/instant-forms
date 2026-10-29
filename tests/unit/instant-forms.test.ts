@@ -260,7 +260,7 @@ function createValidNativeSubmissionBody(options: { responseMode?: "iframe"; tok
 
 function expectTrustedFormConsentAnswer(value: unknown, expectedCertUrl: string | null = trustedFormCertUrl): void {
   expect(value).toEqual({
-    consent: expect.stringContaining("Al marcar esta casilla"),
+    consent: expect.stringContaining("Al marcar esta casilla y hacer clic en “Cotizar”"),
     trustedform_certificate_url: expectedCertUrl,
   });
 
@@ -9671,7 +9671,7 @@ describe("form rendering", () => {
     expect(html).toContain('"fields":[{"name":"trusted_form_grantor_name"');
     expect(html).toContain('"consent":{"title":"Antes de cotizar"');
     expect(html).toContain('"substeps":{"consent":{"presentation":{"chrome":"hidden_on_mobile"}},"review":{"presentation":{"chrome":"hidden_on_mobile"}}}');
-    expect(html).toContain('"disclosure":{"text":"Al marcar esta casilla y hacer clic en “Enviar”, yo, Ana Lopez');
+    expect(html).toContain('"disclosure":{"text":"Al marcar esta casilla y hacer clic en “Cotizar”, yo, Ana Lopez');
     expect(html).toContain(
       '\\u003cspan data-tf-element-role=\\"consent-advertiser-name\\"\\u003eLiderna Inc y a sus socios, agentes y proveedores de seguros\\u003c/span\\u003e',
     );
@@ -9726,7 +9726,7 @@ describe("form rendering", () => {
     expect(html).toContain('.trusted-form-panel[data-trusted-form-substep="consent"][aria-hidden="false"]');
     expect(html).toContain('.consent-scroll-shell[data-can-scroll-down="true"] .consent-scroll-fade-bottom');
     expect(html).toContain(
-      '<span class="consent-disclosure"><p>Al marcar esta casilla y hacer clic en “Enviar”, yo, <strong><span data-tf-element-role="consent-grantor-name">Ana Lopez</span></strong>',
+      '<span class="consent-disclosure"><p>Al marcar esta casilla y hacer clic en “Cotizar”, yo, <strong><span data-tf-element-role="consent-grantor-name">Ana Lopez</span></strong>',
     );
     expect(html).toContain(
       '.consent-acceptance {\n        display: block;\n        margin-top: 8px;\n        color: var(--brand-navy);\n        font-weight: 800;\n      }',

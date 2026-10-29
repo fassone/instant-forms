@@ -7,7 +7,7 @@ export type LegalPageContent = {
   locale: string;
   brandName: string;
   title: string;
-  notice: { kind: "sample" | "important"; text: string };
+  notice?: { kind: "sample" | "important"; text: string };
   introduction: string;
   contentsLabel: string;
   returnLabel: string;
@@ -70,7 +70,7 @@ export async function renderLegalPage(content: LegalPageContent, returnTo: strin
   <main class="legal-document" data-legal-page>
     <header><img class="legal-logo" src="/assets/logo.webp" width="236" height="73" alt="${escapeHtml(content.brandName)}">
       <h1>${escapeHtml(content.title)}</h1>
-      <p class="legal-notice" data-legal-notice="${content.notice.kind}"${content.notice.kind === "sample" ? " data-legal-sample" : ""}>${escapeHtml(content.notice.text)}</p>
+      ${content.notice ? `<p class="legal-notice" data-legal-notice="${content.notice.kind}"${content.notice.kind === "sample" ? " data-legal-sample" : ""}>${escapeHtml(content.notice.text)}</p>` : ""}
       ${renderMarkdownToHtml(content.introduction)}
     </header>
     <nav class="legal-contents" aria-label="${escapeHtml(content.contentsLabel)}">

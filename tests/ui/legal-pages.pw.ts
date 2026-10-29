@@ -81,7 +81,9 @@ test.describe("legal pages", () => {
         await expect(page.locator("#modificaciones-y-contacto")).toContainText("1058 Windy Creek Path");
       } else {
         await expect(page.locator("[data-legal-sample]")).toHaveCount(0);
-        await expect(page.locator('[data-legal-notice="important"]')).toHaveText("Borrador para revisión y aprobación. No constituye la política vigente.");
+        await expect(page.locator("[data-legal-notice]")).toHaveCount(0);
+        await expect(page.locator("[data-legal-page] header")).toContainText("Fecha de entrada en vigor: 29 de octubre de 2026.");
+        await expect(page.locator("[data-legal-page]")).not.toContainText(/borrador|pendientes de aprobación/iu);
         await expect(page.locator("section")).toHaveCount(15);
         await expect(page.locator("#remision-y-remuneracion")).toContainText("Podemos remitir su solicitud a uno o varios agentes de seguros con licencia");
         await expect(page.locator("#remision-y-remuneracion")).toContainText("No ofrecemos exclusividad al solicitante");
@@ -265,4 +267,45 @@ test.describe("legal pages", () => {
       await context.close();
     }
   });
+
+  for (const [routeKey, path, answers] of [
+    ["auto", "/auto", savedAnswers],
+    ["auto_tn", "/auto/tn", { ...savedAnswers, belongs_to_state: "yes" }],
+    ["hogar", "/hogar", { ...savedAnswers, property_state: "TX", ownership_status: "own", property_type: "single_family", property_use: "primary_residence", has_home_insurance: "yes", house_age_years: "11_20", roof_age_years: "6_10" }],
+    ["hogar_tx", "/hogar/tx", { ...savedAnswers, property_in_state: "yes", ownership_status: "own", property_type: "single_family", property_use: "primary_residence", has_home_insurance: "yes", house_age_years: "11_20", roof_age_years: "6_10" }],
+  ] as const) {
+    test(`Cotizar disclosure matches the unchanged final button and native submission: ${path} @cross-browser`, async ({ page, baseURL }, testInfo) => {
+      let submissionCount = 0;
+      page.on("request", (request) => {
+        if (request.method() === "POST" && new URL(request.url()).pathname === `/api/forms/${routeKey}/native-submissions`) submissionCount += 1;
+      });
+      await page.context().addCookies([{ name: getCheckpointCookieName(routeKey), value: encodeCheckpointAnswers(answers), url: baseURL!, httpOnly: true, sameSite: "Lax" }]);
+      await page.goto(path + "/consentimiento");
+      await page.waitForFunction("Boolean(window.__INSTANT_FORM_RUNTIME__)");
+      await page.getByRole("button", { name: "Continuar", exact: true }).click();
+      const panel = page.locator('[data-step][aria-hidden="false"] [data-trusted-form-substep="consent"]');
+      const disclosure = panel.locator("[data-trusted-form-consent-scroll] > span").first();
+      await expect(disclosure).toContainText("Al marcar esta casilla y hacer clic en “Cotizar”");
+      await expect(disclosure).not.toContainText("“Enviar”");
+      const configured = await page.evaluate("window.__FORM_CONFIG__.currentStep.consent.disclosure.text");
+      if (typeof configured !== "string") throw new Error("Missing configured consent disclosure");
+      await expect(disclosure).toHaveText(configured);
+      const submit = page.getByRole("button", { name: "Cotizar", exact: true });
+      await expect(submit).toBeVisible();
+      await expect(panel.locator("[data-trusted-form-consent]")).not.toBeChecked();
+      await submit.click();
+      await expect(page.getByRole("alertdialog")).toContainText("Debe aceptar el consentimiento para enviar la solicitud.");
+      expect(submissionCount).toBe(0);
+      await page.getByRole("button", { name: "Entendido", exact: true }).click();
+      await panel.locator("[data-trusted-form-consent]").check();
+      await expect(submit).toBeEnabled();
+      await page.screenshot({ path: testInfo.outputPath("cotizar-consent.png") });
+      const submitted = page.waitForRequest((request) => request.method() === "POST" && new URL(request.url()).pathname === `/api/forms/${routeKey}/native-submissions`);
+      await submit.click();
+      const fields = new URLSearchParams((await submitted).postData() ?? "");
+      expect(fields.get("answers[trustedform_consent][accepted]")).toBe("accepted");
+      await expect(page).toHaveURL(new URL(path + "/gracias", baseURL).href);
+      expect(submissionCount).toBe(1);
+    });
+  }
 });
